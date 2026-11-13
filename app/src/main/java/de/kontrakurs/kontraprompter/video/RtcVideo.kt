@@ -64,7 +64,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
         override fun onCameraDisconnected() { lan.report("Kamerafehler", "Kamera wurde getrennt") }
         override fun onCameraFreezed(error: String) { lan.report("Kamerafehler", error) }
         override fun onCameraOpening(name: String) = Unit
-        override fun onFirstFrameAvailable() { lan.report("Kamerabild verfügbar; Verbindung wird aufgebaut") }
+        override fun onFirstFrameAvailable() { lan.reportFirstCameraFrame() }
         override fun onCameraClosed() = Unit
     }
     private fun observer() = object : PeerConnection.Observer {

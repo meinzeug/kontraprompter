@@ -28,6 +28,12 @@ data class LanState(
     val remoteApproved: Boolean = false, val ready: Boolean = false, val rttMs: Long? = null,
 )
 
+/** A late first frame must not overwrite a newer connection result or an error. */
+internal fun firstCameraFrame(state: LanState): LanState =
+    if (state.ready && state.error == null && state.status == "Gekoppelt; Video wird vorbereitet")
+        state.copy(status = "Kamerabild verfügbar; Verbindung wird aufgebaut")
+    else state
+
 /** A single short-lived LAN session. All SDP and ICE messages pass through the authenticated channel. */
 class LanSession(context: Context) : AutoCloseable {
     private val app = context.applicationContext
@@ -173,6 +179,7 @@ class LanSession(context: Context) : AutoCloseable {
         onDisconnect?.invoke()
     }
     fun report(status: String, error: String? = null) { _state.update { it.copy(status = status, error = error) } }
+    fun reportFirstCameraFrame() { _state.update(::firstCameraFrame) }
     private fun fail(message: String) { _state.update { it.copy(status = "Fehler", error = message) } }
     private fun register(port: Int) {
         val info = NsdServiceInfo().apply { serviceName = "KontraPrompter-${Build.MODEL.take(24)}"; serviceType = SERVICE_TYPE; setPort(port) }
