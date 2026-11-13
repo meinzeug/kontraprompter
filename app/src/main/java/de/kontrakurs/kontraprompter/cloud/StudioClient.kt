@@ -2,10 +2,18 @@ package de.kontrakurs.kontraprompter.cloud
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.IOException
+import java.security.MessageDigest
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import de.kontrakurs.kontraprompter.video.SavedRecording
 
 /** HTTPS-only, in-memory session. No password or session cookie is persisted. */
 class StudioClient {
@@ -39,6 +47,70 @@ class StudioClient {
         } finally { connection.disconnect() }
     }
 
+    /** Streams a local file without deleting it; only a matching durable receipt is success. */
+    internal suspend fun uploadRecording(recording: SavedRecording, entry: UploadEntry, progress: (Long, Long) -> Unit, workerFinished: () -> Unit): Unit = suspendCancellableCoroutine { continuation ->
+        val active = AtomicReference<HttpURLConnection?>(null)
+        continuation.invokeOnCancellation { active.get()?.disconnect() }
+        Thread({
+            try {
+                val session = cookie ?: throw UploadException("auth", "Bitte erneut bei Videomaker anmelden.")
+                check(recording.bytes in 1..(1024L * 1024 * 1024) && recording.file.isFile && recording.file.length() == recording.bytes) { "Lokale Aufnahme ist nicht vollständig vorhanden." }
+                check(entry.recordingId == recording.id && entry.size == recording.bytes && entry.sha256 == recording.sha256)
+                check(UUID.fromString(entry.projectId).toString() == entry.projectId && UUID.fromString(entry.uploadId).toString() == entry.uploadId)
+                val before = MessageDigest.getInstance("SHA-256")
+                recording.file.inputStream().buffered().use { source ->
+                    val block = ByteArray(256 * 1024)
+                    while (true) { if (!continuation.isActive) throw IOException("Upload abgebrochen"); val count = source.read(block); if (count < 0) break; before.update(block, 0, count) }
+                }
+                check(hex(before.digest()) == recording.sha256) { "Lokale Aufnahme wurde verändert und wird nicht hochgeladen." }
+                val connection = open("/api/projects/${entry.projectId}/recordings", "POST").also { active.set(it) }
+                try {
+                    if (!continuation.isActive) throw IOException("Upload abgebrochen")
+                    connection.readTimeout = 120_000
+                    connection.setRequestProperty("Cookie", session)
+                    connection.setRequestProperty("Origin", BASE)
+                    connection.setRequestProperty("Content-Type", "video/mp4")
+                    connection.setRequestProperty("X-Recording-Id", entry.uploadId)
+                    connection.setRequestProperty("X-Content-SHA256", entry.sha256)
+                    connection.doOutput = true
+                    connection.setFixedLengthStreamingMode(entry.size)
+                    val sentHash = MessageDigest.getInstance("SHA-256")
+                    var sent = 0L
+                    recording.file.inputStream().buffered().use { source ->
+                        connection.outputStream.use { output ->
+                            val block = ByteArray(256 * 1024)
+                            while (true) {
+                                if (!continuation.isActive) throw IOException("Upload abgebrochen")
+                                val count = source.read(block); if (count < 0) break
+                                sent += count; check(sent <= entry.size) { "Lokale Aufnahme wurde verändert." }
+                                sentHash.update(block, 0, count); output.write(block, 0, count); progress(sent, entry.size)
+                            }
+                        }
+                    }
+                    check(sent == entry.size && hex(sentHash.digest()) == entry.sha256) { "Lokale Aufnahme wurde während des Uploads verändert." }
+                    val code = connection.responseCode
+                    if (code == 401 || code == 403) { cookie = null; throw UploadException("auth", "Sitzung abgelaufen. Bitte erneut anmelden.") }
+                    if (code == 404) throw UploadException("project_missing", "Skript nicht gefunden oder Upload-Endpunkt nicht verfügbar. Die Aufnahme bleibt lokal.")
+                    if (code == 409) throw UploadException("conflict", "Upload-ID oder gespeicherte Datei stimmt nicht überein. Die Aufnahme bleibt lokal.")
+                    if (code !in 200..299) throw UploadException("uncertain", "Upload nicht bestätigt (HTTP $code). Die Aufnahme bleibt lokal.")
+                    val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
+                        val result = StringBuilder(); val block = CharArray(2048)
+                        while (true) { val count = input.read(block); if (count < 0) break; check(result.length + count <= 16_384) { "Serverbestätigung ist ungültig." }; result.append(block, 0, count) }
+                        result.toString()
+                    }
+                    val response = JSONObject(text)
+                    check(UUID.fromString(response.getString("id")).toString() == entry.uploadId &&
+                        UUID.fromString(response.getString("projectId")).toString() == entry.projectId &&
+                        response.getLong("sizeBytes") == entry.size && response.getString("sha256") == entry.sha256) { "Serverbestätigung stimmt nicht mit der Aufnahme überein." }
+                    if (continuation.isActive) continuation.resume(Unit)
+                } finally { active.compareAndSet(connection, null); connection.disconnect() }
+            } catch (error: Exception) { if (continuation.isActive) continuation.resumeWithException(error) }
+            finally { workerFinished() }
+        }, "KontraStudioUpload").start()
+    }
+
+    private fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
     suspend fun pollDevice(id: String, name: String, status: String, acknowledged: List<String>): List<StudioCommand> = withContext(Dispatchers.IO) {
         val connection = open("/api/devices/poll", "POST")
         try {
@@ -66,3 +138,4 @@ class StudioClient {
 
 data class StudioProject(val id: String, val title: String, val text: String)
 data class StudioCommand(val id: String, val type: String, val projectId: String, val remainingMs: Long)
+internal class UploadException(val kind: String, message: String) : IOException(message)

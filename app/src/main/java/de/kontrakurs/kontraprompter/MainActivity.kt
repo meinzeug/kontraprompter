@@ -112,7 +112,10 @@ private fun KontraApp(activity: ComponentActivity) {
             android.widget.Toast.makeText(activity, if (result.isSuccess) "Video exportiert" else "Export fehlgeschlagen; die lokale Aufnahme bleibt erhalten.", android.widget.Toast.LENGTH_LONG).show()
         }
     }
-    LaunchedEffect(page) { if (page == "recordings") recordings = withContext(Dispatchers.IO) { savedRecordings(activity) } }
+    LaunchedEffect(page) {
+        if (page == "upload") page = "recordings"
+        else if (page == "recordings") recordings = withContext(Dispatchers.IO) { savedRecordings(activity) }
+    }
     var cameraPermissionError by remember { mutableStateOf(false) }
     var cameraBusyError by remember { mutableStateOf(false) }
     BackHandler(enabled = page != "roles") {
