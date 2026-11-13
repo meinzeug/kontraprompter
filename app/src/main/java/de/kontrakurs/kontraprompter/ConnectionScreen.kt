@@ -1,6 +1,7 @@
 package de.kontrakurs.kontraprompter
 
 import android.app.Activity
+import android.view.WindowManager
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -55,6 +56,13 @@ fun LivePreview(video: RtcVideo, horizontal: Boolean = false, vertical: Boolean 
 fun ConnectionScreen(session: LiveSession, onClose: () -> Unit, onScripts: () -> Unit) {
     val state by session.lan.state.collectAsState()
     val video by session.video.collectAsState()
+    val secureActivity = LocalContext.current as Activity
+    // Pairing data is a bearer secret, including when presented as a QR image.
+    DisposableEffect(secureActivity) {
+        val alreadySecure = secureActivity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0
+        secureActivity.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        onDispose { if (!alreadySecure) secureActivity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+    }
     if (session.host) {
         CameraConnectionScreen(session, state, video, onClose)
         return
@@ -97,6 +105,14 @@ fun ConnectionScreen(session: LiveSession, onClose: () -> Unit, onScripts: () ->
         } else if (!session.host && !state.authenticated) {
             AppPanel {
                 Text("Kameragerät", style = MaterialTheme.typography.titleLarge)
+                PairingQrScanner { pairing ->
+                    address = pairing.address
+                    port = pairing.port.toString()
+                    token = pairing.token
+                    session.lan.connect(pairing.address, pairing.port, pairing.token)
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Text("Oder manuell verbinden", style = MaterialTheme.typography.titleSmall)
                 // Keep the search row in place when a device appears, so focused fields do not jump.
                 Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (state.devices.isEmpty()) Text("Suche läuft …", color = SoftText, style = MaterialTheme.typography.bodyMedium)
@@ -192,7 +208,8 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
             if (!state.authenticated && state.token.isNotEmpty()) {
                 AppPanel {
                     Text("Mit Teleprompter verbinden", style = MaterialTheme.typography.titleMedium)
-                    Text("Öffne auf dem zweiten Smartphone die Kameraverbindung und gib diesen Sitzungscode ein.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                    PairingQrDisplay(state.addresses, state.port, state.token)
+                    Text("Alternativ kannst du den Sitzungscode manuell eingeben.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                     Text(state.token.chunked(4).joinToString(" ").uppercase(), style = MaterialTheme.typography.headlineSmall, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text("Adresse: ${state.addresses.joinToString().ifBlank { "Keine IPv4-Adresse gefunden" }}\nPort: ${state.port}", color = SoftText, style = MaterialTheme.typography.bodySmall)
