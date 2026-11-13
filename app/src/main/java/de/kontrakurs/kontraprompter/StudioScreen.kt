@@ -16,8 +16,7 @@ import de.kontrakurs.kontraprompter.cloud.StudioProject
 import kotlinx.coroutines.launch
 
 @Composable
-fun StudioScreen(onSelect: (StudioProject) -> Unit, onBack: () -> Unit) {
-    val client = remember { StudioClient() }
+fun StudioScreen(client: StudioClient, remoteEnabled: Boolean, remoteStatus: String, onRemote: (Boolean) -> Unit, onSelect: (StudioProject) -> Unit, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var password by remember { mutableStateOf("") }
     var projects by remember { mutableStateOf<List<StudioProject>?>(null) }
@@ -46,6 +45,8 @@ fun StudioScreen(onSelect: (StudioProject) -> Unit, onBack: () -> Unit) {
                 }
             }, enabled = password.isNotEmpty() && !loading, modifier = Modifier.fillMaxWidth()) { Text(if (loading) "VERBINDE …" else "ANMELDEN") }
         } else {
+            Text("Web-Fernsteuerung: $remoteStatus", style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = { onRemote(!remoteEnabled) }, modifier = Modifier.fillMaxWidth()) { Text(if (remoteEnabled) "FERNSTEUERUNG BEENDEN" else "FERNSTEUERUNG AKTIVIEREN") }
             if (projects!!.isEmpty()) Text("Im Studio sind noch keine Skripte gespeichert.")
             projects!!.forEach { project ->
                 Card(Modifier.fillMaxWidth().clickable { onSelect(project) }) {

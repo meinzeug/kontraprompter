@@ -35,15 +35,22 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import de.kontrakurs.kontraprompter.network.LanState
+import de.kontrakurs.kontraprompter.cloud.StudioClient
 import de.kontrakurs.kontraprompter.video.LiveSession
 import de.kontrakurs.kontraprompter.video.RtcVideo
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withTimeoutOrNull
 
 private val Red = Color(0xffe50914)
 private val Background = Color(0xff0d0d0d)
 private val Surface = Color(0xff1b1b1b)
+private data class RemoteEvent(val type: String, val completed: CompletableDeferred<Unit>)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,6 +72,11 @@ private fun KontraApp(activity: ComponentActivity) {
     val selected = scripts.find { it.id == selectedId } ?: scripts.first()
     var page by rememberSaveable { mutableStateOf("roles") }
     var session by remember { mutableStateOf<LiveSession?>(null) }
+    val studioClient = remember { StudioClient() }
+    var remoteEnabled by remember { mutableStateOf(false) }
+    var remoteStatus by remember { mutableStateOf("Aus") }
+    var playbackStatus by remember { mutableStateOf("Pausiert") }
+    val remoteActions = remember { Channel<RemoteEvent>() }
     val emptyVideo = remember { kotlinx.coroutines.flow.MutableStateFlow<RtcVideo?>(null) }
     val video by (session?.video ?: emptyVideo).collectAsState()
     val emptyLan = remember { kotlinx.coroutines.flow.MutableStateFlow(LanState()) }
@@ -80,6 +92,7 @@ private fun KontraApp(activity: ComponentActivity) {
                 session?.close(); session = null
                 if (page == "connection") page = "roles"
             }
+            if (event == Lifecycle.Event.ON_STOP) { remoteEnabled = false; remoteStatus = "Aus" }
         }
         activity.lifecycle.addObserver(observer)
         onDispose { activity.lifecycle.removeObserver(observer); session?.close(); session = null }
@@ -108,6 +121,50 @@ private fun KontraApp(activity: ComponentActivity) {
     LaunchedEffect(keepAwake, fontSize, speed, width, lineSpacing, textH, textV, textRotation, videoH, videoV, videoRotation, videoFill, videoOpacity, videoBrightness, backgroundOpacity, brightness, focusLine, bold, countdown) { preferences.edit().putBoolean("awake", keepAwake).putFloat("font", fontSize).putFloat("speed", speed).putFloat("width", width).putFloat("line", lineSpacing).putBoolean("textH", textH).putBoolean("textV", textV).putInt("rotation", textRotation).putBoolean("videoH", videoH).putBoolean("videoV", videoV).putInt("videoRotation", videoRotation).putBoolean("videoFill", videoFill).putFloat("videoOpacity", videoOpacity).putFloat("videoBrightness", videoBrightness).putFloat("opacity", backgroundOpacity).putFloat("brightness", brightness).putBoolean("focus", focusLine).putBoolean("bold", bold).putInt("countdown", countdown).apply() }
     fun update(script: Script) { scripts = scripts.map { if (it.id == script.id) script else it }; repository.save(scripts) }
     fun select(id: String) { selectedId = id; repository.currentId = id }
+    LaunchedEffect(remoteEnabled) {
+        if (remoteEnabled) {
+            // A fresh identity prevents commands from an old session executing after reactivation.
+            val deviceId = java.util.UUID.randomUUID().toString()
+            val acknowledged = mutableListOf<String>()
+            val applied = linkedSetOf<String>()
+            while (isActive) {
+                try {
+                    val started = android.os.SystemClock.elapsedRealtime()
+                    val commands = studioClient.pollDevice(deviceId, android.os.Build.MODEL, if (page == "prompter") playbackStatus else "Bereit", acknowledged)
+                    acknowledged.clear()
+                    remoteStatus = "Verbunden"
+                    for (command in commands) {
+                        val deadline = started + command.remainingMs.coerceIn(0, 10000)
+                        if (android.os.SystemClock.elapsedRealtime() >= deadline) continue
+                        if (command.id !in applied) {
+                            when (command.type) {
+                                "load" -> {
+                                    val project = studioClient.projects().firstOrNull { it.id == command.projectId } ?: continue
+                                    if (android.os.SystemClock.elapsedRealtime() >= deadline) continue
+                                    val copy = Script(title = project.title, text = project.text)
+                                    scripts = scripts + copy; repository.save(scripts); select(copy.id)
+                                    page = "prompter"
+                                }
+                                "play", "pause", "reset" -> {
+                                    if (page != "prompter") page = "prompter"
+                                    val event = RemoteEvent(command.type, CompletableDeferred())
+                                    val remaining = (deadline - android.os.SystemClock.elapsedRealtime()).coerceIn(0, 5000)
+                                    val completed = withTimeoutOrNull(remaining) { remoteActions.send(event); event.completed.await(); true } ?: false
+                                    if (!completed) break
+                                }
+                                else -> continue
+                            }
+                            applied.add(command.id)
+                            if (applied.size > 128) applied.remove(applied.first())
+                        }
+                        acknowledged.add(command.id)
+                    }
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { remoteStatus = "Verbindung unterbrochen; erneuter Versuch" }
+                delay(1500)
+            }
+        }
+    }
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             val result = runCatching { activity.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } }
@@ -154,7 +211,7 @@ private fun KontraApp(activity: ComponentActivity) {
                 Action("NEUES SKRIPT") { val s = Script(); scripts = scripts + s; repository.save(scripts); select(s.id); page = "editor" }
                 Action("ZUR ROLLENWAHL") { page = "roles" }
             }
-            "studio" -> StudioScreen(onSelect = { project ->
+            "studio" -> StudioScreen(studioClient, remoteEnabled, remoteStatus, onRemote = { remoteEnabled = it; remoteStatus = if (it) "Verbinde …" else "Aus" }, onSelect = { project ->
                 val copy = Script(title = project.title, text = project.text)
                 scripts = scripts + copy; repository.save(scripts); select(copy.id); page = "editor"
             }, onBack = { page = "scripts" })
@@ -200,7 +257,7 @@ private fun KontraApp(activity: ComponentActivity) {
                 Action("DREHEN: $textRotation°") { textRotation = (textRotation + 90) % 360 }
                 Action("ZURÜCK") { page = "editor" }
             }
-            "prompter" -> Prompter(selected.text, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState)
+            "prompter" -> key(selected.id) { Prompter(selected.text, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, remoteActions) { playbackStatus = it } }
         }
     }
 }
@@ -220,7 +277,7 @@ private fun Page(title: String, eyebrow: String, content: @Composable ColumnScop
 @Composable private fun SettingSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, display: String, change: (Float) -> Unit) { Column { Text("$label: $display"); Slider(value = value, onValueChange = change, valueRange = range) } }
 
 @Composable
-private fun Prompter(text: String, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState) {
+private fun Prompter(text: String, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
     val scroll = rememberScrollState(initialPosition)
     val density = LocalDensity.current.density
     val scope = rememberCoroutineScope()
@@ -228,6 +285,19 @@ private fun Prompter(text: String, fontSize: Float, speed: Float, width: Float, 
     var controls by remember { mutableStateOf(true) }
     var remaining by remember { mutableIntStateOf(0) }
     var countdownJob by remember { mutableStateOf<Job?>(null) }
+    LaunchedEffect(playing, remaining) { onPlaybackStatus(if (remaining > 0) "Countdown" else if (playing) "Läuft" else "Pausiert") }
+    LaunchedEffect(remoteActions) {
+        for (event in remoteActions) {
+            try {
+                when (event.type) {
+                    "play" -> { countdownJob?.cancel(); remaining = 0; playing = true }
+                    "pause" -> { countdownJob?.cancel(); remaining = 0; playing = false }
+                    "reset" -> { countdownJob?.cancel(); remaining = 0; playing = false; scroll.scrollTo(0) }
+                }
+                event.completed.complete(Unit)
+            } catch (e: Exception) { event.completed.completeExceptionally(e); throw e }
+        }
+    }
     LaunchedEffect(playing, speed, remaining) {
         if (playing && remaining == 0) {
             var last = 0L
