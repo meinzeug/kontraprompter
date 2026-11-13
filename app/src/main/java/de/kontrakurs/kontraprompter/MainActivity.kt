@@ -115,8 +115,9 @@ private fun KontraApp(activity: ComponentActivity) {
                 ?: android.widget.Toast.makeText(activity, "Datei konnte nicht gelesen werden", android.widget.Toast.LENGTH_LONG).show()
         }
     }
-    DisposableEffect(keepAwake, page, brightness) {
-        if (keepAwake && page == "prompter") activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    DisposableEffect(keepAwake, page, brightness, session) {
+        // The camera runs only in the foreground; sleeping its screen would end the live session.
+        if ((keepAwake && page == "prompter") || session?.host == true) activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val attrs = activity.window.attributes
         attrs.screenBrightness = if (page == "prompter") brightness else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
