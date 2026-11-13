@@ -47,17 +47,17 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
                 val track = factory!!.createVideoTrack("camera", source)
                 synchronized(sinks) { localTrack = track; sinks.forEach { track.addSink(it) } }
                 peer!!.addTrack(track, listOf("kontra")) ?: error("Videospur konnte nicht hinzugefügt werden")
-                preferH264()
+                preferVp8()
                 camera!!.startCapture(640, 480, 20)
                 peer!!.createOffer(createDescriptionObserver(), MediaConstraints())
             }
         } catch (e: Exception) { lan.report("Videofehler", e.localizedMessage ?: "Video konnte nicht gestartet werden") }
     }
-    private fun preferH264() {
+    private fun preferVp8() {
         val p = peer ?: return
         val caps = factory?.getRtpSenderCapabilities(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO)?.codecs ?: return
-        val h264 = caps.filter { it.name.equals("H264", true) }
-        if (h264.isNotEmpty()) p.transceivers.firstOrNull { it.mediaType == MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO }?.setCodecPreferences(h264 + caps.filterNot { it.name.equals("H264", true) })
+        val vp8 = caps.filter { it.name.equals("VP8", true) }
+        if (vp8.isNotEmpty()) p.transceivers.firstOrNull { it.mediaType == MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO }?.setCodecPreferences(vp8 + caps.filterNot { it.name.equals("VP8", true) })
     }
     private fun cameraEvents() = object : CameraVideoCapturer.CameraEventsHandler {
         override fun onCameraError(error: String) { lan.report("Kamerafehler", error) }
