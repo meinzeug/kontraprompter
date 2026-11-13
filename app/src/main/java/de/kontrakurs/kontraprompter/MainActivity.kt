@@ -39,6 +39,10 @@ import de.kontrakurs.kontraprompter.network.LanState
 import de.kontrakurs.kontraprompter.cloud.StudioClient
 import de.kontrakurs.kontraprompter.video.LiveSession
 import de.kontrakurs.kontraprompter.video.RtcVideo
+import de.kontrakurs.kontraprompter.video.SavedRecording
+import de.kontrakurs.kontraprompter.video.savedRecordings
+import de.kontrakurs.kontraprompter.video.isActive
+import de.kontrakurs.kontraprompter.video.recordingStopDescription
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -47,6 +51,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private val Red = Accent
 private data class RemoteEvent(val type: String, val completed: CompletableDeferred<Unit>)
@@ -80,17 +86,49 @@ private fun KontraApp(activity: ComponentActivity) {
     val video by (session?.video ?: emptyVideo).collectAsState()
     val emptyLan = remember { kotlinx.coroutines.flow.MutableStateFlow(LanState()) }
     val lanState by (session?.lan?.state ?: emptyLan).collectAsState()
+    val emptyRecording = remember { kotlinx.coroutines.flow.MutableStateFlow<de.kontrakurs.kontraprompter.video.LocalRecording>(de.kontrakurs.kontraprompter.video.LocalRecording.Idle) }
+    val recording by (session?.recording ?: emptyRecording).collectAsState()
+    var recordings by remember { mutableStateOf<List<SavedRecording>>(emptyList()) }
+    var pendingExportId by rememberSaveable { mutableStateOf<String?>(null) }
+    val exportScope = rememberCoroutineScope()
+    val exportDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { uri ->
+        val id = pendingExportId
+        pendingExportId = null
+        if (uri != null && id != null) exportScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val item = savedRecordings(activity).firstOrNull { it.id == id } ?: error("Aufnahme nicht gefunden")
+                    val digest = java.security.MessageDigest.getInstance("SHA-256")
+                    item.file.inputStream().buffered().use { input ->
+                        val buffer = ByteArray(256 * 1024)
+                        while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
+                    }
+                    val hash = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+                    check(hash == item.sha256) { "Aufnahmedatei wurde verändert" }
+                    activity.contentResolver.openOutputStream(uri, "w")?.use { output -> item.file.inputStream().buffered().use { it.copyTo(output) } }
+                        ?: error("Zieldatei nicht verfügbar")
+                }
+            }
+            android.widget.Toast.makeText(activity, if (result.isSuccess) "Video exportiert" else "Export fehlgeschlagen; die lokale Aufnahme bleibt erhalten.", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+    LaunchedEffect(page) { if (page == "recordings") recordings = withContext(Dispatchers.IO) { savedRecordings(activity) } }
     var cameraPermissionError by remember { mutableStateOf(false) }
+    var cameraBusyError by remember { mutableStateOf(false) }
     BackHandler(enabled = page != "roles") {
         when (page) {
-            "connection" -> { session?.close(); session = null; page = "roles" }
+            "connection" -> if (recording.isActive() && recording !is de.kontrakurs.kontraprompter.video.LocalRecording.Failed) session?.stopRecording() else { session?.close(); session = null; page = "roles" }
             "scripts" -> page = "roles"
             "studio", "editor" -> page = "scripts"
+            "recordings" -> page = "roles"
             "settings", "calibration", "prompter" -> page = "editor"
             else -> page = "roles"
         }
     }
-    fun startHost() { session?.close(); session = LiveSession(activity, true); page = "connection" }
+    fun startHost() {
+        if (!RtcVideo.cameraAvailable()) { cameraBusyError = true; return }
+        cameraBusyError = false; session?.close(); session = LiveSession(activity, true); page = "connection"
+    }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) { cameraPermissionError = false; startHost() } else cameraPermissionError = true
     }
@@ -203,9 +241,11 @@ private fun KontraApp(activity: ComponentActivity) {
                     if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startHost()
                     else cameraPermission.launch(Manifest.permission.CAMERA)
                 }
+                Action("Aufnahmen") { page = "recordings" }
                 if (cameraPermissionError) Text("Für die Kamera-Vorschau ist die Kameraerlaubnis erforderlich.", color = Color(0xffff7777))
+                if (cameraBusyError) Text("Die vorherige Aufnahme oder Kamera wird noch abgeschlossen. Bitte erneut versuchen.", color = Color(0xffffcd8a))
                 Spacer(Modifier.height(4.dp))
-                Text("Live-Vorschau zwischen zwei Geräten. Aufnahme und Ton sind noch nicht verfügbar.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+                Text("Live-Vorschau zwischen zwei Geräten. Aufnahmen mit Ton bleiben zunächst auf dem Kameragerät.", color = SoftText, style = MaterialTheme.typography.bodySmall)
             }
             "connection" -> session?.let { active ->
                 ConnectionScreen(active, onClose = { active.close(); session = null; page = "roles" }, onScripts = { page = "scripts" })
@@ -221,6 +261,18 @@ private fun KontraApp(activity: ComponentActivity) {
                 Text("Auf diesem Gerät", style = MaterialTheme.typography.titleMedium, color = SoftText)
                 scripts.forEach { script ->
                     ScriptTile(script.title.ifBlank { "Ohne Titel" }, "${script.text.length} Zeichen") { select(script.id); page = "editor" }
+                }
+            }
+            "recordings" -> Page("Aufnahmen", "LOKAL GESPEICHERT", onBack = { page = "roles" }) {
+                if (recordings.isEmpty()) Text("Noch keine abgeschlossenen Aufnahmen auf diesem Gerät.", color = SoftText)
+                recordings.forEach { item ->
+                    AppPanel {
+                        Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(item.createdAtMs)), style = MaterialTheme.typography.titleMedium)
+                        Text("${item.durationUs / 1_000_000} Sek. · ${item.bytes / (1024 * 1024)} MB", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                        if (item.partial) Text("Unvollständiges Teilvideo nach einem Fehler", color = Color(0xffffcd8a))
+                        else recordingStopDescription(item.reason)?.let { Text(it, color = Color(0xffffcd8a)) }
+                        MainAction("Video exportieren") { pendingExportId = item.id; exportDocument.launch("KontraPrompter-${item.id.take(8)}.mp4") }
+                    }
                 }
             }
             "studio" -> StudioScreen(studioClient, remoteEnabled, remoteStatus, onRemote = { remoteEnabled = it; remoteStatus = if (it) "Verbinde …" else "Aus" }, onSelect = { project ->

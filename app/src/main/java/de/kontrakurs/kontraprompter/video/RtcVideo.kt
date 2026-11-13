@@ -8,9 +8,13 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Preview only: owns the camera. It does not start or pretend to start an MP4 recording. */
-class RtcVideo(private val context: Context, private val host: Boolean, private val lan: LanSession) : AutoCloseable {
+class RtcVideo(private val context: Context, private val host: Boolean, private val lan: LanSession, private val cameraLease: Long? = null) : AutoCloseable {
     companion object {
         @Volatile private var initialized = false
+        private val cameraGate = RecordingResourceGate()
+        internal fun tryAcquireCamera(): Long? = cameraGate.tryAcquire()
+        internal fun releaseCamera(lease: Long) = cameraGate.release(lease)
+        fun cameraAvailable(): Boolean = cameraGate.isAvailable()
         @Synchronized private fun initialize(context: Context) {
             if (!initialized) { PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context.applicationContext).createInitializationOptions()); initialized = true }
         }
@@ -25,7 +29,11 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     private var camera: CameraVideoCapturer? = null
     private var textureHelper: SurfaceTextureHelper? = null
     private var remoteTrack: VideoTrack? = null
+    @Volatile internal var onCameraFailure: ((String) -> Unit)? = null
     private val sinks = mutableSetOf<VideoSink>()
+    private val previewViews = mutableSetOf<VideoView>()
+    private var pipelineClosed = false
+    private var eglReleased = false
     private val pendingCandidates = mutableListOf<IceCandidate>()
     private var remoteDescriptionSet = false
 
@@ -60,9 +68,9 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
         if (vp8.isNotEmpty()) p.transceivers.firstOrNull { it.mediaType == MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO }?.setCodecPreferences(vp8 + caps.filterNot { it.name.equals("VP8", true) })
     }
     private fun cameraEvents() = object : CameraVideoCapturer.CameraEventsHandler {
-        override fun onCameraError(error: String) { lan.report("Kamerafehler", error) }
-        override fun onCameraDisconnected() { lan.report("Kamerafehler", "Kamera wurde getrennt") }
-        override fun onCameraFreezed(error: String) { lan.report("Kamerafehler", error) }
+        override fun onCameraError(error: String) { lan.report("Kamerafehler", error); onCameraFailure?.invoke("Kamera meldet einen Fehler") }
+        override fun onCameraDisconnected() { lan.report("Kamerafehler", "Kamera wurde getrennt"); onCameraFailure?.invoke("Kamera wurde getrennt") }
+        override fun onCameraFreezed(error: String) { lan.report("Kamerafehler", error); onCameraFailure?.invoke("Kamerabild ist stehengeblieben") }
         override fun onCameraOpening(name: String) = Unit
         override fun onFirstFrameAvailable() { lan.reportFirstCameraFrame() }
         override fun onCameraClosed() = Unit
@@ -127,19 +135,45 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     }
     fun attach(sink: VideoSink) { synchronized(sinks) { if (!closed.get() && sinks.add(sink)) (if (host) localTrack else remoteTrack)?.addSink(sink) } }
     fun detach(sink: VideoSink) { synchronized(sinks) { (if (host) localTrack else remoteTrack)?.removeSink(sink); sinks.remove(sink) } }
+    internal fun createPreview(context: Context): VideoView? = synchronized(sinks) {
+        if (closed.get()) null else VideoView(context, egl.eglBaseContext).also { previewViews.add(it) }
+    }
+    internal fun releasePreview(view: VideoView) {
+        // A failed view release must not let the shared EGL context disappear underneath it.
+        if (runCatching { view.release() }.isFailure) return
+        val releaseEgl = synchronized(sinks) {
+            previewViews.remove(view)
+            takeEglRelease()
+        }
+        if (releaseEgl) runCatching { egl.release() }
+    }
+    private fun takeEglRelease(): Boolean {
+        if (!pipelineClosed || previewViews.isNotEmpty() || eglReleased) return false
+        eglReleased = true
+        return true
+    }
+    internal fun withLocalTrack(action: (VideoTrack?, EglBase.Context) -> Unit): Boolean {
+        if (closed.get()) return false
+        return runCatching {
+            executor.execute { action(if (closed.get() || !host) null else localTrack, egl.eglBaseContext) }
+        }.isSuccess
+    }
     private fun execute(block: () -> Unit) { if (!closed.get()) runCatching { executor.execute { if (!closed.get()) block() } } }
     override fun close() {
-        if (!closed.compareAndSet(false, true)) return
+        synchronized(sinks) { if (!closed.compareAndSet(false, true)) return }
         executor.execute {
             val track = synchronized(sinks) {
                 sinks.forEach { (if (host) localTrack else remoteTrack)?.removeSink(it) }
                 sinks.clear()
                 val old = localTrack; localTrack = null; remoteTrack = null; old
             }
-            runCatching { camera?.stopCapture() }; runCatching { camera?.dispose() }; runCatching { textureHelper?.dispose() }
+            val cameraStopped = runCatching { camera?.stopCapture() }.isSuccess
+            val cameraDisposed = runCatching { camera?.dispose() }.isSuccess
+            val textureDisposed = runCatching { textureHelper?.dispose() }.isSuccess
+            if (host && cameraStopped && cameraDisposed && textureDisposed) cameraLease?.let { releaseCamera(it) }
             runCatching { peer?.close(); peer?.dispose() }; runCatching { track?.dispose() }; runCatching { source?.dispose() }; runCatching { factory?.dispose() }
-            // Views must be detached before this owner is closed.
-            runCatching { egl.release() }
+            val releaseEgl = synchronized(sinks) { pipelineClosed = true; takeEglRelease() }
+            if (releaseEgl) runCatching { egl.release() }
         }
         executor.shutdown()
     }

@@ -1,7 +1,13 @@
 package de.kontrakurs.kontraprompter
 
 import android.app.Activity
+import android.Manifest
+import android.content.pm.PackageManager
 import android.view.WindowManager
+import android.widget.FrameLayout
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -35,21 +41,39 @@ import de.kontrakurs.kontraprompter.network.LanState
 import de.kontrakurs.kontraprompter.video.LiveSession
 import de.kontrakurs.kontraprompter.video.RtcVideo
 import de.kontrakurs.kontraprompter.video.VideoView
+import de.kontrakurs.kontraprompter.video.LocalRecording
+import de.kontrakurs.kontraprompter.video.isActive
+import de.kontrakurs.kontraprompter.video.recordingStopDescription
 
 @Composable
 fun LivePreview(video: RtcVideo, horizontal: Boolean = false, vertical: Boolean = false, rotation: Int = 0, fill: Boolean = false, opacity: Float = 1f, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val view = remember(video) { VideoView(context, video.egl.eglBaseContext) }
-    DisposableEffect(video, view) {
-        video.attach(view)
-        onDispose { video.detach(view); view.release() }
+    key(video) {
+        AndroidView(
+            factory = { context ->
+                FrameLayout(context).apply {
+                    video.createPreview(context)?.let { view ->
+                        tag = view
+                        addView(view, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+                        video.attach(view)
+                    }
+                }
+            },
+            update = { layout -> (layout.tag as? VideoView)?.setFill(fill) },
+            onRelease = { layout ->
+                (layout.tag as? VideoView)?.let { view ->
+                    video.detach(view)
+                    layout.removeView(view)
+                    video.releasePreview(view)
+                }
+            },
+            modifier = modifier.graphicsLayer {
+                scaleX = if (horizontal) -1f else 1f
+                scaleY = if (vertical) -1f else 1f
+                rotationZ = rotation.toFloat()
+                alpha = opacity
+            },
+        )
     }
-    AndroidView(factory = { view }, update = { it.setFill(fill) }, modifier = modifier.graphicsLayer {
-        scaleX = if (horizontal) -1f else 1f
-        scaleY = if (vertical) -1f else 1f
-        rotationZ = rotation.toFloat()
-        alpha = opacity
-    })
 }
 
 @Composable
@@ -138,7 +162,7 @@ fun ConnectionScreen(session: LiveSession, onClose: () -> Unit, onScripts: () ->
             }
         }
         if (state.ready && !session.host) MainAction("Zu Skripten und Prompter", onClick = onScripts)
-        Text("Nur Live-Vorschau. Aufnahme und Tonübertragung sind noch nicht verfügbar.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+        Text("Hier siehst du das Livebild. Die Aufnahme erfolgt am Kameragerät; Ton wird nicht live übertragen.", color = SoftText, style = MaterialTheme.typography.bodySmall)
         QuietAction("Trennen und zur Rollenwahl", onClick = onClose)
     }
 }
@@ -147,6 +171,14 @@ fun ConnectionScreen(session: LiveSession, onClose: () -> Unit, onScripts: () ->
 /** Camera-first workspace: pairing and transport state remain visible without implying a recording. */
 @Composable
 private fun CameraConnectionScreen(session: LiveSession, state: LanState, video: RtcVideo?, onClose: () -> Unit) {
+    val context = LocalContext.current
+    val recording by session.recording.collectAsState()
+    var permissionMessage by remember { mutableStateOf<String?>(null) }
+    val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            permissionMessage = if (session.startRecording()) null else "Die Kamera ist noch nicht bereit."
+        } else permissionMessage = "Für eine Aufnahme mit Ton ist die Mikrofonfreigabe erforderlich."
+    }
     val connected = state.status == "Videoverbindung hergestellt" && state.error == null
     val stateColor = when {
         state.error != null -> MaterialTheme.colorScheme.error
@@ -165,7 +197,31 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
                     Text("KONTRAPROMPTER", color = SoftText, style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp)
                     Text("Deine Kamera", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                 }
-                TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Text("Trennen") }
+                TextButton(onClick = onClose, enabled = !recording.isActive() || recording is LocalRecording.Failed, modifier = Modifier.heightIn(min = 48.dp)) { Text("Trennen") }
+            }
+            AppPanel {
+                Text("Aufnahme", style = MaterialTheme.typography.titleMedium)
+                when (val current = recording) {
+                    LocalRecording.Idle -> Text("Video mit Mikrofon auf diesem Gerät aufnehmen.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                    is LocalRecording.Preparing -> Text("Aufnahme wird vorbereitet …", color = SoftText)
+                    is LocalRecording.Recording -> Text(if (connected) "Aufnahme läuft · Video und Ton" else "Aufnahme läuft ohne Videoverbindung weiter.", color = Color(0xffffb2b2))
+                    is LocalRecording.Finalizing -> Text("Video wird sicher gespeichert …", color = SoftText)
+                    is LocalRecording.Ready -> Text("Aufnahme lokal gespeichert · ${current.durationUs / 1_000_000} Sek. Unter ‚Aufnahmen‘ kannst du sie exportieren.", color = Color(0xffa3dfbb))
+                    is LocalRecording.Partial -> Text("Aufnahme unvollständig: ${current.message} Ein geprüftes Teilvideo ist unter ‚Aufnahmen‘ exportierbar.", color = Color(0xffffcd8a))
+                    is LocalRecording.Failed -> Text("Aufnahme fehlgeschlagen: ${current.message}", color = MaterialTheme.colorScheme.error)
+                }
+                (recording as? LocalRecording.Ready)?.let { current -> recordingStopDescription(current.reason)?.let { Text(it, color = Color(0xffffcd8a)) } }
+                if (recording is LocalRecording.Preparing || recording is LocalRecording.Recording) {
+                    MainAction("Aufnahme stoppen") { session.stopRecording() }
+                } else if (recording !is LocalRecording.Finalizing) {
+                    MainAction("Aufnahme starten", enabled = connected && video != null && (recording as? LocalRecording.Failed)?.blocked != true) {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            permissionMessage = if (session.startRecording()) null else "Die Kamera ist noch nicht bereit."
+                        } else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                }
+                permissionMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                Text("Beim Verlassen der App wird die Aufnahme beendet. Abgeschlossene Videos bleiben lokal.", color = SoftText, style = MaterialTheme.typography.bodySmall)
             }
             Box(Modifier.fillMaxWidth().height(previewHeight).clip(RoundedCornerShape(24.dp))
                 .background(Color(0xff08090b)), contentAlignment = Alignment.Center) {
@@ -223,7 +279,7 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
                     else Text("Auf diesem Gerät bestätigt", color = Color(0xffa3dfbb), style = MaterialTheme.typography.labelLarge)
                 }
             }
-            Text("Nur Livebild · Aufnahme und Tonübertragung sind noch nicht verfügbar.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+            Text("Die Aufnahme bleibt auf diesem Gerät. Ton wird nicht live übertragen.", color = SoftText, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(12.dp))
         }
     }
