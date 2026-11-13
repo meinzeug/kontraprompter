@@ -5,6 +5,7 @@ Native Android-App für einen Teleprompter mit zwei Geräten. **Entwicklungsstan
 ## Implementiert
 
 - Deutsche Compose-Oberfläche und Offline-Skripte; mehrere Skripte werden im privaten App-Speicher gehalten. TXT/MD-Import über den Android-Dateiauswahldialog, Bearbeitung einschließlich Einfügen über die Systemtastatur.
+- Im Bereich „Studio-Skripte öffnen“ können nach Anmeldung Skripte über HTTPS von videomaker.dorfspy.de geladen und als lokale Kopien geöffnet werden. Lokale Änderungen werden nicht zum Studio zurückgeschrieben. Passwort und Sitzungscookie bleiben nur im Arbeitsspeicher.
 - Prompter mit zeitbasiertem Scrollen, manuellem Verschieben, Start/Pause, Anfang und Countdown. Tempo in dp/s. Schriftgröße, Zeilenabstand, Breite, Hintergrund, Displayhelligkeit und Leselinie einstellbar. Text horizontal/vertikal spiegelbar und in 90°-Schritten drehbar; Kalibrierbild mit Richtungsangaben.
 - Experimenteller lokaler Verbindungsweg: Kameragerät bietet einen temporären Dienst an; Android NSD sucht diesen, alternativ werden numerische IP und Port manuell eingegeben. Ein zufälliger 128-Bit-Code ist höchstens fünf Minuten gültig und wird bei erfolgreicher Authentifizierung verbraucht. Beide Geräte müssen die Verbindung bestätigen. Es werden keine Accounts oder externen Signaling-Server verwendet.
 - Authentifiziertes TCP-Signaling mit beidseitiger Challenge-Response, HMAC-SHA-256 und Sequenznummern. WebRTC mit Host-ICE-Kandidaten, ohne STUN/TURN, für die Videovorschau; WebRTC schützt Videodaten mittels DTLS-SRTP. Das Signaling selbst ist authentifiziert, aber nicht verschlüsselt: Netzwerkteilnehmer können beispielsweise IP-Adressen und SDP-Inhalt beobachten. Der Sitzungscode wird nicht übertragen oder protokolliert.
@@ -23,7 +24,7 @@ Diese Schritte wurden auf einem Samsung Galaxy A52 5G und einem Xiaomi 2409BRN2C
 
 ## Noch offen
 
-M3/M4 einschließlich MP4/Audio, Fernsteuerung und ACKs, gleichzeitiger Aufnahme und Stream oder geräteabhängiger Fallbacks, Aufnahme-Foreground-Service, Hotspot, automatischem Reconnect und vollständigem Hardware-/Thermomanagement. Außerdem fehlen QR-Code, Video-Kalibrierbild, Presets, weitere Textoptionen, Skriptexport, End-to-End-Bildlatenzmessung, Screenshots und viele der gewünschten automatisierten Tests. Die H.264-Bildstörung und weitere Hardwarefälle müssen noch untersucht werden. Es werden keine Frames oder Skripte auf einen Server hochgeladen; beide Geräte kommunizieren unmittelbar im gewählten Netz.
+M3/M4 einschließlich MP4/Audio, Cloud-Upload, Web-Fernsteuerung und ACKs, gleichzeitiger Aufnahme und Stream oder geräteabhängiger Fallbacks, Aufnahme-Foreground-Service, Hotspot, automatischem Reconnect und vollständigem Hardware-/Thermomanagement. Außerdem fehlen QR-Code, Video-Kalibrierbild, Presets, weitere Textoptionen, Skriptexport, End-to-End-Bildlatenzmessung, Screenshots und viele der gewünschten automatisierten Tests. Die H.264-Bildstörung und weitere Hardwarefälle müssen noch untersucht werden. Die Live-Vorschau kommuniziert unmittelbar im gewählten Netz; die Studio-Anbindung lädt Skripte von videomaker.dorfspy.de.
 
 ## Bauen unter Ubuntu/Linux
 

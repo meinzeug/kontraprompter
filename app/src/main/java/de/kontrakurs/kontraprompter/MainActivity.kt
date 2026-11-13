@@ -150,9 +150,14 @@ private fun KontraApp(activity: ComponentActivity) {
                     if (session == null) session = LiveSession(activity, false)
                     page = "connection"
                 }
+                Action("STUDIO-SKRIPTE ÖFFNEN") { page = "studio" }
                 Action("NEUES SKRIPT") { val s = Script(); scripts = scripts + s; repository.save(scripts); select(s.id); page = "editor" }
                 Action("ZUR ROLLENWAHL") { page = "roles" }
             }
+            "studio" -> StudioScreen(onSelect = { project ->
+                val copy = Script(title = project.title, text = project.text)
+                scripts = scripts + copy; repository.save(scripts); select(copy.id); page = "editor"
+            }, onBack = { page = "scripts" })
             "editor" -> Page("SKRIPT BEARBEITEN", "ÄNDERUNGEN WERDEN LOKAL GESPEICHERT") {
                 OutlinedTextField(value = selected.title, onValueChange = { update(selected.copy(title = it)) }, label = { Text("Titel") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = selected.text, onValueChange = { update(selected.copy(text = it)) }, label = { Text("Skripttext") }, modifier = Modifier.fillMaxWidth().height(260.dp))
