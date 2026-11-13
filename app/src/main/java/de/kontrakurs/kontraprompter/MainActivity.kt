@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
@@ -47,16 +48,14 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withTimeoutOrNull
 
-private val Red = Color(0xffe50914)
-private val Background = Color(0xff0d0d0d)
-private val Surface = Color(0xff1b1b1b)
+private val Red = Accent
 private data class RemoteEvent(val type: String, val completed: CompletableDeferred<Unit>)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme(primary = Red, background = Background, surface = Surface, onPrimary = Color.White)) {
+            KontraTheme {
                 KontraApp(this)
             }
         }
@@ -82,6 +81,15 @@ private fun KontraApp(activity: ComponentActivity) {
     val emptyLan = remember { kotlinx.coroutines.flow.MutableStateFlow(LanState()) }
     val lanState by (session?.lan?.state ?: emptyLan).collectAsState()
     var cameraPermissionError by remember { mutableStateOf(false) }
+    BackHandler(enabled = page != "roles") {
+        when (page) {
+            "connection" -> { session?.close(); session = null; page = "roles" }
+            "scripts" -> page = "roles"
+            "studio", "editor" -> page = "scripts"
+            "settings", "calibration", "prompter" -> page = "editor"
+            else -> page = "roles"
+        }
+    }
     fun startHost() { session?.close(); session = LiveSession(activity, true); page = "connection" }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) { cameraPermissionError = false; startHost() } else cameraPermissionError = true
@@ -181,103 +189,111 @@ private fun KontraApp(activity: ComponentActivity) {
         activity.window.attributes = attrs
         onDispose { activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); val a = activity.window.attributes; a.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE; activity.window.attributes = a }
     }
-    Surface(modifier = Modifier.fillMaxSize(), color = Background) {
+    CompositionLocalProvider(
+        LocalRemoteIndicator provides if (remoteEnabled) RemoteIndicator(remoteStatus) { remoteEnabled = false; remoteStatus = "Aus" } else null,
+        LocalCameraIndicator provides session?.let { CameraIndicator(lanState.status, lanState.status == "Videoverbindung hergestellt") { page = "connection" } }
+    ) {
+    AppBackground {
         when (page) {
-            "roles" -> Page("KONTRAKURS", "KONTRAPROMPTER") {
-                Text("Zwei Geräte. Ein Auftritt.", style = MaterialTheme.typography.headlineMedium)
-                Spacer(Modifier.height(20.dp))
-                Action("TELEPROMPTER / ANZEIGE") { page = "scripts" }
-                Action("KAMERA / VORSCHAU") {
+            "roles" -> AppPage("Bereit für deinen Auftritt.", "KONTRAPROMPTER", "Verbinde Kamera und Text – und behalte alles im Blick.") {
+                Spacer(Modifier.height(8.dp))
+                Text("Dieses Gerät verwenden als", style = MaterialTheme.typography.titleMedium, color = SoftText)
+                RoleTile("Teleprompter", "Skripte lesen und fernsteuern", camera = false) { page = "scripts" }
+                RoleTile("Kamera", "Livebild für den Teleprompter", camera = true) {
                     if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startHost()
                     else cameraPermission.launch(Manifest.permission.CAMERA)
                 }
                 if (cameraPermissionError) Text("Für die Kamera-Vorschau ist die Kameraerlaubnis erforderlich.", color = Color(0xffff7777))
-                Text("Lokaler Prompter und experimentelle Live-Vorschau. Aufnahme und Ton sind noch nicht implementiert.", color = Color.LightGray)
+                Spacer(Modifier.height(4.dp))
+                Text("Live-Vorschau zwischen zwei Geräten. Aufnahme und Ton sind noch nicht verfügbar.", color = SoftText, style = MaterialTheme.typography.bodySmall)
             }
             "connection" -> session?.let { active ->
                 ConnectionScreen(active, onClose = { active.close(); session = null; page = "roles" }, onScripts = { page = "scripts" })
-            } ?: Page("VERBINDUNG", "NICHT VERBUNDEN") { Action("ZUR ROLLENWAHL") { page = "roles" } }
-            "scripts" -> Page("SKRIPTE", "OFFLINE AUF DIESEM GERÄT") {
-                scripts.forEach { script ->
-                    Card(colors = CardDefaults.cardColors(containerColor = Surface), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { select(script.id); page = "editor" }) {
-                        Column(Modifier.padding(16.dp)) { Text(script.title.ifBlank { "Ohne Titel" }, style = MaterialTheme.typography.titleLarge); Text("${script.text.length} Zeichen", color = Color.LightGray) }
-                    }
-                }
-                Action(if (session == null) "KAMERA VERBINDEN" else "VERBINDUNG ANZEIGEN") {
+            } ?: Page("Nicht verbunden", "VERBINDUNG", onBack = { page = "roles" }) { Action("Zur Rollenwahl") { page = "roles" } }
+            "scripts" -> Page("Deine Skripte", "TELEPROMPTER", onBack = { page = "roles" }) {
+                MainAction("Skripte aus Videomaker öffnen") { page = "studio" }
+                Action(if (session == null) "Kamera verbinden" else "Verbindung anzeigen") {
                     if (session == null) session = LiveSession(activity, false)
                     page = "connection"
                 }
-                Action("STUDIO-SKRIPTE ÖFFNEN") { page = "studio" }
-                Action("NEUES SKRIPT") { val s = Script(); scripts = scripts + s; repository.save(scripts); select(s.id); page = "editor" }
-                Action("ZUR ROLLENWAHL") { page = "roles" }
+                Action("Neues Skript") { val s = Script(); scripts = scripts + s; repository.save(scripts); select(s.id); page = "editor" }
+                Spacer(Modifier.height(6.dp))
+                Text("Auf diesem Gerät", style = MaterialTheme.typography.titleMedium, color = SoftText)
+                scripts.forEach { script ->
+                    ScriptTile(script.title.ifBlank { "Ohne Titel" }, "${script.text.length} Zeichen") { select(script.id); page = "editor" }
+                }
             }
             "studio" -> StudioScreen(studioClient, remoteEnabled, remoteStatus, onRemote = { remoteEnabled = it; remoteStatus = if (it) "Verbinde …" else "Aus" }, onSelect = { project ->
                 val copy = Script(title = project.title, text = project.text)
                 scripts = scripts + copy; repository.save(scripts); select(copy.id); page = "editor"
             }, onBack = { page = "scripts" })
-            "editor" -> Page("SKRIPT BEARBEITEN", "ÄNDERUNGEN WERDEN LOKAL GESPEICHERT") {
+            "editor" -> Page("Skript bearbeiten", "LOKAL GESPEICHERT", onBack = { page = "scripts" }) {
                 OutlinedTextField(value = selected.title, onValueChange = { update(selected.copy(title = it)) }, label = { Text("Titel") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = selected.text, onValueChange = { update(selected.copy(text = it)) }, label = { Text("Skripttext") }, modifier = Modifier.fillMaxWidth().height(260.dp))
-                Action("TXT / MD IMPORTIEREN") { importer.launch(arrayOf("text/*", "application/octet-stream")) }
-                Action("PROMPTER STARTEN") { page = "prompter" }
-                Action("EINSTELLUNGEN") { page = "settings" }
-                Action("KALIBRIERUNG") { page = "calibration" }
-                Action("SKRIPTLISTE") { page = "scripts" }
+                MainAction("Teleprompter öffnen") { page = "prompter" }
+                Action("TXT oder Markdown importieren") { importer.launch(arrayOf("text/*", "application/octet-stream")) }
+                Action("Einstellungen") { page = "settings" }
+                Action("Spiegelung kalibrieren") { page = "calibration" }
             }
-            "settings" -> Page("EINSTELLUNGEN", "PROMPTER") {
+            "settings" -> Page("Einstellungen", "TELEPROMPTER", onBack = { page = "editor" }) {
+                Text("Text und Tempo", style = MaterialTheme.typography.titleLarge)
                 SettingSlider("Schriftgröße", fontSize, 20f..100f, "${fontSize.toInt()} sp") { fontSize = it }
                 SettingSlider("Scrolltempo", speed, 5f..160f, "${speed.toInt()} dp/s") { speed = it }
                 SettingSlider("Textbreite", width, .35f..1f, "${(width * 100).toInt()} %") { width = it }
                 SettingSlider("Zeilenabstand", lineSpacing, 1f..2f, "${(lineSpacing * 100).toInt()} %") { lineSpacing = it }
                 SettingSlider("Texthintergrund", backgroundOpacity, 0f..1f, "${(backgroundOpacity * 100).toInt()} %") { backgroundOpacity = it }
                 SettingSlider("Displayhelligkeit", brightness, .05f..1f, "${(brightness * 100).toInt()} %") { brightness = it }
+                Text("Kamerabild", style = MaterialTheme.typography.titleLarge)
                 Toggle("Video horizontal spiegeln", videoH) { videoH = it }
                 Toggle("Video vertikal spiegeln", videoV) { videoV = it }
                 Toggle("Video füllt Bild (Beschnitt)", videoFill) { videoFill = it }
-                Action("VIDEO DREHEN: $videoRotation°") { videoRotation = (videoRotation + 90) % 360 }
+                Action("Video drehen: $videoRotation°") { videoRotation = (videoRotation + 90) % 360 }
                 SettingSlider("Video-Deckkraft", videoOpacity, 0f..1f, "${(videoOpacity * 100).toInt()} %") { videoOpacity = it }
                 SettingSlider("Video-Helligkeit", videoBrightness, 0f..1f, "${(videoBrightness * 100).toInt()} %") { videoBrightness = it }
+                Text("Anzeige und Spiegelung", style = MaterialTheme.typography.titleLarge)
                 Toggle("Text horizontal spiegeln", textH) { textH = it }
                 Toggle("Text vertikal spiegeln", textV) { textV = it }
                 Toggle("Fettschrift", bold) { bold = it }
                 Toggle("Leselinie", focusLine) { focusLine = it }
                 Toggle("Bildschirm eingeschaltet lassen", keepAwake) { keepAwake = it }
-                Action("TEXT DREHEN: $textRotation°") { textRotation = (textRotation + 90) % 360 }
-                Action("COUNTDOWN: $countdown SEKUNDEN") { countdown = when (countdown) { 3 -> 5; 5 -> 10; else -> 3 } }
+                Action("Text drehen: $textRotation°") { textRotation = (textRotation + 90) % 360 }
+                Action("Countdown: $countdown Sekunden") { countdown = when (countdown) { 3 -> 5; 5 -> 10; else -> 3 } }
                 Text("Fit zeigt das ganze Bild mit möglichen Balken. Fill füllt die Fläche und kann das Bild beschneiden.", color = Color.LightGray)
-                Action("ZURÜCK ZUM EDITOR") { page = "editor" }
+                Action("Zurück zum Editor") { page = "editor" }
             }
-            "calibration" -> Page("SPIEGELUNG KALIBRIEREN", "AM SPIEGELGLAS AUSRICHTEN") {
+            "calibration" -> Page("Spiegelung kalibrieren", "AM SPIEGELGLAS", onBack = { page = "editor" }) {
                 Text("Prüfe die Lesbarkeit im tatsächlichen Aufbau. Glas und Geräteausrichtung können unterschiedliche Einstellungen erfordern.")
                 Box(Modifier.fillMaxWidth().height(220.dp).background(Color.Black), contentAlignment = Alignment.Center) {
                     Text("↑ OBEN\nL ←   → R\nUNTEN ↓", modifier = Modifier.graphicsLayer { scaleX = if (textH) -1f else 1f; scaleY = if (textV) -1f else 1f; rotationZ = textRotation.toFloat() }, color = Color.White, fontSize = 30.sp, textAlign = TextAlign.Center)
                 }
                 Toggle("Text horizontal spiegeln", textH) { textH = it }
                 Toggle("Text vertikal spiegeln", textV) { textV = it }
-                Action("DREHEN: $textRotation°") { textRotation = (textRotation + 90) % 360 }
-                Action("ZURÜCK") { page = "editor" }
+                Action("Drehen: $textRotation°") { textRotation = (textRotation + 90) % 360 }
             }
             "prompter" -> key(selected.id) { Prompter(selected.text, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, remoteActions) { playbackStatus = it } }
         }
     }
+    }
 }
 
 @Composable
-private fun Page(title: String, eyebrow: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(eyebrow, color = Red, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-        Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
-        Spacer(Modifier.height(8.dp))
-        content()
-        Spacer(Modifier.height(24.dp))
+private fun Page(title: String, eyebrow: String, onBack: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) = AppPage(title, eyebrow, onBack = onBack, content = content)
+@Composable private fun Action(label: String, onClick: () -> Unit) = QuietAction(label, onClick = onClick)
+@Composable private fun Toggle(label: String, value: Boolean, change: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Panel).padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge); Switch(checked = value, onCheckedChange = change)
     }
 }
-@Composable private fun Action(label: String, onClick: () -> Unit) { Button(onClick = onClick, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(8.dp)) { Text(label, fontWeight = FontWeight.Bold) } }
-@Composable private fun Toggle(label: String, value: Boolean, change: (Boolean) -> Unit) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) { Text(label, modifier = Modifier.weight(1f)); Switch(checked = value, onCheckedChange = change) } }
-@Composable private fun SettingSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, display: String, change: (Float) -> Unit) { Column { Text("$label: $display"); Slider(value = value, onValueChange = change, valueRange = range) } }
+@Composable private fun SettingSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, display: String, change: (Float) -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Panel).padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(label, style = MaterialTheme.typography.bodyLarge); Text(display, color = SoftText, style = MaterialTheme.typography.labelLarge) }
+        Slider(value = value, onValueChange = change, valueRange = range)
+    }
+}
 
 @Composable
 private fun Prompter(text: String, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
+    val remote = LocalRemoteIndicator.current
     val scroll = rememberScrollState(initialPosition)
     val density = LocalDensity.current.density
     val scope = rememberCoroutineScope()
@@ -327,20 +343,23 @@ private fun Prompter(text: String, fontSize: Float, speed: Float, width: Float, 
                 Spacer(Modifier.height(400.dp))
             }
         }
-        if (controls) Text(
-            if (lanState.role.isEmpty()) "OFFLINE-PROMPTER" else lanState.status + (lanState.rttMs?.let { " · RTT $it ms" } ?: ""),
-            modifier = Modifier.align(Alignment.TopStart).background(Color(0xbb191919)).padding(8.dp),
-            color = Color.White
-        )
+        if (controls || remote != null) Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (remote != null) RemoteBanner(remote)
+            if (controls) Text(
+                if (lanState.role.isEmpty()) "Offline-Prompter" else lanState.status + (lanState.rttMs?.let { " · RTT $it ms" } ?: ""),
+                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xe6202329)).padding(horizontal = 14.dp, vertical = 9.dp),
+                color = Color.White, style = MaterialTheme.typography.labelMedium
+            )
+        }
         if (focusLine) Box(Modifier.align(Alignment.CenterStart).width(22.dp).height(3.dp).background(Red))
         if (remaining > 0) Text("$remaining", Modifier.align(Alignment.Center), color = Red, fontSize = 100.sp, fontWeight = FontWeight.Black)
-        if (controls) Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color(0xdd191919)).padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = back) { Text("EDITOR") }
-            TextButton(onClick = { playing = false; scope.launch { scroll.scrollTo(0) } }) { Text("ANFANG") }
+        if (controls) Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xf022252c)).padding(horizontal = 8.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = back, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Editor", color = Color.White) }
+            TextButton(onClick = { playing = false; countdownJob?.cancel(); remaining = 0; scope.launch { scroll.scrollTo(0) } }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Anfang", color = Color.White) }
             Button(onClick = {
                 if (playing || remaining > 0) { countdownJob?.cancel(); playing = false; remaining = 0 }
                 else { countdownJob = scope.launch { remaining = countdownSeconds; while (remaining > 0) { delay(1000); remaining-- }; playing = true } }
-            }) { Text(if (playing || remaining > 0) "PAUSE" else "START") }
+            }, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(17.dp)) { Text(if (playing || remaining > 0) "Pause" else "Start") }
         }
     }
 }

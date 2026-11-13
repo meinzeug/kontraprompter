@@ -10,6 +10,7 @@
 - Ein Testskript wurde auf dem Xiaomi über dem empfangenen Kamerabild angezeigt und nach Countdown automatisch gescrollt. Bei bevorzugtem H.264 war das Empfangsbild stark blockartig gestört, während die lokale Kamera-Vorschau klar war. Nach Umstellung der Codec-Priorität auf VP8 war das Bild im kurzen Vergleich klar. Die Ursache der H.264-Störung ist noch ungeklärt; die Statusmeldung zur Verbindung allein belegt keine ausreichende Bildqualität.
 - Die Signalisierungs-RTT lag bei dieser Stichprobe ungefähr zwischen 50 und 130 ms; daraus lässt sich die Bildlatenz nicht ableiten. Ein längerer Stabilitätstest und die Ursachenanalyse der Bildstörung stehen aus.
 - Studio-Anmeldung und Skriptliste über HTTPS auf dem Xiaomi getestet. Bei aktivierter Web-Fernsteuerung wurde ein Studio-Skript über die Live-Schnittstelle auf das Gerät geladen; Start und Pause wurden am Gerät beobachtet. Der Status meldete anschließend „Pausiert“. Kamera-Fernsteuerung, Aufnahme und Cloud-Upload bleiben offen.
+- Nach der Gestaltungsüberarbeitung wurden beide Startansichten auf den realen Geräten geprüft und die Verbindung erneut manuell gekoppelt. Während des laufenden Videobilds funktionierten Studio-Skriptladen, Start, Pause und Anfang; die Hinweise für Studio und Kamera sowie die Android-Zurück-Navigation wurden geprüft. In einer kurzen Stichprobe meldeten die Renderer etwa 16–17 Bilder pro Sekunde. Ein längerer Stabilitäts- oder Latenztest ist dies nicht.
 
 ## Weitere Tests auf zwei Android-Geräten
 
