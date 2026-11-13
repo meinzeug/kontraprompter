@@ -1,8 +1,11 @@
 package de.kontrakurs.kontraprompter
 
 import android.app.Activity
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,13 +17,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import de.kontrakurs.kontraprompter.network.LanState
 import de.kontrakurs.kontraprompter.video.LiveSession
 import de.kontrakurs.kontraprompter.video.RtcVideo
 import de.kontrakurs.kontraprompter.video.VideoView
@@ -45,6 +55,10 @@ fun LivePreview(video: RtcVideo, horizontal: Boolean = false, vertical: Boolean 
 fun ConnectionScreen(session: LiveSession, onClose: () -> Unit, onScripts: () -> Unit) {
     val state by session.lan.state.collectAsState()
     val video by session.video.collectAsState()
+    if (session.host) {
+        CameraConnectionScreen(session, state, video, onClose)
+        return
+    }
     var address by rememberSaveable { mutableStateOf("") }
     var port by rememberSaveable { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
@@ -110,5 +124,90 @@ fun ConnectionScreen(session: LiveSession, onClose: () -> Unit, onScripts: () ->
         if (state.ready && !session.host) MainAction("Zu Skripten und Prompter", onClick = onScripts)
         Text("Nur Live-Vorschau. Aufnahme und Tonübertragung sind noch nicht verfügbar.", color = SoftText, style = MaterialTheme.typography.bodySmall)
         QuietAction("Trennen und zur Rollenwahl", onClick = onClose)
+    }
+}
+
+
+/** Camera-first workspace: pairing and transport state remain visible without implying a recording. */
+@Composable
+private fun CameraConnectionScreen(session: LiveSession, state: LanState, video: RtcVideo?, onClose: () -> Unit) {
+    val connected = state.status == "Videoverbindung hergestellt" && state.error == null
+    val stateColor = when {
+        state.error != null -> MaterialTheme.colorScheme.error
+        connected -> Color(0xff91d6b2)
+        else -> Color(0xffffcd8a)
+    }
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        val previewHeight = (maxHeight * 0.43f).coerceIn(210.dp, 380.dp)
+        Column(
+            Modifier.fillMaxHeight().widthIn(max = 640.dp).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("KONTRAPROMPTER", color = SoftText, style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp)
+                    Text("Deine Kamera", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                }
+                TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Text("Trennen") }
+            }
+            Box(Modifier.fillMaxWidth().height(previewHeight).clip(RoundedCornerShape(24.dp))
+                .background(Color(0xff08090b)), contentAlignment = Alignment.Center) {
+                if (video != null) {
+                    LivePreview(video, modifier = Modifier.fillMaxSize())
+                } else {
+                    Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Canvas(Modifier.size(44.dp)) {
+                            val stroke = 2.dp.toPx()
+                            drawRoundRect(Color(0xff83909d), Offset(size.width * .05f, size.height * .23f), Size(size.width * .63f, size.height * .54f), CornerRadius(size.width * .13f), style = Stroke(stroke))
+                            drawLine(Color(0xff83909d), Offset(size.width * .68f, size.height * .38f), Offset(size.width * .92f, size.height * .24f), stroke)
+                            drawLine(Color(0xff83909d), Offset(size.width * .92f, size.height * .24f), Offset(size.width * .92f, size.height * .76f), stroke)
+                            drawLine(Color(0xff83909d), Offset(size.width * .92f, size.height * .76f), Offset(size.width * .68f, size.height * .62f), stroke)
+                        }
+                        Text(if (state.error != null) "Vorschau nicht verfügbar" else "Vorschau wartet auf Verbindung", color = Color(0xffe3e7ed), style = MaterialTheme.typography.titleSmall)
+                        Text("Nach der bestätigten Kopplung erscheint hier das Kamerabild.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Box(Modifier.align(Alignment.TopStart).padding(12.dp).clip(RoundedCornerShape(50))
+                    .background(Color(0xff161a20).copy(alpha = .94f)).padding(horizontal = 12.dp, vertical = 7.dp)) {
+                    Text("KAMERAVORSCHAU", color = Color.White, style = MaterialTheme.typography.labelSmall, letterSpacing = .6.sp)
+                }
+                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(36.dp).background(
+                    Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .5f)))
+                ))
+            }
+            Surface(Modifier.fillMaxWidth(), color = Panel.copy(alpha = .96f), shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, Color(0xff343a44))) {
+                Column(Modifier.padding(horizontal = 18.dp, vertical = 15.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.size(8.dp).background(stateColor, RoundedCornerShape(50)))
+                        Column(Modifier.weight(1f)) {
+                            Text("VERBINDUNG", color = SoftText, style = MaterialTheme.typography.labelSmall, letterSpacing = .6.sp)
+                            Text(state.status, style = MaterialTheme.typography.titleSmall)
+                        }
+                    }
+                    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    if (state.authenticated && state.remoteName.isNotBlank()) Text("Anzeigegerät: ${state.remoteName}", color = SoftText, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (!state.authenticated && state.token.isNotEmpty()) {
+                AppPanel {
+                    Text("Mit Teleprompter verbinden", style = MaterialTheme.typography.titleMedium)
+                    Text("Öffne auf dem zweiten Smartphone die Kameraverbindung und gib diesen Sitzungscode ein.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                    Text(state.token.chunked(4).joinToString(" ").uppercase(), style = MaterialTheme.typography.headlineSmall, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Text("Adresse: ${state.addresses.joinToString().ifBlank { "Keine IPv4-Adresse gefunden" }}\nPort: ${state.port}", color = SoftText, style = MaterialTheme.typography.bodySmall)
+                    Text("Beide Geräte benötigen dasselbe lokale Netzwerk. Der Code gilt höchstens fünf Minuten.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+                }
+            } else if (state.authenticated && (!state.localApproved || !state.remoteApproved)) {
+                AppPanel {
+                    Text("Kopplung bestätigen", style = MaterialTheme.typography.titleMedium)
+                    Text(if (state.remoteApproved) "Das Anzeigegerät hat bestätigt." else "Warte auf die Bestätigung des Anzeigegeräts.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                    if (!state.localApproved) MainAction("Auf diesem Gerät bestätigen") { session.lan.approve() }
+                    else Text("Auf diesem Gerät bestätigt", color = Color(0xffa3dfbb), style = MaterialTheme.typography.labelLarge)
+                }
+            }
+            Text("Nur Livebild · Aufnahme und Tonübertragung sind noch nicht verfügbar.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(12.dp))
+        }
     }
 }
