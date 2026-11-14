@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -104,7 +105,8 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
     var address by rememberSaveable { mutableStateOf("") }
     var port by rememberSaveable { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
-    LaunchedEffect(state.authenticated) { if (state.authenticated) token = "" }
+    var showToken by remember { mutableStateOf(false) }
+    LaunchedEffect(state.authenticated) { if (state.authenticated) { token = ""; showToken = false } }
     val activity = LocalContext.current as Activity
     AppPage(
         title = if (session.host) "Deine Kamera" else "Kamera verbinden",
@@ -149,7 +151,16 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
                 }
                 OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("IP-Adresse") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = port, onValueChange = { port = it }, label = { Text("Port") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = token, onValueChange = { token = it }, label = { Text("Sitzungscode") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    label = { Text("Sitzungscode") },
+                    keyboardOptions = sessionCodeKeyboardOptions(),
+                    visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = { TextButton(onClick = { showToken = !showToken }) { Text(if (showToken) "Verbergen" else "Anzeigen") } },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 MainAction("Verbinden", enabled = state.status != "Verbinde …") { session.lan.connect(address, port.toIntOrNull() ?: 0, token) }
             }
         }
