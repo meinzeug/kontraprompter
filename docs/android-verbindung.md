@@ -144,3 +144,11 @@ seit diesen Änderungen noch nicht gebaut oder auf Geräten geprüft. Der
 PCM-Abzweig hat standardmäßig keine Verbraucher und überträgt weder Audio
 noch Transkripte. Er bietet nur während einer laufenden lokalen Aufnahme Daten;
 eine Tonvorschau vor Aufnahmebeginn ist damit nicht umgesetzt.
+
+Der im Entwicklungsbranch ergänzte `ReconnectGate` kapselt den noch nicht
+angeschlossenen Wiederverbindungszustand. Er bindet eine frische Challenge und
+Generation an jeden Versuch, verlangt eine aktuelle authentifizierte
+Serverauskunft und einen bestätigten Peer-Pin und sperrt bei Widerruf oder
+Identitätsänderung. Netzwerkverlust und Stop verwerfen verspätete Ergebnisse.
+Fünf isolierte JVM-Tests bestanden; HTTPS-Serverclient, persistenter Widerruf,
+Backoff, aktive Sitzungsanbindung und realer Neustarttest fehlen weiterhin.
