@@ -5,6 +5,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import de.kontrakurs.kontraprompter.network.LanSession
+import de.kontrakurs.kontraprompter.network.SignalingPort
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -54,6 +55,8 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
     private var remoteExclusive = false
     private var recorder: RtcMp4Recorder? = null
     val lan = LanSession(context)
+    private val signaling: SignalingPort = lan
+    internal val audioTap = PcmTee()
     private val _video = MutableStateFlow<RtcVideo?>(null)
     val video: StateFlow<RtcVideo?> = _video
     private val _recording = MutableStateFlow<LocalRecording>(LocalRecording.Idle)
@@ -61,7 +64,7 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
     private val _cameraSelection = MutableStateFlow(CameraSelection())
     val cameraSelection: StateFlow<CameraSelection> = _cameraSelection
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    internal val pairedCapture = PairedCapture(host, lan, scope, this)
+    internal val pairedCapture = PairedCapture(host, signaling, scope, this)
 
     init {
         scope.launch { recording.collect { pairedCapture.changed() } }
@@ -72,7 +75,7 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
                 else {
                     val lease = if (host) RtcVideo.tryAcquireCamera() else null
                     if (host && lease == null) { lan.report("Kamera noch beschäftigt", "Die vorherige Aufnahme wird noch abgeschlossen. Bitte erneut verbinden."); null }
-                    else try { RtcVideo(app, host, lan, lease, preferFrontCamera).also { created ->
+                    else try { RtcVideo(app, host, signaling, lease, preferFrontCamera).also { created ->
                         created.onCameraFailure = ::cameraFailed
                         created.onCameraSelection = { front, canSwitch ->
                             synchronized(guard) { if (_video.value === created && !closed) _cameraSelection.value = CameraSelection(front = front, canSwitch = canSwitch) }
@@ -142,7 +145,7 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
             if (track == null) {
                 recordingEvent(RtcMp4Recorder.Event.Failed(id, "Kamera ist noch nicht bereit", null))
             } else {
-                val capture = RtcMp4Recorder(app, track, egl, id, projectId, origin, ::recordingEvent)
+                val capture = RtcMp4Recorder(app, track, egl, id, projectId, origin, ::recordingEvent, audioTap)
                 val started = synchronized(guard) {
                     recorder = capture
                     val ok = capture.start()
@@ -317,6 +320,7 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
             else { recorder?.stop(); release = null }
         }
         lan.close()
+        audioTap.close()
         scope.cancel()
         release?.close()
     }

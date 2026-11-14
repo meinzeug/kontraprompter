@@ -1,14 +1,14 @@
 package de.kontrakurs.kontraprompter.video
 
 import android.content.Context
-import de.kontrakurs.kontraprompter.network.LanSession
+import de.kontrakurs.kontraprompter.network.SignalingPort
 import org.json.JSONObject
 import org.webrtc.*
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Preview only: owns the camera. It does not start or pretend to start an MP4 recording. */
-class RtcVideo(private val context: Context, private val host: Boolean, private val lan: LanSession, private val cameraLease: Long? = null, private val preferFrontCamera: Boolean = true) : AutoCloseable {
+class RtcVideo(private val context: Context, private val host: Boolean, private val lan: SignalingPort, private val cameraLease: Long? = null, private val preferFrontCamera: Boolean = true) : AutoCloseable {
     companion object {
         @Volatile private var initialized = false
         private val cameraGate = RecordingResourceGate()

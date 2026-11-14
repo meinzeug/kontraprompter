@@ -51,6 +51,7 @@ internal class RtcMp4Recorder(
     private val projectId: String?,
     private val origin: RecordingOrigin,
     private val listener: (Event) -> Unit,
+    private val audioTap: PcmTee? = null,
 ) : VideoSink, Closeable {
     sealed interface Event {
         data class Preparing(val recordingId: String) : Event
@@ -143,7 +144,9 @@ internal class RtcMp4Recorder(
     /** Stop accepting new camera/audio samples without closing the MP4. */
     fun pause(): Boolean = synchronized(pauseLock) {
         if (!configured.get() || !firstMedia.get() || stopRequested.get() || finished.get()) return false
-        pauseTimeline?.pause(System.nanoTime()) == true
+        val changed = pauseTimeline?.pause(System.nanoTime()) == true
+        if (changed) audioTap?.invalidate()
+        changed
     }
 
     fun resume(): Boolean = synchronized(pauseLock) {
@@ -155,7 +158,9 @@ internal class RtcMp4Recorder(
         val now = SystemClock.elapsedRealtime()
         lastVideoAtMs.set(now); lastAudioAtMs.set(now)
         lastEncodedVideoMs.set(now); lastEncodedAudioMs.set(now)
-        pauseTimeline?.resume(System.nanoTime()) == true
+        val changed = pauseTimeline?.resume(System.nanoTime()) == true
+        if (changed) audioTap?.invalidate()
+        changed
     }
 
     override fun close() { stop() }
@@ -289,6 +294,7 @@ internal class RtcMp4Recorder(
                 lastRawPts = rawPts
                 val absoluteNs = Math.addExact(timelineOriginNs, Math.multiplyExact(rawPts, 1_000L))
                 val spanNs = (n / 2).toLong() * 1_000_000_000L / SAMPLE_RATE
+                val audioGeneration = if (stopRequested.get()) null else audioTap?.generation
                 val pts = (pauseTimeline?.project(absoluteNs, spanNs) ?: continue) / 1_000L
                 check(pts > lastPts || firstRead == firstFrame) { "Aufnahmezeit läuft rückwärts" }
                 val index = obtainInput(codec, 2_000)
@@ -296,6 +302,8 @@ internal class RtcMp4Recorder(
                 input.clear(); check(input.remaining() >= n) { "Audiopuffer zu klein" }; input.put(bytes, 0, n)
                 codec.queueInputBuffer(index, 0, n, pts, 0); lastPts = pts
                 lastAudioAtMs.set(SystemClock.elapsedRealtime())
+                // Best-effort and bounded; recording never waits for an analysis consumer.
+                try { if (audioGeneration != null && !stopRequested.get()) audioTap?.publish(recordingId, audioGeneration, firstRead, absoluteNs, SAMPLE_RATE, bytes, n) } catch (_: Exception) { }
             }
             val eosIndex = obtainInput(codec, 3_000)
             codec.queueInputBuffer(eosIndex, 0, 0, lastPts + 1, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
@@ -370,6 +378,7 @@ internal class RtcMp4Recorder(
         synchronized(pauseLock) {
             if (value == StopReason.ERROR) reason.set(value)
             if (!stopRequested.compareAndSet(false, true)) return
+            audioTap?.invalidate()
             if (value != StopReason.ERROR) reason.compareAndSet(StopReason.USER, value)
         }
         control.execute { finalizeRecording() }

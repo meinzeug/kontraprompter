@@ -3,8 +3,7 @@ package de.kontrakurs.kontraprompter.pairing
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import de.kontrakurs.kontraprompter.network.PinnedPairingTls
-import java.io.DataInputStream
-import java.io.DataOutputStream
+import de.kontrakurs.kontraprompter.network.PinnedTlsMessageChannel
 import java.net.InetAddress
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -52,17 +51,15 @@ private fun crossDeviceProbe(args: Array<String>) {
             val tls=PinnedPairingTls(store,null,pin,alias);val loopback=InetAddress.getByName("127.0.0.1")
             if(mode=="host")tls.listen(loopback,port,15000).use { listener ->
                 println("CROSS_LISTENING=$port")
-                listener.accept().use { socket ->
-                    check(socket.session.protocol=="TLSv1.3")
-                    val input=DataInputStream(socket.inputStream);val output=DataOutputStream(socket.outputStream)
-                    check(input.readUTF()=="cross-phone-tls-fixture-v1");output.writeUTF("camera-confirmed");output.flush()
-                    check(input.readUTF()=="prompter-confirmed")
+                PinnedTlsMessageChannel.accept(listener).use { channel ->
+                    check(channel.receive() == ("capture_query" to "cross-phone-tls-fixture-v1"))
+                    channel.send("capture_status", "camera-confirmed")
+                    check(channel.receive() == ("sdp" to "prompter-confirmed"))
                 }
-            } else tls.connect(loopback,port,15000).use { socket ->
-                check(socket.session.protocol=="TLSv1.3")
-                val input=DataInputStream(socket.inputStream);val output=DataOutputStream(socket.outputStream)
-                output.writeUTF("cross-phone-tls-fixture-v1");output.flush();check(input.readUTF()=="camera-confirmed")
-                output.writeUTF("prompter-confirmed");output.flush()
+            } else PinnedTlsMessageChannel.connect(tls, loopback, port, 15000).use { channel ->
+                channel.send("capture_query", "cross-phone-tls-fixture-v1")
+                check(channel.receive() == ("capture_status" to "camera-confirmed"))
+                channel.send("sdp", "prompter-confirmed")
             }
             println("CROSS_DEVICE_TLS13_OK=$role")
         }

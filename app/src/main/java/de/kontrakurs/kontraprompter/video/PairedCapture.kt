@@ -1,6 +1,6 @@
 package de.kontrakurs.kontraprompter.video
 
-import de.kontrakurs.kontraprompter.network.LanSession
+import de.kontrakurs.kontraprompter.network.SignalingPort
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -21,7 +21,7 @@ internal data class PairedCaptureState(
 /** Commands are admitted only by the already-authenticated and approved LAN session. */
 internal class PairedCapture(
     private val host: Boolean,
-    private val lan: LanSession,
+    private val lan: SignalingPort,
     private val scope: CoroutineScope,
     private val session: LiveSession,
 ) {

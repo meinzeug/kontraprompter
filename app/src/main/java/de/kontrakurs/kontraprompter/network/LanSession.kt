@@ -35,12 +35,12 @@ internal fun firstCameraFrame(state: LanState): LanState =
     else state
 
 /** A single short-lived LAN session. All SDP and ICE messages pass through the authenticated channel. */
-class LanSession(context: Context) : AutoCloseable {
+class LanSession(context: Context) : AutoCloseable, SignalingPort {
     private val app = context.applicationContext
     private val nsd = app.getSystemService(Context.NSD_SERVICE) as NsdManager
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow(LanState())
-    val state: StateFlow<LanState> = _state
+    override val state: StateFlow<LanState> = _state
     private val closed = AtomicBoolean(false)
     private val readyDelivered = AtomicBoolean(false)
     private val connected = AtomicBoolean(false)
@@ -165,7 +165,7 @@ class LanSession(context: Context) : AutoCloseable {
             onReady?.invoke()
         }
     }
-    fun send(type: String, payload: String): Boolean {
+    override fun send(type: String, payload: String): Boolean {
         val current = channel ?: return false
         if (!_state.value.ready || closed.get()) return false
         scope.launch { try { current.send(type, payload) } catch (_: Exception) { disconnect("Verbindung verloren", current) } }
@@ -180,8 +180,8 @@ class LanSession(context: Context) : AutoCloseable {
         _state.update { it.copy(status = "Nicht verbunden", error = message, authenticated = false, ready = false, localApproved = false, remoteApproved = false, rttMs = null) }
         onDisconnect?.invoke()
     }
-    fun report(status: String, error: String? = null) { _state.update { it.copy(status = status, error = error) } }
-    fun reportFirstCameraFrame() { _state.update(::firstCameraFrame) }
+    override fun report(status: String, error: String?) { _state.update { it.copy(status = status, error = error) } }
+    override fun reportFirstCameraFrame() { _state.update(::firstCameraFrame) }
     private fun fail(message: String) { _state.update { it.copy(status = "Fehler", error = message) } }
     private fun register(port: Int) {
         val info = NsdServiceInfo().apply { serviceName = "KontraPrompter-${Build.MODEL.take(24)}"; serviceType = SERVICE_TYPE; setPort(port) }

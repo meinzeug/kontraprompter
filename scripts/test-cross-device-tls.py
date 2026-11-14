@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exercise shell-only pinned TLS with two Android devices, never app keys.
 
-Usage: python3 scripts/test-cross-device-tls.py FIXTURE_JAR CAMERA_SERIAL PROMPTER_SERIAL
+Usage: python3 scripts/test-cross-device-tls.py FIXTURE_JAR CAMERA_SERIAL PROMPTER_SERIAL [EXPECTED_SHA256]
 The selected ADB devices must be connected by USB. Pairing pins are carried only
 by this test process over ADB. This is not a productive signaling transport.
 """
@@ -12,12 +12,19 @@ import subprocess
 import sys
 import uuid
 
-if len(sys.argv) != 4:
+if len(sys.argv) not in (4, 5):
     raise SystemExit(__doc__)
-path, camera, prompter = sys.argv[1:]
-expected = '2d38c96454a7216ac30726251deb24e5846ca2c5421c1a40c579ae150f9996f2'
+path, camera, prompter = sys.argv[1:4]
+expected = {
+    '2d38c96454a7216ac30726251deb24e5846ca2c5421c1a40c579ae150f9996f2',
+    '4741a4dd3e7ef76c3a34481f432bafbd3b5154e60a33a87859f4702c69a984cc',
+}
+if len(sys.argv) == 5:
+    if not re.fullmatch(r'[a-f0-9]{64}', sys.argv[4]):
+        raise SystemExit('Invalid expected SHA-256')
+    expected = {sys.argv[4]}
 with open(path, 'rb') as fixture:
-    if hashlib.sha256(fixture.read()).hexdigest() != expected:
+    if hashlib.sha256(fixture.read()).hexdigest() not in expected:
         raise SystemExit('Unexpected fixture hash')
 
 run_id = str(uuid.uuid4())

@@ -28,6 +28,7 @@ java -Xmx256m -cp "$compiler:$compiler_stdlib:$script:$reflect:$daemon:$coroutin
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -language-version 2.0 -api-version 2.0 -no-stdlib -no-reflect -classpath "$stdlib:$annotations:$sdk/platforms/android-36/android.jar" \
   -d "$fixture_dir/classes" \
   "$android_root/app/src/main/java/de/kontrakurs/kontraprompter/network/PinnedPairingTls.kt" \
+  "$android_root/app/src/main/java/de/kontrakurs/kontraprompter/network/PinnedTlsMessageChannel.kt" \
   "$android_root/app/src/test/java/de/kontrakurs/kontraprompter/pairing/AndroidKeystoreTlsProbe.kt" \
   "$android_root/app/src/test/java/de/kontrakurs/kontraprompter/pairing/CrossDeviceTlsProbe.kt" \
   "$android_root/app/src/test/java/de/kontrakurs/kontraprompter/pairing/KeystoreProbeCleanup.kt" \
