@@ -36,6 +36,9 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
     val status: StateFlow<String> = _status
     private val _active = MutableStateFlow(false)
     val active: StateFlow<Boolean> = _active
+    private val _quarantined = MutableStateFlow(false)
+    val quarantined: StateFlow<Boolean> = _quarantined
+    private var quarantineIdentity: Pair<String, List<Byte>>? = null
     private val _recoveryRequired = MutableStateFlow(false)
     val recoveryRequired: StateFlow<Boolean> = _recoveryRequired
     private val _uploadStatus = MutableStateFlow("")
@@ -57,10 +60,16 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
         _active.value = true
         job = scope.launch {
             var controller: RemoteCameraController? = null
+            var identityVerified = false
             try {
                 _status.value = "Kamera wird mit Videomaker verbunden …"
                 client.login(password)
                 val identity = withContext(Dispatchers.IO) { CameraDeviceIdentity.loadOrCreate(app) }
+                val warningIdentity = identity.id to identity.publicKeyDer.toList()
+                if (quarantineIdentity != warningIdentity) {
+                    quarantineIdentity = warningIdentity
+                    _quarantined.value = false
+                }
                 var ticket: StudioClient.CameraDeviceTicket? = try { client.startCameraDeviceSession(identity) }
                 catch (_: CameraRegistrationRequiredException) {
                     // This branch runs only following the user's explicit activation.
@@ -73,12 +82,15 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
                 // the process owner, recheck before sending any poll or executing any command.
                 val currentIdentity = withContext(Dispatchers.IO) { CameraDeviceIdentity.loadOrCreate(app) }
                 check(currentIdentity.id == identity.id && currentIdentity.publicKeyDer.contentEquals(identity.publicKeyDer)) { "Kameraidentität hat sich geändert. Bitte erneut verbinden." }
+                identityVerified = true
+                if (controller.hasQuarantinedReports()) _quarantined.value = true
                 while (isActive) {
                     try {
                         val currentTicket = ticket ?: client.startCameraDeviceSession(identity).also { ticket = it }
                         previewTicket = currentTicket
                         controller.poll { client.pollCameraDevice(currentTicket, it) }
-                        _status.value = "Websteuerung verbunden"
+                        if (controller.hasQuarantinedReports()) _quarantined.value = true
+                        _status.value = if (controller.hasQuarantinedReports()) "Websteuerung verbunden · Kamerakonflikt prüfen; neue Starts gesperrt" else "Websteuerung verbunden"
                         scheduleUpload(journal)
                         delay(1000)
                     } catch (_: CameraDeviceTicketException) {
@@ -93,7 +105,7 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
                         _status.value = "Lokale Aufnahme wird erneut geprüft · Original bleibt erhalten"
                         delay(5000)
                     } catch (_: IOException) {
-                        _status.value = "Verbindung unterbrochen · Aufnahme läuft gegebenenfalls lokal weiter"
+                        _status.value = if (controller.hasQuarantinedReports()) "Verbindung unterbrochen · Kamerakonflikt prüfen; Aufnahme läuft gegebenenfalls lokal weiter" else "Verbindung unterbrochen · Aufnahme läuft gegebenenfalls lokal weiter"
                         delay(2000)
                     }
                 }
@@ -106,6 +118,7 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
                     preview.disable()
                     uploadJob?.cancel()
                     val failure = runCatching { controller?.close() }.exceptionOrNull()
+                    if (identityVerified && runCatching { controller?.hasQuarantinedReports() }.getOrNull() == true) _quarantined.value = true
                     if (failure != null) {
                         session.stopRecording()
                         _status.value = "Websteuerung konnte nicht sicher beendet werden. Aufnahme bleibt lokal; Kamera gesperrt."
@@ -163,6 +176,8 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
             try {
                 _status.value = "Neue Kameraidentität wird vorbereitet …"
                 withContext(Dispatchers.IO) { CameraDeviceIdentity.createNewAfterConfirmation(app) }
+                quarantineIdentity = null
+                _quarantined.value = false
                 _recoveryRequired.value = false
                 _status.value = "Neue Identität vorbereitet. Alte Aufnahmen bleiben unter ‚Aufnahmen‘ exportierbar; alte Aufträge müssen separat geklärt werden."
             } catch (error: CancellationException) { throw error }

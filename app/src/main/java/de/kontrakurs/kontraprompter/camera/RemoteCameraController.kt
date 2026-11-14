@@ -44,8 +44,15 @@ internal class RemoteCameraController private constructor(private val journal: R
             val request = CameraPollRequest(sequence, report, acknowledgements)
             val started = android.os.SystemClock.elapsedRealtime()
             // A cancelled coroutine cannot release the poll lock while a socket worker remains alive.
-            val response = withContext(NonCancellable + Dispatchers.IO) { exchange(request) }
+            // Handle a typed response before returning to a possibly cancelled
+            // logout scope; no ACK from the rejected poll is confirmed.
+            val response = exchangeWithLateReportConflict(
+                exchange = { exchange(request) },
+                persist = { conflict -> mutex.withLock { check(journal.quarantineReport(conflict.deviceId, report)) { "Der Konflikt konnte nicht sicher zugeordnet werden." } }; Unit },
+                onUnsafe = { session.stopRecording(); Unit },
+            )
             currentCoroutineContext().ensureActive()
+            if (response == null) return@poll report
             if (closing) return@poll report
             try { confirmReport(report, acknowledgements.associate { it.id to it.revision }) }
             catch (error: CancellationException) { throw error }
@@ -142,7 +149,7 @@ internal class RemoteCameraController private constructor(private val journal: R
         if (!withContext(Dispatchers.IO) { journal.reconcilePending() }) throw CameraReconciliationPendingException()
         val current = withContext(Dispatchers.IO) { journal.snapshot() }
         val matched = current.captures.firstOrNull { it.recordingId == id }
-        val pending = current.captures.lastOrNull { it.phase in setOf("ready", "partial", "error") && it.reportedPhase != it.phase }
+        val pending = pendingCameraCaptureReport(current)
         if (pending != null) {
             if (pending.phase in setOf("ready", "partial")) check(pending.sizeBytes != null && pending.sha256 != null) { "Aufnahmebeleg fehlt" }
             CameraReport(pending.phase, pending.recordingId, pending.projectId, pending.sizeBytes, pending.sha256)
@@ -157,5 +164,9 @@ internal class RemoteCameraController private constructor(private val journal: R
             if (report.recordingId != null && report.phase in setOf("ready", "partial", "error")) journal.confirmReport(report.recordingId, report.phase)
             journal.confirmAcks(ackRevisions)
         }
+    }
+
+    internal suspend fun hasQuarantinedReports(): Boolean = withContext(Dispatchers.IO) {
+        journal.snapshot().captures.any { it.quarantinedPhase != null }
     }
 }

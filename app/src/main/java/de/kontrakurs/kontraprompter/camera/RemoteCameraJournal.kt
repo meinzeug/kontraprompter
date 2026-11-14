@@ -93,15 +93,28 @@ internal class RemoteCameraJournal private constructor(context: Context, private
         commit(invalidateCameraCaptureReport(current, recordingId, phase))
     }
 
+    @Synchronized fun quarantineReport(deviceId: String, report: CameraReport): Boolean {
+        check(!broken)
+        requireCameraConflictJournalIdentity(this.deviceId, deviceId)
+        val recording = report.recordingId ?: return false
+        val project = report.projectId ?: return false
+        val next = quarantineCameraReport(current, recording, project, report.phase, report.sizeBytes, report.sha256)
+        if (next != current) commit(next)
+        return hasExactCameraQuarantine(current, recording, project, report.phase, report.sizeBytes, report.sha256)
+    }
+
     private fun commit(next: CameraDecisionState) {
         try {
-            val payload = JSONObject().put("version", 1).put("sequence", next.sequence)
+            // Older app versions must not silently ignore a recorded conflict.
+            val version = cameraJournalVersion(next)
+            check(cameraJournalQuarantinesValid(version, next.captures)) { "Camera conflict state is invalid" }
+            val payload = JSONObject().put("version", version).put("sequence", next.sequence)
                 .put("decisions", JSONArray().apply { next.decisions.forEach { d -> put(JSONObject()
                     .put("id", d.command.id).put("type", d.command.type).put("recordingId", d.command.recordingId)
                     .put("projectId", d.command.projectId ?: JSONObject.NULL).put("result", d.result).put("pendingAck", d.pendingAck).put("revision", d.revision)) } })
                 .put("captures", JSONArray().apply { next.captures.forEach { c -> put(JSONObject()
                     .put("recordingId", c.recordingId).put("projectId", c.projectId ?: JSONObject.NULL).put("phase", c.phase).put("reportedPhase", c.reportedPhase ?: JSONObject.NULL)
-                    .put("sizeBytes", c.sizeBytes ?: JSONObject.NULL).put("sha256", c.sha256 ?: JSONObject.NULL)) } })
+                    .put("sizeBytes", c.sizeBytes ?: JSONObject.NULL).put("sha256", c.sha256 ?: JSONObject.NULL).put("quarantinedPhase", c.quarantinedPhase ?: JSONObject.NULL)) } })
                 .toString().toByteArray(Charsets.UTF_8)
             check(payload.size <= MAX_BYTES) { "Camera journal is full" }
             val atomic = AtomicFile(target)
@@ -121,7 +134,7 @@ internal class RemoteCameraJournal private constructor(context: Context, private
             result.toString()
         }
         val root = JSONObject(text)
-        check(root.getInt("version") == 1)
+        val version = root.getInt("version"); check(version == 1 || version == 2)
         val rawSequence = if (root.has("sequence")) root.get("sequence") else 0
         check(rawSequence is Int || rawSequence is Long)
         val sequence = (rawSequence as Number).toLong(); check(sequence in 0..MAX_CAMERA_SEQUENCE)
@@ -140,10 +153,12 @@ internal class RemoteCameraJournal private constructor(context: Context, private
             val size = if (c.isNull("sizeBytes")) null else c.get("sizeBytes").let { check(it is Int || it is Long); (it as Number).toLong() }
             val sha = if (c.isNull("sha256")) null else c.getString("sha256")
             check((size == null && sha == null) || (phase in setOf("ready", "partial") && size != null && size in 1..1_073_741_824L && sha != null && sha.matches(Regex("^[0-9a-f]{64}$"))))
-            CameraCapture(uuid(c.getString("recordingId")), if (c.isNull("projectId")) null else uuid(c.getString("projectId")), phase, reported, size, sha)
+            val quarantined = if (!c.has("quarantinedPhase") || c.isNull("quarantinedPhase")) null else c.getString("quarantinedPhase")
+            CameraCapture(uuid(c.getString("recordingId")), if (c.isNull("projectId")) null else uuid(c.getString("projectId")), phase, reported, size, sha, quarantined)
         } }
         check(decisions.map { it.command.id }.toSet().size == decisions.size)
         check(captures.map { it.recordingId }.toSet().size == captures.size)
+        check(cameraJournalQuarantinesValid(version, captures))
         return CameraDecisionState(decisions, captures, sequence)
     }
 

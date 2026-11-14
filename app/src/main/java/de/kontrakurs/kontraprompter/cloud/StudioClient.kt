@@ -21,6 +21,8 @@ import de.kontrakurs.kontraprompter.video.SavedRecording
 import de.kontrakurs.kontraprompter.camera.CameraCommand
 import de.kontrakurs.kontraprompter.camera.CameraPollRequest
 import de.kontrakurs.kontraprompter.camera.CameraPollResponse
+import de.kontrakurs.kontraprompter.camera.CameraLateReportConflictException
+import de.kontrakurs.kontraprompter.camera.matchesLateReportConflict
 import de.kontrakurs.kontraprompter.camera.CameraDeviceIdentity
 import android.util.Base64
 import de.kontrakurs.kontraprompter.GenerationNotice
@@ -261,6 +263,10 @@ class StudioClient {
             if (code == 403 && ticket != null) throw CameraDeviceTicketException("Kameraticket abgelaufen. Geräteanmeldung wird erneuert.")
             if (code == 401 || code == 403) { cookie.invalidate(session); throw IllegalStateException("Sitzung abgelaufen. Bitte erneut anmelden.") }
             if (code == 429 || code in 500..599) throw IOException("Kamerafernsteuerung ist vorübergehend nicht erreichbar (HTTP $code).")
+            if (code == 409 && ticket != null && isLateReportConflict(connection, sessionId, request)) {
+                check(cookie.get() == session) { "Studio-Sitzung hat sich geändert. Bitte erneut verbinden." }
+                throw CameraLateReportConflictException(sessionId)
+            }
             check(code == 200) { "Kamerafernsteuerung ist nicht erreichbar (HTTP $code)." }
             val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
                 val result = StringBuilder(); val block = CharArray(1024)
@@ -277,6 +283,21 @@ class StudioClient {
             val remaining = item.getLong("remainingMs"); check(remaining in 0..10_000)
             return CameraPollResponse(command, remaining)
         } finally { connection.disconnect() }
+    }
+
+    private fun isLateReportConflict(connection: HttpURLConnection, deviceId: String, request: CameraPollRequest): Boolean {
+        val stream = connection.errorStream ?: return false
+        val text = stream.bufferedReader(Charsets.UTF_8).use { input ->
+            val result = StringBuilder(); val block = CharArray(1024)
+            while (true) { val count = input.read(block); if (count < 0) break; check(result.length + count <= 4096); result.append(block, 0, count) }
+            result.toString()
+        }
+        val data = try { JSONObject(text) } catch (_: org.json.JSONException) { return false }
+        val names = listOf("code", "deviceId", "recordingId", "projectId", "phase", "sequence", "sizeBytes", "sha256")
+        if (names.any { !data.has(it) }) return false
+        fun field(name: String): Any? = if (data.isNull(name)) null else data.opt(name)
+        val fields = names.associateWith(::field)
+        return matchesLateReportConflict(deviceId, request, fields)
     }
 
     internal suspend fun registerCameraDevice(identity: CameraDeviceIdentity): Unit = withContext(Dispatchers.IO) {

@@ -298,6 +298,7 @@ private fun CameraRemotePanel(session: LiveSession, connected: Boolean) {
     val runtime = remember(session) { CameraRemoteRuntime(context, session) }
     val active by runtime.active.collectAsState()
     val status by runtime.status.collectAsState()
+    val quarantined by runtime.quarantined.collectAsState()
     val uploadStatus by runtime.uploadStatus.collectAsState()
     val recoveryRequired by runtime.recoveryRequired.collectAsState()
     val previewEnabled by runtime.previewEnabled.collectAsState()
@@ -328,6 +329,7 @@ private fun CameraRemotePanel(session: LiveSession, connected: Boolean) {
     AppPanel {
         Text("Websteuerung", style = MaterialTheme.typography.titleMedium)
         Text(status, color = SoftText)
+        if (quarantined) Text("Ein Kamerabericht muss geprüft werden. Das betroffene Gerätejournal lässt keine neuen Starts zu.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         if (active) {
             Text("Beim Beenden der Websteuerung wird eine laufende Aufnahme gestoppt.", color = SoftText, style = MaterialTheme.typography.bodySmall)
             Text("Das Kamerabild wird nur nach deiner Freigabe an das Dashboard übertragen; die Vorschau enthält keinen Ton.", color = SoftText, style = MaterialTheme.typography.bodySmall)

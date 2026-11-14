@@ -5,7 +5,7 @@ import java.util.UUID
 /** The result acknowledges a durable decision, never completion of recording or upload. */
 internal data class CameraCommand(val id: String, val type: String, val recordingId: String, val projectId: String?)
 internal data class CameraDecision(val command: CameraCommand, val result: String, val pendingAck: Boolean, val revision: Long = 1)
-internal data class CameraCapture(val recordingId: String, val projectId: String?, val phase: String, val reportedPhase: String? = null, val sizeBytes: Long? = null, val sha256: String? = null)
+internal data class CameraCapture(val recordingId: String, val projectId: String?, val phase: String, val reportedPhase: String? = null, val sizeBytes: Long? = null, val sha256: String? = null, val quarantinedPhase: String? = null)
 internal data class CameraDecisionState(val decisions: List<CameraDecision> = emptyList(), val captures: List<CameraCapture> = emptyList(), val sequence: Long = 0)
 internal data class CameraDecisionOutcome(val state: CameraDecisionState, val result: String, val action: String?)
 
@@ -13,8 +13,21 @@ private val activeCapturePhases = setOf("accepted", "preparing", "recording", "f
 internal val allowedCapturePhases = activeCapturePhases + setOf("ready", "partial", "error")
 internal const val MAX_CAMERA_DECISIONS = 10_000
 internal const val MAX_CAMERA_SEQUENCE = 9_007_199_254_740_991L
+internal fun cameraJournalVersion(state: CameraDecisionState): Int = if (state.captures.any { it.quarantinedPhase != null }) 2 else 1
+internal fun cameraJournalQuarantinesValid(version: Int, captures: List<CameraCapture>): Boolean {
+    if (version !in 1..2 || version == 2 && captures.none { it.quarantinedPhase != null }) return false
+    return captures.all { capture ->
+        val phase = capture.quarantinedPhase
+        phase == null || (version == 2 && phase == capture.phase && capture.projectId != null && capture.reportedPhase != phase &&
+            when (phase) {
+                "error" -> capture.sizeBytes == null && capture.sha256 == null
+                "partial" -> capture.sizeBytes != null && capture.sizeBytes in 1..1_073_741_824L && capture.sha256?.matches(Regex("^[0-9a-f]{64}$")) == true
+                else -> false
+            })
+    }
+}
 
-internal fun cameraUploadEligible(capture: CameraCapture): Boolean = capture.phase == "ready" && capture.reportedPhase == "ready" &&
+internal fun cameraUploadEligible(capture: CameraCapture): Boolean = capture.quarantinedPhase == null && capture.phase == "ready" && capture.reportedPhase == "ready" &&
     capture.projectId != null && capture.sizeBytes != null && capture.sha256 != null
 
 internal fun reserveCameraSequence(state: CameraDecisionState): CameraDecisionState {
@@ -47,7 +60,7 @@ internal fun decideCameraCommand(state: CameraDecisionState, command: CameraComm
     check(state.decisions.size < capacity) { "Camera command journal is full" }
     val eligible = when (command.type) {
         "record_start" -> canStart && state.decisions.size < MAX_CAMERA_DECISIONS - 1 && capture == null &&
-            state.captures.none { it.phase in activeCapturePhases || it.reportedPhase != it.phase }
+            state.captures.none { it.phase in activeCapturePhases || it.reportedPhase != it.phase || it.quarantinedPhase != null }
         else -> capture != null
     }
     val result = when { expired -> "expired"; !eligible -> "rejected"; else -> "accepted" }
@@ -89,8 +102,27 @@ internal fun updateCameraCaptureProof(state: CameraDecisionState, recordingId: S
 }
 
 internal fun confirmCameraCaptureReport(state: CameraDecisionState, recordingId: String, phase: String): CameraDecisionState = state.copy(
-    captures = state.captures.map { if (it.recordingId == recordingId && it.phase == phase) it.copy(reportedPhase = phase) else it }
+    captures = state.captures.map { if (it.recordingId == recordingId && it.phase == phase && it.quarantinedPhase == null) it.copy(reportedPhase = phase) else it }
 )
+
+/** Persist only the exact, still-unaccepted terminal report; never manufacture an ACK. */
+internal fun quarantineCameraReport(state: CameraDecisionState, recordingId: String, projectId: String, phase: String, sizeBytes: Long?, sha256: String?): CameraDecisionState {
+    require(phase == "partial" || phase == "error")
+    val capture = state.captures.firstOrNull { it.recordingId == recordingId } ?: return state
+    if (capture.projectId != projectId || capture.phase != phase || capture.reportedPhase == phase || capture.sizeBytes != sizeBytes || capture.sha256 != sha256) return state
+    if (capture.quarantinedPhase == phase) return state
+    check(capture.quarantinedPhase == null) { "Another camera conflict is already recorded" }
+    return state.copy(captures = state.captures.map { if (it.recordingId == recordingId) it.copy(quarantinedPhase = phase) else it })
+}
+
+internal fun hasExactCameraQuarantine(state: CameraDecisionState, recordingId: String, projectId: String, phase: String, sizeBytes: Long?, sha256: String?): Boolean =
+    state.captures.any { it.recordingId == recordingId && it.projectId == projectId && it.phase == phase &&
+        it.quarantinedPhase == phase && it.reportedPhase != phase && it.sizeBytes == sizeBytes && it.sha256 == sha256 }
+
+/** Quarantine leaves the report unaccepted but stops it monopolizing polling. */
+internal fun pendingCameraCaptureReport(state: CameraDecisionState): CameraCapture? = state.captures.lastOrNull {
+    it.phase in setOf("ready", "partial", "error") && it.reportedPhase != it.phase && it.quarantinedPhase == null
+}
 
 internal fun invalidateCameraCaptureReport(state: CameraDecisionState, recordingId: String, phase: String): CameraDecisionState = state.copy(
     captures = state.captures.map { if (it.recordingId == recordingId && it.phase == phase) it.copy(reportedPhase = null) else it }
