@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -15,6 +17,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 @Composable
 internal fun KeyboardRemoteReady(activity: MainActivity, descriptor: String, connected: Boolean) {
     DisposableEffect(descriptor) { onDispose { activity.disarmKeyboardRemote() } }
+    val currentDescriptor by rememberUpdatedState(descriptor)
     val ready = activity.shutterKeyboardReady && activity.keyboardRemoteReadyFor(descriptor)
     val label = when {
         !connected -> "Ausgewählte Fernbedienung nicht verbunden"
@@ -29,7 +32,7 @@ internal fun KeyboardRemoteReady(activity: MainActivity, descriptor: String, con
                 setTextColor(AndroidColor.WHITE)
                 backgroundTintList = ColorStateList.valueOf(AndroidColor.rgb(59, 65, 74))
                 setOnFocusChangeListener { view, focused -> if (!focused) activity.disarmKeyboardRemote(view) }
-                setOnClickListener { view -> activity.armKeyboardRemote(view, descriptor) }
+                setOnClickListener { view -> activity.armKeyboardRemote(view, currentDescriptor) }
             }
         },
         update = { view ->
