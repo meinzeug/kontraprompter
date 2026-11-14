@@ -20,11 +20,13 @@ class RecordingOriginTest {
         assertEquals(RecordingOrigin.LAN, RecordingOrigin.read("lan", project))
         assertNull(cameraClaimRecordingId(RecordingOrigin.LAN, recording, project, project))
         assertNull(cameraClaimRecordingId(RecordingOrigin.MANUAL, recording, null, project))
+        assertEquals(RecordingOrigin.LAN_UNASSIGNED, RecordingOrigin.read("lan_unassigned", null))
+        assertNull(cameraClaimRecordingId(RecordingOrigin.LAN_UNASSIGNED, recording, null, project))
         assertNull(cameraClaimRecordingId(RecordingOrigin.WEB, recording, project, other))
     }
 
     @Test fun malformedOrContradictoryOriginsAreRejected() {
-        for ((wire, projectId) in listOf("unknown" to project, "" to project, "manual" to project, "lan" to null, "web" to null)) {
+        for ((wire, projectId) in listOf("unknown" to project, "" to project, "manual" to project, "lan_unassigned" to project, "lan" to null, "web" to null)) {
             assertThrows(IllegalArgumentException::class.java) { RecordingOrigin.read(wire, projectId) }
         }
         assertThrows(IllegalArgumentException::class.java) { cameraClaimRecordingId(RecordingOrigin.LAN, recording, null, project) }

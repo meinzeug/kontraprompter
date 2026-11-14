@@ -83,6 +83,35 @@ class StudioClient {
         } finally { connection.disconnect() }
     }
 
+    /** Idempotent server association for a LAN take without a cloud script; no script text crosses LAN. */
+    internal suspend fun ensureLanRecordingProject(recordingId: String, requiredSession: ManualUploadSession): String = withContext(Dispatchers.IO) {
+        val id = UUID.fromString(recordingId).toString()
+        require(id == recordingId && manualUploadSessionMatches(requiredSession)) { "Studio-Sitzung hat sich geändert." }
+        val connection = open("/api/projects/lan-captures", "POST")
+        try {
+            connection.setRequestProperty("Cookie", requiredSession.cookie)
+            connection.setRequestProperty("Origin", BASE)
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            val payload = JSONObject().put("recordingId", id).toString().toByteArray(Charsets.UTF_8)
+            connection.doOutput = true; connection.setFixedLengthStreamingMode(payload.size)
+            connection.outputStream.use { it.write(payload) }
+            val code = connection.responseCode
+            if (code == 401 || code == 403) { cookie.invalidate(requiredSession.cookie); throw UploadException("auth", "Studio-Sitzung abgelaufen. Bitte erneut anmelden.") }
+            if (code == 409) throw UploadException("conflict", "Das Aufnahmeprojekt kann nicht eindeutig zugeordnet werden. Das Original bleibt lokal.")
+            if (code !in setOf(200, 201)) throw UploadException("uncertain", "Aufnahmeprojekt nicht bestätigt (HTTP $code). Das Original bleibt lokal.")
+            val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
+                val result = StringBuilder(); val block = CharArray(1024)
+                while (true) { val n = input.read(block); if (n < 0) break; check(result.length + n <= 16_384); result.append(block, 0, n) }
+                result.toString()
+            }
+            val response = JSONObject(text)
+            check(response.getString("recordingId") == id) { "Aufnahmezuordnung stimmt nicht." }
+            val project = response.getString("projectId")
+            check(UUID.fromString(project).toString() == project && manualUploadSessionMatches(requiredSession)) { "Projekt oder Studio-Sitzung stimmt nicht." }
+            project
+        } finally { connection.disconnect() }
+    }
+
     /** Streams a local file without deleting it; only a matching durable receipt is success. */
     internal suspend fun uploadRecording(recording: SavedRecording, entry: UploadEntry, progress: (Long, Long) -> Unit, workerStarted: () -> Unit, workerFinished: () -> Unit, requiredSession: ManualUploadSession? = null): Unit = suspendCancellableCoroutine { continuation ->
         val active = AtomicReference<HttpURLConnection?>(null)
@@ -93,7 +122,8 @@ class StudioClient {
                 if (recording.partial) throw UploadException("partial", "Unvollständige Teilvideos können derzeit nur lokal exportiert werden.")
                 val session = cookie.get() ?: throw UploadException("auth", "Bitte erneut bei Videomaker anmelden.")
                 if (requiredSession != null && requiredSession.cookie != session) throw UploadException("auth", "Die Studio-Sitzung hat sich geändert. Bitte erneut anmelden.")
-                check(recording.bytes in 1..(1024L * 1024 * 1024) && recording.file.isFile && recording.file.length() == recording.bytes) { "Lokale Aufnahme ist nicht vollständig vorhanden." }
+                if (recording.bytes !in 1..(1024L * 1024 * 1024) || !recording.file.isFile || recording.file.length() != recording.bytes)
+                    throw UploadException("file_changed", "Lokale Aufnahme ist nicht vollständig vorhanden. Das Original bleibt lokal.")
                 check(entry.recordingId == recording.id && entry.size == recording.bytes && entry.sha256 == recording.sha256)
                 check(entry.cameraRecordingId == cameraClaimRecordingId(recording.origin, recording.id, recording.projectId, entry.projectId))
                 check(UUID.fromString(entry.projectId).toString() == entry.projectId && UUID.fromString(entry.uploadId).toString() == entry.uploadId)
@@ -102,7 +132,7 @@ class StudioClient {
                     val block = ByteArray(256 * 1024)
                     while (true) { if (!continuation.isActive) throw IOException("Upload abgebrochen"); val count = source.read(block); if (count < 0) break; before.update(block, 0, count) }
                 }
-                check(hex(before.digest()) == recording.sha256) { "Lokale Aufnahme wurde verändert und wird nicht hochgeladen." }
+                if (hex(before.digest()) != recording.sha256) throw UploadException("file_changed", "Lokale Aufnahme wurde verändert und wird nicht hochgeladen.")
                 if (requiredSession != null && cookie.get() != session) throw UploadException("auth", "Die Studio-Sitzung hat sich geändert. Bitte erneut anmelden.")
                 val connection = open("/api/projects/${entry.projectId}/recordings", "POST").also { active.set(it) }
                 val lastProgress = AtomicLong(android.os.SystemClock.elapsedRealtime())
@@ -134,7 +164,8 @@ class StudioClient {
                             while (true) {
                                 if (!continuation.isActive) throw IOException("Upload abgebrochen")
                                 val count = source.read(block); if (count < 0) break
-                                sent += count; check(sent <= entry.size) { "Lokale Aufnahme wurde verändert." }
+                                sent += count
+                                if (sent > entry.size) throw UploadException("file_changed", "Lokale Aufnahme wurde während des Uploads verändert.")
                                 sentHash.update(block, 0, count); output.write(block, 0, count)
                                 lastProgress.set(android.os.SystemClock.elapsedRealtime())
                                 if (!continuation.isActive) throw IOException("Upload abgebrochen")
@@ -142,7 +173,7 @@ class StudioClient {
                             }
                         }
                     }
-                    check(sent == entry.size && hex(sentHash.digest()) == entry.sha256) { "Lokale Aufnahme wurde während des Uploads verändert." }
+                    if (sent != entry.size || hex(sentHash.digest()) != entry.sha256) throw UploadException("file_changed", "Lokale Aufnahme wurde während des Uploads verändert.")
                     lastProgress.set(android.os.SystemClock.elapsedRealtime())
                     waitingForResponse.set(true)
                     val code = connection.responseCode

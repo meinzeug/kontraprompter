@@ -2,7 +2,7 @@ package de.kontrakurs.kontraprompter.video
 
 /** Persisted provenance determines whether the server must require a web-device claim. */
 enum class RecordingOrigin(val wire: String) {
-    MANUAL("manual"), LAN("lan"), WEB("web");
+    MANUAL("manual"), LAN("lan"), LAN_UNASSIGNED("lan_unassigned"), WEB("web");
 
     companion object {
         /** Old project-bound manifests were created only by web-controlled capture. */
@@ -11,7 +11,8 @@ enum class RecordingOrigin(val wire: String) {
                 if (projectId == null) MANUAL else WEB
             } else entries.singleOrNull { it.wire == wire }
                 ?: throw IllegalArgumentException("Unbekannte Aufnahmeherkunft")
-            require((origin == MANUAL) == (projectId == null)) { "Aufnahmeherkunft passt nicht zur Projektzuordnung" }
+            val expectsProject = origin == LAN || origin == WEB
+            require(expectsProject == (projectId != null)) { "Aufnahmeherkunft passt nicht zur Projektzuordnung" }
             return origin
         }
     }
