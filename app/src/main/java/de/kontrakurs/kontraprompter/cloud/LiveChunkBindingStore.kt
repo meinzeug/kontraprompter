@@ -36,11 +36,24 @@ internal class LiveChunkBindingStore(context: Context) {
         else check(size == null && sha == null)
         LiveBindingEntry(binding, confirmed, size, sha)
     }
+    /** Invalid entries fail closed instead of allowing a competing upload. */
+    fun all(): List<LiveBindingEntry> = synchronized(lock) {
+        if (!root.exists()) return@synchronized emptyList()
+        check(root.isDirectory)
+        root.listFiles().orEmpty().filter { it.name.endsWith(".json") || it.name.endsWith(".json.bak") }
+            .map { it.name.removeSuffix(".bak").removeSuffix(".json") }.distinct().map { checkNotNull(get(it)) }
+    }
     /** The live path is selected before begin, and cannot silently change its destination or owner. */
     fun bind(binding: LiveChunkBinding): LiveBindingEntry = synchronized(lock) {
         val current = get(binding.recordingId)
         if (current != null) { check(current.binding == binding); return@synchronized current }
         LiveBindingEntry(binding, false).also { write(it) }
+    }
+    /** Only an explicit local user action may rebind a pending upload after login. */
+    fun reauthorize(previous: LiveChunkBinding, sessionHash: String): LiveBindingEntry = synchronized(lock) {
+        val old = checkNotNull(get(previous.recordingId))
+        check(!old.confirmed && old.binding == previous)
+        LiveBindingEntry(previous.copy(sessionHash = sessionHash), false).also { write(it) }
     }
     fun confirm(binding: LiveChunkBinding, original: FinalOriginal, receipt: LiveReceipt): LiveBindingEntry = synchronized(lock) {
         val current = checkNotNull(get(binding.recordingId)); check(current.binding == binding)
