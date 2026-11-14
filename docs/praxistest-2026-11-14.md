@@ -2,8 +2,9 @@
 
 Am 14. November 2026 wurde der Arbeitsstand `45a65d4` auf zwei vorhandenen
 Geräten getestet: Xiaomi 2409BRN2CY als Kamera, Samsung SM-A526B als
-Teleprompter. Die Installation erfolgte mit Erhalt der Appdaten. Die Geräte
-wurden bei Videomaker angemeldet und anschließend neu miteinander gekoppelt.
+Teleprompter. Die Installation erfolgte mit Erhalt der Appdaten. Während des
+Tests wurden beide Geräte bei Videomaker angemeldet und neu miteinander
+gekoppelt.
 
 Zunächst waren beide Geräte im WLAN, konnten einander aber nicht direkt
 erreichen. Nach einem erneuten WLAN-Verbindungsaufbau auf dem Xiaomi war die
