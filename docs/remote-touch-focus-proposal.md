@@ -10,12 +10,13 @@ gültiger Auslöser gelten.
 
 ## Prüfbarer Ansatz
 
-Ein für Touchmodus geeigneter Fokusanker könnte den ursprünglichen DOWN
-erhalten, indem er bereits vor dem Tastendruck vorhanden und fokussiert ist.
-Dieser Anker dürfte nur während einer geöffneten, verbundenen Prompteransicht
-mit entsprechend konfiguriertem externen Eingabegerät bestehen; er darf weder
-Klicks noch eigene Tastenaktionen auslösen. Nach Verlassen der Ansicht müsste
-er vollständig entfernt werden. Bestehender Fokus, Texteingabe und insbesondere
+Der erste Prototyp mit unsichtbarem Fokusanker schlug auf dem Samsung fehl:
+Der Compose-Root war bereits fokussiert und wurde daher nicht verdrängt. Der
+hier vorbereitete neue Prototyp fordert keinen neuen Fokus an. Er prüft, ob
+genau der bereits fokussierte AndroidComposeView seine Kinder bevorzugt, und
+ändert nur dann vorübergehend dessen Fokuspriorität. Die ursprüngliche Priorität
+wird beim Verlassen, beim Verlust der Bedingungen oder vor fremder Tastatur-
+bedienung wiederhergestellt. Bestehender Fokus, Texteingabe und insbesondere
 Barrierefreiheitsfunktionen dürfen dabei nicht still verdrängt werden.
 
 Der Prototyp verdrängt keinen bereits fokussierten Android-View, deaktiviert sich
@@ -28,7 +29,8 @@ Für die ohne Auswahl erkannten P007-Lautstärketasten wird kein Fokusanker
 angelegt: Sie zählen im geprüften AOSP-Code nicht zu den Navigationstasten;
 der reale P007-Test auf Samsung steht noch aus.
 Bei aktivierter Accessibility ist das ursprüngliche Problem weiterhin offen.
-Er ist noch nicht auf Geräten geprüft. Es ist zu klären, ob sich die Bedingungen
+Die Änderung der Compose-Root-Fokuspriorität ist noch nicht auf Geräten geprüft.
+Es ist zu klären, ob sich die Bedingungen
 mit der Compose- und Android-Fokushierarchie auf dem Samsung erfüllen lassen:
 Ein künstlicher Fokusanker kann sonst die Tastaturnavigation verschlechtern.
 Falls sich eine aktive Benutzer- oder Accessibility-Fokuswahl nicht eindeutig
