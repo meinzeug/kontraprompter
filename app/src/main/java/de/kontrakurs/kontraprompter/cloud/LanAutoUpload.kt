@@ -157,7 +157,7 @@ internal class LanAutoUploader(context: Context, private val client: StudioClien
                 blocked = LanAutoUploadStatus(recording.id, target, if (initial == LanUploadDecision.SESSION_CHANGED) "Studio-Sitzung geändert. Upload für diese Aufnahme erneut freigeben." else "Aufnahme oder Uploadauftrag hat sich geändert.", reauthorizeRequired = initial == LanUploadDecision.SESSION_CHANGED)
                 continue
             }
-            _status.value = LanAutoUploadStatus(recording.id, target, "Skriptzuordnung wird geprüft …")
+            _status.value = LanAutoUploadStatus(recording.id, target, if (recording.origin == RecordingOrigin.LAN_UNASSIGNED) "Aufnahmeprojekt wird geprüft …" else "Skriptzuordnung wird geprüft …")
             val available = try { client.projects().any { it.id == target } } catch (error: CancellationException) { throw error }
             catch (_: Exception) { _status.value = LanAutoUploadStatus(recording.id, target, "Videomaker nicht erreichbar oder Anmeldung abgelaufen. Das Original bleibt lokal."); return@withLock }
             if (!client.manualUploadSessionMatches(session)) { _status.value = LanAutoUploadStatus(recording.id, target, "Studio-Sitzung hat sich geändert. Das Original bleibt lokal."); return@withLock }
@@ -166,7 +166,7 @@ internal class LanAutoUploader(context: Context, private val client: StudioClien
             _status.value = LanAutoUploadStatus(recording.id, target, "Aufnahme wird zu Videomaker übertragen …")
             val result = uploads.upload(recording, target, session)
             _status.value = when (result) {
-                is CloudUploadState.Confirmed -> if (confirmedFor(result, recording.id, target)) LanAutoUploadStatus(recording.id, target, "Video für das Skript bestätigt · Original bleibt lokal") else LanAutoUploadStatus(recording.id, target, "Serverbeleg passt nicht; Original bleibt lokal.")
+                is CloudUploadState.Confirmed -> if (confirmedFor(result, recording.id, target)) LanAutoUploadStatus(recording.id, target, if (recording.origin == RecordingOrigin.LAN_UNASSIGNED) "Video im Aufnahmeprojekt ohne Skript bestätigt · Original bleibt lokal" else "Video für das Skript bestätigt · Original bleibt lokal") else LanAutoUploadStatus(recording.id, target, "Serverbeleg passt nicht; Original bleibt lokal.")
                 is CloudUploadState.Failed -> LanAutoUploadStatus(recording.id, target, result.message)
                 else -> LanAutoUploadStatus(recording.id, target, "Upload nicht bestätigt · Original bleibt lokal")
             }
