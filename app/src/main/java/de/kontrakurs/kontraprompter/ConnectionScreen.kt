@@ -91,7 +91,7 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
     val state by session.lan.state.collectAsState()
     val video by session.video.collectAsState()
     val secureActivity = LocalContext.current as Activity
-    // Pairing data is a bearer secret, including when presented as a QR image.
+    // The session code is a bearer secret and must stay off screenshots.
     DisposableEffect(secureActivity) {
         val alreadySecure = secureActivity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0
         secureActivity.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -139,17 +139,10 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
         } else if (!session.host && !state.authenticated) {
             AppPanel {
                 Text("Kameragerät", style = MaterialTheme.typography.titleLarge)
-                PairingQrScanner { pairing ->
-                    address = pairing.address
-                    port = pairing.port.toString()
-                    token = pairing.token
-                    session.lan.connect(pairing.address, pairing.port, pairing.token)
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Text("Oder manuell verbinden", style = MaterialTheme.typography.titleSmall)
+                Text("Wähle die Kamera aus der Suche. Adresse und Port werden übernommen. Gib anschließend den Sitzungscode vom Kameragerät ein.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 // Keep the search row in place when a device appears, so focused fields do not jump.
                 Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (state.devices.isEmpty()) Text("Suche läuft …", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                    if (state.devices.isEmpty()) Text("Suche läuft … Adresse und Port kannst du auch unten eingeben.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                     state.devices.forEach { device ->
                         FilledTonalButton(onClick = { session.lan.resolve(device) { host, resolvedPort -> activity.runOnUiThread { address = host; port = resolvedPort.toString() } } }, modifier = Modifier.heightIn(min = 48.dp)) { Text(device.name) }
                     }
@@ -329,12 +322,11 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
             if (!state.authenticated && state.token.isNotEmpty()) {
                 AppPanel {
                     Text("Mit Teleprompter verbinden", style = MaterialTheme.typography.titleMedium)
-                    PairingQrDisplay(state.addresses, state.port, state.token)
-                    Text("Alternativ kannst du den Sitzungscode manuell eingeben.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                    Text("Wähle dieses Gerät auf dem Teleprompter aus und gib dort den Sitzungscode ein. Falls es nicht gefunden wird, übertrage zusätzlich Adresse und Port.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                     Text(state.token.chunked(4).joinToString(" ").uppercase(), style = MaterialTheme.typography.headlineSmall, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text("Adresse: ${state.addresses.joinToString().ifBlank { "Keine IPv4-Adresse gefunden" }}\nPort: ${state.port}", color = SoftText, style = MaterialTheme.typography.bodySmall)
-                    Text("Beide Geräte benötigen dasselbe lokale Netzwerk. Der Code gilt höchstens fünf Minuten.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+                    Text("Beide Geräte müssen sich im lokalen Netz direkt erreichen können. Der Code gilt höchstens fünf Minuten und nur für eine Verbindung.", color = SoftText, style = MaterialTheme.typography.bodySmall)
                 }
             } else if (state.authenticated && (!state.localApproved || !state.remoteApproved)) {
                 AppPanel {
