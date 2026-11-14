@@ -86,6 +86,8 @@ internal class ShutterClickMachine(private val windowMs: Long = 400L, private va
     private val pending = mutableMapOf<String, Pending>()
     private data class Cooldown(val until: Long, val deviceId: Int, val descriptor: String, val keyboardBased: Boolean)
     private val cooldown = mutableMapOf<String, Cooldown>()
+    private data class LastCategory(val at: Long, val keyboardBased: Boolean)
+    private val lastByDevice = mutableMapOf<Int, LastCategory>()
     private var nextToken = 0L
 
     init { require(windowMs in 200..1000 && bounceMs in 1 until windowMs) }
@@ -93,7 +95,11 @@ internal class ShutterClickMachine(private val windowMs: Long = 400L, private va
     @Synchronized fun press(device: String, keyCode: Int, timeMs: Long, context: ShutterContext): ShutterPress {
         if (device.isBlank() || timeMs < 0L || timeMs > Long.MAX_VALUE - windowMs) return ShutterPress.Ignored
         cooldown.entries.removeAll { it.value.until <= timeMs }
-        if (cooldown[device]?.let { timeMs < it.until } == true) return ShutterPress.Ignored
+        lastByDevice.entries.removeAll { timeMs >= it.value.at && timeMs - it.value.at > windowMs * 2 }
+        val recent = lastByDevice[context.deviceId]
+        if (recent == null && lastByDevice.size >= 16) return ShutterPress.Ignored
+        if (recent != null && (timeMs < recent.at || (recent.keyboardBased != context.keyboardBased && timeMs - recent.at < windowMs))) return ShutterPress.Ignored
+        if (cooldown.values.any { it.deviceId == context.deviceId && timeMs < it.until }) return ShutterPress.Ignored
         val old = pending[device]
         if (old != null) {
             val elapsed = timeMs - old.at
@@ -101,11 +107,13 @@ internal class ShutterClickMachine(private val windowMs: Long = 400L, private va
             if (elapsed < windowMs) {
                 pending.remove(device)
                 cooldown[device] = Cooldown(timeMs + windowMs, context.deviceId, context.descriptor, context.keyboardBased)
+                lastByDevice[context.deviceId] = LastCategory(timeMs, context.keyboardBased)
                 return if (old.context == context) ShutterPress.Double(context) else ShutterPress.Changed
             }
         } else if (pending.size + cooldown.size >= 8) return ShutterPress.Ignored
         nextToken++
         pending[device] = Pending(timeMs, keyCode, nextToken, context)
+        lastByDevice[context.deviceId] = LastCategory(timeMs, context.keyboardBased)
         return ShutterPress.Wait(nextToken, old?.context)
     }
 
@@ -116,7 +124,7 @@ internal class ShutterClickMachine(private val windowMs: Long = 400L, private va
         return current.context
     }
 
-    @Synchronized fun clear() { pending.clear(); cooldown.clear() }
+    @Synchronized fun clear() { pending.clear(); cooldown.clear(); lastByDevice.clear() }
     @Synchronized fun clearKeyboardDescriptor(descriptor: String) {
         pending.entries.removeAll { it.value.context.descriptor == descriptor && it.value.context.keyboardBased }
         cooldown.entries.removeAll { it.value.descriptor == descriptor && it.value.keyboardBased }
@@ -124,5 +132,6 @@ internal class ShutterClickMachine(private val windowMs: Long = 400L, private va
     @Synchronized fun clearDevice(deviceId: Int) {
         pending.entries.removeAll { it.value.context.deviceId == deviceId }
         cooldown.entries.removeAll { it.value.deviceId == deviceId }
+        lastByDevice.remove(deviceId)
     }
 }

@@ -58,6 +58,7 @@ internal fun HelpScreen(onBack: () -> Unit) {
             HelpParagraph("Den Auslöser zuerst in den Android-Bluetooth-Einstellungen mit dem Samsung koppeln. Ab Android 10 wird der ITFIT Selfie P007 unterstützt; andere externe Auslöser können in den App-Einstellungen ausgewählt werden.")
             HelpParagraph("Vor der Aufnahme startet ein kurzer Druck die Kamera. Während der Aufnahme pausiert oder startet ein kurzer Druck nur den Teleprompter. Ein schneller Doppeldruck pausiert oder setzt die Aufnahme fort. Zum endgültigen Beenden „Stopp“ in der App verwenden.")
             HelpParagraph("Für Enter, Leertaste oder Steuerkreuz-Mitte zuerst im Prompter „Enter-Auslöser nicht bereit – aktivieren“ auswählen. Nur solange die Taste den Eingabefokus hält, ist der Auslöser bereit. Nach Fokusverlust, verdeckten Bedienelementen, Geräte- oder Verbindungswechsel erneut aktivieren. Ohne Bereitschaft die Bildschirmtasten verwenden.")
+            HelpParagraph("Senden verschiedene Tasten desselben Geräts kurz hintereinander unterschiedliche Tastentypen, kann die zweite Eingabe zum Schutz vor Doppelaktionen verworfen werden.")
             HelpParagraph("Bei ausgewählten externen Auslösern können auch Enter, Leertaste oder Steuerkreuz-Mitte verwendet werden. Eingebaute und virtuelle Tastaturen bleiben unverändert. Prüfe die Tasten deines Auslösers vor der Aufnahme.")
         }
         HelpSection("Speichern und Grenzen") {

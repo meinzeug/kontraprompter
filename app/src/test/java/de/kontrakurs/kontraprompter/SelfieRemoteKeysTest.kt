@@ -20,14 +20,27 @@ class SelfieRemoteKeysTest {
         val keyboard = context(id = 1, descriptor = "p007").copy(keyboardBased = true, keyboardEpoch = firstEpoch)
         val remote = context(id = 1, descriptor = "p007")
         val first = clicks.press("1:keyboard:p007", 66, 1000, keyboard) as ShutterPress.Wait
-        val second = clicks.press("1:trigger:p007", 25, 1000, remote) as ShutterPress.Wait
+        val second = clicks.press("1:trigger:p007", 25, 1401, remote) as ShutterPress.Wait
         clicks.clearKeyboardDescriptor("p007")
         assertNull(clicks.expire("1:keyboard:p007", first.token, 1400))
-        assertEquals(remote, clicks.expire("1:trigger:p007", second.token, 1400))
+        assertEquals(remote, clicks.expire("1:trigger:p007", second.token, 1801))
         clicks.press("1:trigger:p007", 25, 2000, remote)
         assertEquals(ShutterPress.Double(remote), clicks.press("1:trigger:p007", 25, 2120, remote))
         clicks.clearKeyboardDescriptor("p007")
         assertEquals(ShutterPress.Ignored, clicks.press("1:trigger:p007", 25, 2200, remote))
+    }
+    @Test fun `one physical remote emitting two categories does not produce two clicks`() {
+        val keyboard = context(id = 7, descriptor = "p007").copy(keyboardBased = true, keyboardEpoch = Any())
+        val volume = context(id = 7, descriptor = "p007")
+        val first = ShutterClickMachine()
+        val pending = first.press("7:keyboard:p007", 66, 1000, keyboard) as ShutterPress.Wait
+        assertEquals(ShutterPress.Ignored, first.press("7:trigger:p007", 25, 1080, volume))
+        assertEquals(ShutterPress.Ignored, first.press("7:trigger:p007", 25, 1300, volume))
+        assertEquals(keyboard, first.expire("7:keyboard:p007", pending.token, 1400))
+        val reverse = ShutterClickMachine()
+        val pendingVolume = reverse.press("7:trigger:p007", 25, 2000, volume) as ShutterPress.Wait
+        assertEquals(ShutterPress.Ignored, reverse.press("7:keyboard:p007", 66, 2080, keyboard))
+        assertEquals(volume, reverse.expire("7:trigger:p007", pendingVolume.token, 2400))
     }
     @Test fun `keyboard shutter requires explicit readiness while P007 volume remains available`() {
         for (key in listOf(23, 62, 66, 160)) {
