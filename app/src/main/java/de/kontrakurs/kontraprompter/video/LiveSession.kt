@@ -10,6 +10,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
@@ -53,6 +56,8 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
     val video: StateFlow<RtcVideo?> = _video
     private val _recording = MutableStateFlow<LocalRecording>(LocalRecording.Idle)
     val recording: StateFlow<LocalRecording> = _recording
+    private val _cameraSelection = MutableStateFlow(CameraSelection())
+    val cameraSelection: StateFlow<CameraSelection> = _cameraSelection
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     internal val pairedCapture = PairedCapture(host, lan, scope, this)
 
@@ -64,7 +69,13 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
                 else {
                     val lease = if (host) RtcVideo.tryAcquireCamera() else null
                     if (host && lease == null) { lan.report("Kamera noch beschäftigt", "Die vorherige Aufnahme wird noch abgeschlossen. Bitte erneut verbinden."); null }
-                    else try { RtcVideo(app, host, lan, lease, preferFrontCamera).also { it.onCameraFailure = ::cameraFailed; _video.value = it; disconnected = false } }
+                    else try { RtcVideo(app, host, lan, lease, preferFrontCamera).also { created ->
+                        created.onCameraFailure = ::cameraFailed
+                        created.onCameraSelection = { front, canSwitch ->
+                            synchronized(guard) { if (_video.value === created && !closed) _cameraSelection.value = CameraSelection(front = front, canSwitch = canSwitch) }
+                        }
+                        _video.value = created; disconnected = false
+                    } }
                     catch (error: Exception) { lease?.let { RtcVideo.releaseCamera(it) }; lan.report("Videofehler", error.localizedMessage ?: "WebRTC nicht verfügbar"); null }
                 }
             }
@@ -86,12 +97,12 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
     }
 
     fun canStartRemoteRecording(): Boolean = synchronized(guard) {
-        host && !closed && !disconnected && _video.value != null && !_recording.value.isActive() &&
+        host && !closed && !disconnected && !_cameraSelection.value.switching && _video.value != null && !_recording.value.isActive() &&
             ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     }
 
     fun setRemoteExclusive(enabled: Boolean): Boolean = synchronized(guard) {
-        if (enabled && !canAcquireWebOwner(_recording.value, remoteExclusive)) return false
+        if (enabled && (_cameraSelection.value.switching || !canAcquireWebOwner(_recording.value, remoteExclusive))) return false
         remoteExclusive = enabled
         if (!enabled) _video.value?.stopAnyBrowserPreview()
         true
@@ -118,7 +129,7 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
         val current: RtcVideo
         if (runCatching { UUID.fromString(id).toString() != id || (projectId != null && UUID.fromString(projectId).toString() != projectId) || RecordingOrigin.read(origin.wire, projectId) != origin }.getOrDefault(true)) return false
         synchronized(guard) {
-            if (!host || closed || disconnected || !recordingOwnerAllowed(remoteExclusive, origin) || _recording.value.isActive() || (_recording.value as? LocalRecording.Failed)?.blocked == true) return false
+            if (!host || closed || disconnected || _cameraSelection.value.switching || !recordingOwnerAllowed(remoteExclusive, origin) || _recording.value.isActive() || (_recording.value as? LocalRecording.Failed)?.blocked == true) return false
             current = _video.value ?: return false
             stopWhenStarted = false
             pendingCameraFailure = null
@@ -152,19 +163,61 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
         }
     }
 
-    fun pauseRecording(recordingId: String? = null): Boolean = synchronized(guard) {
+    /** Returns admission immediately; completion is reported only after the camera callback. */
+    fun requestCameraSwitch(remoteOwner: Boolean = false, complete: (CameraSwitchResult) -> Unit = {}): Boolean = synchronized(guard) {
+        val selection = _cameraSelection.value
+        val current = _video.value
+        if (!cameraSwitchAllowed(host, closed, disconnected, remoteExclusive, remoteOwner, _recording.value.isActive(), selection.switching, selection.canSwitch) || current == null || selection.front == null) return false
+        val targetFront = !selection.front
+        _cameraSelection.value = selection.copy(switching = true, error = null)
+        val queued = current.switchCamera(targetFront) { front, error ->
+            val result = synchronized(guard) {
+                if (_video.value !== current || closed) {
+                    CameraSwitchResult(false, null, "Kamerasitzung wurde beendet.")
+                } else if (error != null || front != targetFront) {
+                    val message = error ?: "Gewünschte Kamera wurde nicht bestätigt."
+                    _cameraSelection.value = selection.copy(switching = false, error = message)
+                    CameraSwitchResult(false, selection.front, message)
+                } else {
+                    _cameraSelection.value = selection.copy(front = targetFront, switching = false, error = null)
+                    app.getSharedPreferences("prompter_settings", Context.MODE_PRIVATE).edit().putBoolean("camera_prefer_front", targetFront).apply()
+                    CameraSwitchResult(true, targetFront, null)
+                }
+            }
+            complete(result)
+        }
+        if (!queued) _cameraSelection.value = selection.copy(error = "Kamerawechsel konnte nicht gestartet werden.")
+        queued
+    }
+
+    /** A timeout is not a success; the switch gate remains closed until the real callback. */
+    suspend fun switchRemoteCamera(): CameraSwitchResult = withTimeoutOrNull(10_000) {
+        suspendCancellableCoroutine { continuation ->
+            val accepted = requestCameraSwitch(remoteOwner = true) { result -> if (continuation.isActive) continuation.resume(result) }
+            if (!accepted && continuation.isActive) continuation.resume(CameraSwitchResult(false, null, "Kamerawechsel derzeit nicht möglich."))
+        }
+    } ?: CameraSwitchResult(false, null, "Kamerawechsel nicht bestätigt; Status prüfen.")
+
+    fun pauseRecording(recordingId: String? = null): Boolean = pauseRecordingOwned(recordingId, remote = false)
+
+    /** Dashboard owner may control only its matching recording. */
+    fun pauseRemoteRecording(recordingId: String): Boolean = pauseRecordingOwned(recordingId, remote = true)
+
+    private fun pauseRecordingOwned(recordingId: String?, remote: Boolean): Boolean = synchronized(guard) {
         val current = _recording.value as? LocalRecording.Recording ?: return false
-        if (remoteExclusive) return false
-        if (recordingId != null && current.id != recordingId) return false
+        if (!recordingControlAllowed(remoteExclusive, remote, current.id, recordingId)) return false
         if (recorder?.pause() != true) return false
         _recording.value = LocalRecording.Paused(current.id)
         true
     }
 
-    fun resumeRecording(recordingId: String? = null): Boolean = synchronized(guard) {
+    fun resumeRecording(recordingId: String? = null): Boolean = resumeRecordingOwned(recordingId, remote = false)
+
+    fun resumeRemoteRecording(recordingId: String): Boolean = resumeRecordingOwned(recordingId, remote = true)
+
+    private fun resumeRecordingOwned(recordingId: String?, remote: Boolean): Boolean = synchronized(guard) {
         val current = _recording.value as? LocalRecording.Paused ?: return false
-        if (remoteExclusive) return false
-        if (recordingId != null && current.id != recordingId) return false
+        if (!recordingControlAllowed(remoteExclusive, remote, current.id, recordingId)) return false
         if (recorder?.resume() != true) return false
         _recording.value = LocalRecording.Recording(current.id)
         true

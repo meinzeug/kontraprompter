@@ -34,6 +34,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     private var textureHelper: SurfaceTextureHelper? = null
     private var remoteTrack: VideoTrack? = null
     @Volatile internal var onCameraFailure: ((String) -> Unit)? = null
+    @Volatile internal var onCameraSelection: ((Boolean?, Boolean) -> Unit)? = null
     private val sinks = mutableSetOf<VideoSink>()
     private val previewViews = mutableSetOf<VideoView>()
     private var pipelineClosed = false
@@ -58,6 +59,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
                 if (host) {
                     val enumerator: CameraEnumerator = if (Camera2Enumerator.isSupported(context)) Camera2Enumerator(context) else Camera1Enumerator(false)
                     val name = chooseCamera(enumerator.deviceNames.toList(), preferFrontCamera, enumerator::isFrontFacing, enumerator::isBackFacing) ?: error("Keine Kamera verfügbar")
+                    onCameraSelection?.invoke(if (enumerator.isFrontFacing(name)) true else if (enumerator.isBackFacing(name)) false else null, enumerator.deviceNames.any { enumerator.isFrontFacing(it) } && enumerator.deviceNames.any { enumerator.isBackFacing(it) })
                     camera = enumerator.createCapturer(name, cameraEvents()) ?: error("Kamera konnte nicht geöffnet werden")
                     textureHelper = SurfaceTextureHelper.create("KontraCamera", egl.eglBaseContext) ?: error("Kameraoberfläche nicht verfügbar")
                     source = factory!!.createVideoSource(false)
@@ -179,6 +181,26 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
         eglReleased = true
         return true
     }
+    /** Switch only the existing camera pipeline; the owning session gates recording concurrently. */
+    internal fun switchCamera(front: Boolean, complete: (Boolean?, String?) -> Unit): Boolean {
+        if (closed.get() || !host) return false
+        return runCatching {
+            executor.execute {
+                try {
+                    if (closed.get()) { complete(null, "Kamerasitzung beendet."); return@execute }
+                    val current = camera ?: run { complete(null, "Kamera ist noch nicht bereit."); return@execute }
+                    val enumerator: CameraEnumerator = if (Camera2Enumerator.isSupported(context)) Camera2Enumerator(context) else Camera1Enumerator(false)
+                    val target = enumerator.deviceNames.firstOrNull { if (front) enumerator.isFrontFacing(it) else enumerator.isBackFacing(it) }
+                    if (target == null) { complete(null, "Gewählte Kamera ist nicht verfügbar."); return@execute }
+                    current.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
+                        override fun onCameraSwitchDone(isFrontCamera: Boolean) { complete(isFrontCamera, null) }
+                        override fun onCameraSwitchError(errorDescription: String) { complete(null, errorDescription.take(200)) }
+                    }, target)
+                } catch (_: Exception) { complete(null, "Kamerawechsel fehlgeschlagen.") }
+            }
+        }.isSuccess
+    }
+
     internal fun withLocalTrack(action: (VideoTrack?, EglBase.Context) -> Unit): Boolean {
         if (closed.get()) return false
         return runCatching {
