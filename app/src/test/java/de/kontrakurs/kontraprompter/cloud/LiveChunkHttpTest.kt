@@ -9,7 +9,6 @@ import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
-import java.util.UUID
 
 /** Explicitly opt-in: runs only against an isolated server and a synthetic MP4. */
 class LiveChunkHttpTest {
@@ -18,13 +17,14 @@ class LiveChunkHttpTest {
         val cookie = System.getenv("LIVE_FIXTURE_COOKIE")
         val project = System.getenv("LIVE_FIXTURE_PROJECT")
         val input = System.getenv("LIVE_FIXTURE_MP4")
-        assumeTrue(base != null && cookie != null && project != null && input != null)
+        val recording = System.getenv("LIVE_FIXTURE_RECORDING")
+        assumeTrue(base != null && cookie != null && project != null && input != null && recording != null)
         check(base == "http://127.0.0.1:3391") { "Only the isolated local test server is allowed" }
         val file = File.createTempFile("live-http-fixture-", ".mp4")
         try {
             File(checkNotNull(input)).copyTo(file, overwrite = true)
             check(file.length() > LiveChunkEngine.CHUNK)
-            val binding = LiveChunkBinding(UUID.randomUUID().toString(), checkNotNull(project), "a".repeat(64))
+            val binding = LiveChunkBinding(checkNotNull(recording), checkNotNull(project), "a".repeat(64))
             val adapter = StudioLiveChunkTransport(checkNotNull(cookie), binding.sessionHash, { true }, { path, method ->
                 (URL(base + path).openConnection() as HttpURLConnection).apply {
                     requestMethod = method; connectTimeout = 5_000; readTimeout = 30_000; instanceFollowRedirects = false; useCaches = false
