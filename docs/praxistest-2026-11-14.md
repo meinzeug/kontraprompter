@@ -80,3 +80,34 @@ mit Enter-Taste ging nach Touchbedienung der erste Tastendruck verloren; der
 nächste funktionierte. Eine getrennte Diagnose ergab, dass der erste DOWN vor
 der Activity beim Wechsel aus dem Touchmodus verloren ging. Ein Fix für diese
 Tastenart wird separat geprüft und war nicht Teil dieses Kandidaten.
+
+## Nicht-debuggbare Release-APK
+
+Anschließend wurde eine nicht-debuggbare, mit dem bisherigen Geräteschlüssel
+signierte Release-APK auf beiden Telefonen als Update installiert. Ihre
+SHA-256-Summe ist
+`ab7c923a968fdc744964f997c544db0691e1946b71b62bc3eb8ab92cc6652903`;
+die auf beiden Geräten installierten APK-Dateien stimmen bytegleich überein.
+Vorhandene Aufnahmen blieben in der App sichtbar. Vor dem Update wurden die
+privaten Appdateien und Einstellungen beider Geräte lokal gesichert; eine solche
+Dateisicherung ersetzt keine Sicherung von Android-Keystore-Schlüsseln.
+
+Auf dem Release-Stand wurden die manuelle gegenseitige Kopplung, ein
+Studio-Skript, das direkte Livebild, Kamerawechsel und die synchronisierten
+Aufnahme-Schaltflächen erneut geprüft. Eine 12,22 Sekunden lange Aufnahme wurde
+automatisch hochgeladen und auf dem Xiaomi über den Android-Dateidialog
+exportiert. Originalexport und Serverdatei waren mit 2.925.256 Bytes und
+SHA-256 `f0200f8945942a12d568e1c34e5f3920d7437586d93fed2ee4e7dbd638bd8023`
+bytegleich; H.264-Bild und AAC-Ton ließen sich dekodieren. Die Webbefehle für
+Textstart, Pause, Tempo und Schriftgröße wurden vom Samsung quittiert; die
+Einstellwerte wurden wiederhergestellt.
+
+Ein simulierter externer P007-kompatibler Lautstärke-Auslöser und ein separat
+ausgewählter Enter-Auslöser steuerten Aufnahme und Text auf der Release-APK.
+Der Enter-Auslöser erforderte die sichtbar beschriftete Bereitschaftstaste;
+anschließend startete der erste Druck die Aufnahme, Einzel- und Doppelklicks
+verhielten sich wie vorgesehen. Die echten Bluetooth-Fernbedienungen waren
+für den Test nicht verbunden. Ein kurzzeitig aktivierter Samsung-Screenreader
+startete zunächst seine eigene Einrichtung und verdrängte die App; ein
+vollständiger Screenreader-Test des Schalters bleibt offen. Die vorherigen
+Bedienungshilfen-Einstellungen wurden wiederhergestellt.
