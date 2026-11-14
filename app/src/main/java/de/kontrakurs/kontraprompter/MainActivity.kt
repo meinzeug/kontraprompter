@@ -359,6 +359,7 @@ private fun KontraApp(activity: MainActivity) {
             }, onBack = { page = "scripts" })
             "editor" -> Page("Skript bearbeiten", "LOKAL GESPEICHERT", onBack = { page = "scripts" }) {
                 selected.generationNotice?.let { GenerationNoticePanel(it) }
+                if (selected.generationNotice != null && selected.studioProjectId == null) Text("Diese lokale Kopie ist keinem aktuellen Studio-Skript zugeordnet. Für die Aufnahme kann bei aktiver Anmeldung ein eigenes Aufnahmeprojekt angelegt werden.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 OutlinedTextField(value = selected.title, onValueChange = { update(selected.copy(title = it)) }, label = { Text("Titel") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = selected.text, onValueChange = { update(selected.copy(text = it)) }, label = { Text("Skripttext") }, modifier = Modifier.fillMaxWidth().height(260.dp))
                 MainAction("Teleprompter öffnen") { page = "prompter" }

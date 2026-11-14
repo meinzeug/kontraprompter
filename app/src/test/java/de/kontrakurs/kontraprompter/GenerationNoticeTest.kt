@@ -51,6 +51,16 @@ class GenerationNoticeTest {
         assertNull(Script().generationNotice)
     }
 
+    @Test fun `editing a local studio copy removes its cloud project binding`() {
+        val original = Script(id = "copy", title = "Titel", text = "Original", studioProjectId = "9c1e88ba-4924-45c6-8fae-635e09d77112")
+        assertEquals(original.studioProjectId, preserveNoticeOnEdit(original, original.copy()).studioProjectId)
+        assertNull(preserveNoticeOnEdit(original, original.copy(text = "Geändert")).studioProjectId)
+        assertNull(preserveNoticeOnEdit(original, original.copy(title = "Anderer Titel")).studioProjectId)
+        // A pasted/reverted string after a previous local edit does not silently restore the old binding.
+        val changed = preserveNoticeOnEdit(original, original.copy(text = "Geändert"))
+        assertNull(preserveNoticeOnEdit(changed, changed.copy(text = "Original")).studioProjectId)
+    }
+
     @Test fun `project text is never coerced from non-string model data`() {
         assertEquals("Skript", requireProjectString("Skript"))
         assertTrue(runCatching { requireProjectString(null) }.isFailure)

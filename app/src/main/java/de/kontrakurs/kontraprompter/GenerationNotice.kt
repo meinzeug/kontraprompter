@@ -37,5 +37,7 @@ internal fun requireProjectString(value: Any?): String = value as? String ?: thr
 /** A local edit can invalidate even an empty set of historical Studio notices. */
 internal fun preserveNoticeOnEdit(before: Script, after: Script): Script {
     if (before.id != after.id || (before.title == after.title && before.text == after.text)) return after
-    return after.copy(generationNotice = before.generationNotice?.copy(status = GenerationNoticeStatus.INCOMPLETE))
+    // A locally edited copy is no longer the same text/title as the remote project.
+    // Do not silently attach its recording to the unchanged cloud script.
+    return after.copy(generationNotice = before.generationNotice?.copy(status = GenerationNoticeStatus.INCOMPLETE), studioProjectId = null)
 }
