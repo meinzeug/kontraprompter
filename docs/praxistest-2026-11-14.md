@@ -55,3 +55,28 @@ Anschließend wurden über die angemeldete Videomaker-Webschnittstelle die
 Gerätebefehle für Tempo, Schriftgröße, Start und Pause an das Samsung
 gesendet. Das Gerät bestätigte jeden Befehl. Tempo und Schriftgröße wurden
 danach auf ihre vorherigen Werte zurückgestellt; die Aufnahme blieb gestoppt.
+
+## Manueller Kopplungs- und Fernbedienungstest
+
+Der separat gebaute APK-Kandidat `c83a959` wurde auf beiden Geräten mit
+erhaltenen Appdaten installiert. Ein falscher Sitzungscode wurde abgelehnt;
+anschließend funktionierten Gerätesuche, manueller Code und die Bestätigung auf
+beiden Telefonen. Nach erneutem Ausfall der direkten WLAN-Erreichbarkeit war
+zuvor ein erneuter WLAN-Verbindungsaufbau auf dem Xiaomi nötig. Das Livebild,
+Kamerawechsel, Aufnahmebedienung und Web-Fernsteuerung wurden mit dem
+Kandidaten erneut geprüft. Eine 11,59 Sekunden lange Testaufnahme mit Bild und
+Ton wurde erfolgreich dekodiert; die Serverdatei war bytegleich zum Original.
+
+Ein künstliches externes Eingabegerät mit den Gerätekennungen des ITFIT Selfie
+P007 und einer Lautstärketaste wurde ohne Geräteauswahl erkannt. Der erste
+Einzelklick startete eine Testaufnahme. Einzelklicks während der Aufnahme
+pausierten beziehungsweise starteten den Text; Doppelklicks pausierten und
+setzten die Aufnahme fort. Auch dieses Video wurde regulär gespeichert und
+bytegleich hochgeladen. Die echte ITFIT war am Samsung gekoppelt, aber nicht
+verbunden; eine Simulation ersetzt keinen Hardwaretest.
+
+Bei einem weiteren simulierten, ausdrücklich ausgewählten externen Auslöser
+mit Enter-Taste ging nach Touchbedienung der erste Tastendruck verloren; der
+nächste funktionierte. Eine getrennte Diagnose ergab, dass der erste DOWN vor
+der Activity beim Wechsel aus dem Touchmodus verloren ging. Ein Fix für diese
+Tastenart wird separat geprüft und war nicht Teil dieses Kandidaten.
