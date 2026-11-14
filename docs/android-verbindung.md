@@ -152,3 +152,28 @@ Serverauskunft und einen bestätigten Peer-Pin und sperrt bei Widerruf oder
 Identitätsänderung. Netzwerkverlust und Stop verwerfen verspätete Ergebnisse.
 Fünf isolierte JVM-Tests bestanden; HTTPS-Serverclient, persistenter Widerruf,
 Backoff, aktive Sitzungsanbindung und realer Neustarttest fehlen weiterhin.
+
+## Ersteinrichtung ohne Testrelay: Hardwarebefund
+
+Der reguläre Kandidat `45a65d4` (APK-SHA-256
+`01f1676e00826407018e8518687cf8c6bc4489854369d48112bf02ab0008c568`)
+wurde auf Xiaomi und Samsung ohne Deinstallation installiert. Für diesen Test waren die temporären ADB-
+Netzwerktunnel entfernt und der temporäre TURN-Relay gestoppt. Beide Apps
+konnten sich bei Videomaker anmelden; auf Samsung war die
+Dashboard-Fernsteuerung verbunden. Xiaomi war als Kamera, Samsung als
+Teleprompter ausgewählt.
+
+Xiaomi zeigte den QR-Code; der Samsung-Scanner blieb jedoch bei der
+Aufforderung, die Kamera auf den Code zu richten. Ein tatsächlicher optischer
+Scan ist damit nicht nachgewiesen. Beim manuellen Fallback mit der echten
+Xiaomi-WLAN-Adresse und dem einmaligen Code meldete Samsung
+„Verbindung fehlgeschlagen. Adresse, Port, Sitzungscode und gemeinsames Netz
+prüfen.“ Ein unabhängiger Ping und TCP-Verbindungsversuch vom Samsung zum
+Xiaomi scheiterten ebenfalls. Xiaomi öffnete in diesem Zustand noch keinen
+Kamerastream. Ein direkter Vorschau-/Aufnahmetest konnte daher nicht
+stattfinden; der genaue Netzwerkgrund ist nicht bewiesen. Die ITFIT-
+Fernbedienung war auf keinem der Telefone als verbundenes Eingabegerät aktiv.
+
+Dieser Befund gilt für die zum Testzeitpunkt verwendete Netzwerk- und
+Geräteausrichtung. Ein produktiver Netzwerkrelay und die durchgängige
+Ende-zu-Ende-Paarung bleiben zu implementieren und zu prüfen.

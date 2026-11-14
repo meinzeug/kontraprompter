@@ -27,3 +27,34 @@ internal fun relaySessionProofMessage(owner: String, sessionHash: String, pairId
     require(encoded(roomId, 16) && hash(tokenHash) && canonicalUuid(challengeId) && encoded(nonce, 32))
     return "videomaker-relay-session/v1\n$owner\n$sessionHash\n$pairId\n${role.wire}\n$deviceId\n$roomId\n$tokenHash\n$challengeId\n$nonce\n".toByteArray(Charsets.UTF_8)
 }
+
+/** Byte-for-byte device reconnect proof; origin and purpose are fixed, never server-supplied. */
+internal fun deviceReconnectProofMessage(owner: String, deviceId: String, pairId: String, role: RelayRole, attemptId: String, clientChallenge: String, serverNonce: String, revision: Long): ByteArray {
+    require(hash(owner) && canonicalUuid(deviceId) && canonicalUuid(pairId) && canonicalUuid(attemptId))
+    require(hash(clientChallenge) && hash(serverNonce) && revision >= 0)
+    val fields = listOf("videomaker-device-reconnect/v1", "https://videomaker.dorfspy.de", "reconnect", owner, deviceId, pairId, role.wire, attemptId, clientChallenge, serverNonce, revision.toString())
+    val buffer = java.io.ByteArrayOutputStream()
+    java.io.DataOutputStream(buffer).use { output ->
+        for (field in fields) {
+            val bytes = field.toByteArray(Charsets.UTF_8)
+            output.writeInt(bytes.size); output.write(bytes)
+        }
+    }
+    return buffer.toByteArray()
+}
+
+/** Fixed allowlist and actual body digest prevent signing an unrelated HTTP operation. */
+internal fun deviceRequestProofMessage(owner: String, deviceId: String, pairId: String, role: RelayRole, sessionHash: String, requestNonce: String, method: String, path: String, bodySha256: String): ByteArray {
+    require(hash(owner) && canonicalUuid(deviceId) && canonicalUuid(pairId))
+    require(hash(sessionHash) && hash(requestNonce) && hash(bodySha256))
+    require((method == "POST" && path == "/api/turn/credentials") || (method == "GET" && path == "/api/relay/connect"))
+    val fields = listOf("videomaker-device-request/v1", "https://videomaker.dorfspy.de", owner, deviceId, pairId, role.wire, sessionHash, requestNonce, method, path, bodySha256)
+    val buffer = java.io.ByteArrayOutputStream()
+    java.io.DataOutputStream(buffer).use { output ->
+        for (field in fields) {
+            val bytes = field.toByteArray(Charsets.UTF_8)
+            output.writeInt(bytes.size); output.write(bytes)
+        }
+    }
+    return buffer.toByteArray()
+}

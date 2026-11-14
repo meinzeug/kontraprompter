@@ -27,4 +27,28 @@ class RelayProofMessagesTest {
         assertThrows(IllegalArgumentException::class.java) { relaySessionProofMessage(owner,session,pair,RelayRole.PROMPTER,prompter,"bad",tokenHash,challenge,nonce) }
         assertThrows(IllegalArgumentException::class.java) { relayPairingProofMessage(owner,pair,challenge,nonce,transcript,camera,byteArrayOf(1),camera,byteArrayOf(2),RelayRole.CAMERA) }
     }
+    @Test fun `device reconnect proof matches server fixed vector`() {
+        val device = "11111111-1111-4111-8111-111111111111"
+        val pairId = "22222222-2222-4222-8222-222222222222"
+        val attemptId = "33333333-3333-4333-8333-333333333333"
+        val proof = deviceReconnectProofMessage("a".repeat(64), device, pairId, RelayRole.CAMERA, attemptId, "b".repeat(64), "c".repeat(64), 42)
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(proof).joinToString("") { "%02x".format(it.toInt() and 255) }
+        assertEquals(420, proof.size)
+        assertEquals("b86d384caa51c46969ae42c62e72544471eab52af6aad252f658863c1d580432", digest)
+        assertThrows(IllegalArgumentException::class.java) { deviceReconnectProofMessage(owner, device, pairId, RelayRole.CAMERA, attemptId, "bad", "c".repeat(64), 42) }
+        assertThrows(IllegalArgumentException::class.java) { deviceReconnectProofMessage(owner, device, pairId, RelayRole.CAMERA, attemptId, "b".repeat(64), "c".repeat(64), -1) }
+    }
+
+    @Test fun `device request proof matches server fixed vector and allowlist`() {
+        val device = "11111111-1111-4111-8111-111111111111"
+        val pairId = "22222222-2222-4222-8222-222222222222"
+        val bodyHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        val proof = deviceRequestProofMessage("a".repeat(64), device, pairId, RelayRole.CAMERA, "d".repeat(64), "e".repeat(64), "POST", "/api/turn/credentials", bodyHash)
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(proof).joinToString("") { "%02x".format(it.toInt() and 255) }
+        assertEquals(460, proof.size)
+        assertEquals("aeb987e89d30b5d1a5d02ed59fa8a0942a5b37c13c89e813d468c3755cbb4adb", digest)
+        assertThrows(IllegalArgumentException::class.java) { deviceRequestProofMessage(owner, device, pairId, RelayRole.CAMERA, "d".repeat(64), "e".repeat(64), "DELETE", "/api/turn/credentials", bodyHash) }
+        assertThrows(IllegalArgumentException::class.java) { deviceRequestProofMessage(owner, device, pairId, RelayRole.CAMERA, "d".repeat(64), "e".repeat(64), "POST", "/api/relay/connect", bodyHash) }
+    }
+
 }
