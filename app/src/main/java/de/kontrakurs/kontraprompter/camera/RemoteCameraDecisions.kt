@@ -3,7 +3,7 @@ package de.kontrakurs.kontraprompter.camera
 import java.util.UUID
 
 /** The result acknowledges a durable decision, never completion of recording or upload. */
-internal data class CameraCommand(val id: String, val type: String, val recordingId: String, val projectId: String?)
+internal data class CameraCommand(val id: String, val type: String, val recordingId: String, val projectId: String?, val cameraFrom: Boolean? = null)
 internal data class CameraDecision(val command: CameraCommand, val result: String, val pendingAck: Boolean, val revision: Long = 1)
 internal data class CameraCapture(val recordingId: String, val projectId: String?, val phase: String, val reportedPhase: String? = null, val sizeBytes: Long? = null, val sha256: String? = null, val quarantinedPhase: String? = null)
 internal data class CameraDecisionState(val decisions: List<CameraDecision> = emptyList(), val captures: List<CameraCapture> = emptyList(), val sequence: Long = 0)
@@ -14,12 +14,13 @@ internal val allowedCapturePhases = activeCapturePhases + setOf("ready", "partia
 internal const val MAX_CAMERA_DECISIONS = 10_000
 internal const val MAX_CAMERA_SEQUENCE = 9_007_199_254_740_991L
 internal fun cameraJournalVersion(state: CameraDecisionState): Int = when {
-    state.decisions.any { it.command.type in setOf("record_pause", "record_resume", "camera_switch") } -> 3
+    state.decisions.any { it.command.type == "camera_switch" } -> 4
+    state.decisions.any { it.command.type in setOf("record_pause", "record_resume") } -> 3
     state.captures.any { it.quarantinedPhase != null } -> 2
     else -> 1
 }
 internal fun cameraJournalQuarantinesValid(version: Int, captures: List<CameraCapture>): Boolean {
-    if (version !in 1..3 || version == 2 && captures.none { it.quarantinedPhase != null }) return false
+    if (version !in 1..4 || version == 2 && captures.none { it.quarantinedPhase != null }) return false
     return captures.all { capture ->
         val phase = capture.quarantinedPhase
         phase == null || (version >= 2 && phase == capture.phase && capture.projectId != null && capture.reportedPhase != phase &&
@@ -46,7 +47,7 @@ internal fun decideCameraCommand(state: CameraDecisionState, command: CameraComm
     require(canonicalUuid(command.id) && canonicalUuid(command.recordingId))
     require(command.type in setOf("record_start", "record_stop", "record_pause", "record_resume", "camera_switch"))
     require(if (command.type == "record_start") command.projectId != null && canonicalUuid(command.projectId) else command.projectId == null)
-    require(command.type != "camera_switch" || command.recordingId == command.id)
+    require(if (command.type == "camera_switch") command.recordingId == command.id && command.cameraFrom != null else command.cameraFrom == null)
     state.decisions.firstOrNull { it.command.id == command.id }?.let { previous ->
         check(previous.command == command) { "A command ID was reused for different data" }
         check(previous.revision < Long.MAX_VALUE) { "Camera decision revision exhausted" }

@@ -319,7 +319,8 @@ class StudioClient {
             if (commands.length() == 0) return CameraPollResponse(null, 0)
             val item = commands.getJSONObject(0)
             val project = if (item.isNull("projectId")) null else item.getString("projectId")
-            val command = CameraCommand(item.getString("id"), item.getString("type"), item.getString("recordingId"), project)
+            val from = if (!item.has("cameraFrom") || item.isNull("cameraFrom")) null else item.getBoolean("cameraFrom")
+            val command = CameraCommand(item.getString("id"), item.getString("type"), item.getString("recordingId"), project, from)
             val remaining = item.getLong("remainingMs"); check(remaining in 0..10_000)
             return CameraPollResponse(command, remaining)
         } finally { connection.disconnect() }
