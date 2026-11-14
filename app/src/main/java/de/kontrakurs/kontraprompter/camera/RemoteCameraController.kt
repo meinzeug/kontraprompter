@@ -169,4 +169,8 @@ internal class RemoteCameraController private constructor(private val journal: R
     internal suspend fun hasQuarantinedReports(): Boolean = withContext(Dispatchers.IO) {
         journal.snapshot().captures.any { it.quarantinedPhase != null }
     }
+
+    internal suspend fun conflictDetails(): List<CameraConflictDetails> = withContext(Dispatchers.IO) {
+        cameraConflictDetails(journal.snapshot())
+    }
 }

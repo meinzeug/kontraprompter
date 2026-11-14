@@ -46,3 +46,16 @@ neues Konfliktereignis aus der alten Sitzung übernommen; der weiter unbestätig
 Bericht muss nach erneuter Anmeldung wieder versucht werden. Sichere Auflösung,
 geräteübergreifende Sichtbarkeit, dauerhafte Wiederherstellung und unabhängige
 Geräte-/HTTP-Rennprüfungen sind Freigabeblocker. Das Produktionsflag bleibt aus.
+
+Die deaktivierte Kamera-Websteuerung zeigt zusätzlich Aufnahme-ID, Skript-ID und
+Fehler- oder Teilstatus der im aktuellen Gerätejournal gespeicherten Konflikte.
+Die ersten 20 Einträge sind sichtbar; weitere bleiben im Journal und werden
+gezählt. Die Anzeige ändert keine Berichte und bewahrt die Startsperre. Nach
+Neustart ist sie erst nach erfolgreicher Anmeldung und Öffnung des zugehörigen
+Journals verfügbar; alte Identitäten werden nicht automatisch durchsucht.
+Eine erneute Zustellung ist bewusst nicht angeboten: Ein generisches HTTP 200
+belegt noch nicht, dass der Server gerade diesen Bericht dauerhaft zugeordnet
+hat. Vor einer Wiederaufnahme muss eine geräte-, aufnahme-, projekt-, phasen-
+und sequenzgebundene Serverbestätigung transaktional erzeugt und vom Gerät
+geprüft werden. Fehlende oder widersprüchliche Bestätigung darf den Konflikt
+nicht löschen und keinen Start ermöglichen.

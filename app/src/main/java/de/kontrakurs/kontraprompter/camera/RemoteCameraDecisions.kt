@@ -119,6 +119,16 @@ internal fun hasExactCameraQuarantine(state: CameraDecisionState, recordingId: S
     state.captures.any { it.recordingId == recordingId && it.projectId == projectId && it.phase == phase &&
         it.quarantinedPhase == phase && it.reportedPhase != phase && it.sizeBytes == sizeBytes && it.sha256 == sha256 }
 
+/** Only the identifiers needed to locate a rejected report; no file or journal is changed. */
+internal data class CameraConflictDetails(val recordingId: String, val projectId: String, val phase: String)
+internal fun cameraConflictDetails(state: CameraDecisionState): List<CameraConflictDetails> =
+    state.captures.mapNotNull { capture ->
+        val project = capture.projectId
+        if (capture.quarantinedPhase != null && project != null)
+            CameraConflictDetails(capture.recordingId, project, capture.quarantinedPhase)
+        else null
+    }
+
 /** Quarantine leaves the report unaccepted but stops it monopolizing polling. */
 internal fun pendingCameraCaptureReport(state: CameraDecisionState): CameraCapture? = state.captures.lastOrNull {
     it.phase in setOf("ready", "partial", "error") && it.reportedPhase != it.phase && it.quarantinedPhase == null

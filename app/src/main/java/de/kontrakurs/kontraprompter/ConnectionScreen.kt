@@ -299,6 +299,7 @@ private fun CameraRemotePanel(session: LiveSession, connected: Boolean) {
     val active by runtime.active.collectAsState()
     val status by runtime.status.collectAsState()
     val quarantined by runtime.quarantined.collectAsState()
+    val conflicts by runtime.conflicts.collectAsState()
     val uploadStatus by runtime.uploadStatus.collectAsState()
     val recoveryRequired by runtime.recoveryRequired.collectAsState()
     val previewEnabled by runtime.previewEnabled.collectAsState()
@@ -330,6 +331,12 @@ private fun CameraRemotePanel(session: LiveSession, connected: Boolean) {
         Text("Websteuerung", style = MaterialTheme.typography.titleMedium)
         Text(status, color = SoftText)
         if (quarantined) Text("Ein Kamerabericht muss geprüft werden. Das betroffene Gerätejournal lässt keine neuen Starts zu.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        conflicts.take(20).forEach { report ->
+            Text(if (report.phase == "partial") "Ungeklärte Teilaufnahme" else "Ungeklärte Fehlermeldung", style = MaterialTheme.typography.labelLarge)
+            Text("Aufnahme ${report.recordingId}\nSkript ${report.projectId}", color = SoftText, style = MaterialTheme.typography.bodySmall)
+        }
+        if (conflicts.size > 20) Text("Weitere ${conflicts.size - 20} Meldungen bleiben im Gerätejournal erhalten.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+        if (conflicts.isNotEmpty()) Text("Sichere eine eventuell vorhandene Datei unter ‚Aufnahmen‘. Die Meldung bleibt ungeklärt; neue Starts sind gesperrt.", color = SoftText, style = MaterialTheme.typography.bodySmall)
         if (active) {
             Text("Beim Beenden der Websteuerung wird eine laufende Aufnahme gestoppt.", color = SoftText, style = MaterialTheme.typography.bodySmall)
             Text("Das Kamerabild wird nur nach deiner Freigabe an das Dashboard übertragen; die Vorschau enthält keinen Ton.", color = SoftText, style = MaterialTheme.typography.bodySmall)

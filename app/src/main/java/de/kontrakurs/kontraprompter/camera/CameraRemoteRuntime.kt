@@ -38,6 +38,8 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
     val active: StateFlow<Boolean> = _active
     private val _quarantined = MutableStateFlow(false)
     val quarantined: StateFlow<Boolean> = _quarantined
+    private val _conflicts = MutableStateFlow<List<CameraConflictDetails>>(emptyList())
+    val conflicts: StateFlow<List<CameraConflictDetails>> = _conflicts
     private var quarantineIdentity: Pair<String, List<Byte>>? = null
     private val _recoveryRequired = MutableStateFlow(false)
     val recoveryRequired: StateFlow<Boolean> = _recoveryRequired
@@ -69,6 +71,7 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
                 if (quarantineIdentity != warningIdentity) {
                     quarantineIdentity = warningIdentity
                     _quarantined.value = false
+                    _conflicts.value = emptyList()
                 }
                 var ticket: StudioClient.CameraDeviceTicket? = try { client.startCameraDeviceSession(identity) }
                 catch (_: CameraRegistrationRequiredException) {
@@ -84,12 +87,14 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
                 check(currentIdentity.id == identity.id && currentIdentity.publicKeyDer.contentEquals(identity.publicKeyDer)) { "Kameraidentität hat sich geändert. Bitte erneut verbinden." }
                 identityVerified = true
                 if (controller.hasQuarantinedReports()) _quarantined.value = true
+                _conflicts.value = controller.conflictDetails()
                 while (isActive) {
                     try {
                         val currentTicket = ticket ?: client.startCameraDeviceSession(identity).also { ticket = it }
                         previewTicket = currentTicket
                         controller.poll { client.pollCameraDevice(currentTicket, it) }
                         if (controller.hasQuarantinedReports()) _quarantined.value = true
+                        _conflicts.value = controller.conflictDetails()
                         _status.value = if (controller.hasQuarantinedReports()) "Websteuerung verbunden · Kamerakonflikt prüfen; neue Starts gesperrt" else "Websteuerung verbunden"
                         scheduleUpload(journal)
                         delay(1000)
@@ -119,6 +124,7 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
                     uploadJob?.cancel()
                     val failure = runCatching { controller?.close() }.exceptionOrNull()
                     if (identityVerified && runCatching { controller?.hasQuarantinedReports() }.getOrNull() == true) _quarantined.value = true
+                    if (identityVerified) controller?.let { current -> runCatching { current.conflictDetails() }.getOrNull()?.let { _conflicts.value = it } }
                     if (failure != null) {
                         session.stopRecording()
                         _status.value = "Websteuerung konnte nicht sicher beendet werden. Aufnahme bleibt lokal; Kamera gesperrt."
@@ -178,6 +184,7 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
                 withContext(Dispatchers.IO) { CameraDeviceIdentity.createNewAfterConfirmation(app) }
                 quarantineIdentity = null
                 _quarantined.value = false
+                _conflicts.value = emptyList()
                 _recoveryRequired.value = false
                 _status.value = "Neue Identität vorbereitet. Alte Aufnahmen bleiben unter ‚Aufnahmen‘ exportierbar; alte Aufträge müssen separat geklärt werden."
             } catch (error: CancellationException) { throw error }

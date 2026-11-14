@@ -14,6 +14,18 @@ class CameraReportConflictTest {
     private fun id() = UUID.randomUUID().toString()
     private val hash = "a".repeat(64)
 
+    @Test fun `conflict details identify only quarantined recordings without changing evidence`() {
+        val pending = CameraCapture(id(), id(), "partial", null, 42, hash)
+        val other = CameraCapture(id(), id(), "error")
+        val original = CameraDecisionState(captures = listOf(pending, other), sequence = 7)
+        val isolated = quarantineCameraReport(original, pending.recordingId, pending.projectId!!, pending.phase, 42, hash)
+        assertEquals(listOf(CameraConflictDetails(pending.recordingId, pending.projectId, "partial")), cameraConflictDetails(isolated))
+        assertTrue(cameraConflictDetails(original).isEmpty())
+        assertEquals(pending.copy(quarantinedPhase = "partial"), isolated.captures.first())
+        assertEquals(other, isolated.captures.last())
+        assertEquals(7L, isolated.sequence)
+    }
+
     @Test fun `only an exactly bound terminal conflict permits quarantine`() {
         val device = id(); val report = CameraReport("partial", id(), id(), 42, hash)
         val request = CameraPollRequest(12, report, emptyList())
