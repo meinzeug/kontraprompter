@@ -2,6 +2,8 @@
 
 Native Android-App für einen Teleprompter mit zwei Geräten. Ein Gerät liefert das Kamerabild und nimmt Video mit Ton auf; das andere zeigt Bild und Skript an und kann die Aufnahme fernsteuern. Abgeschlossene Fernaufnahmen können nach Studio-Anmeldung auf dem Kameragerät automatisch zu Videomaker übertragen werden. Automatische dauerhafte Gerätekopplung, Live-Tonvorschau und Upload während der Aufnahme sind noch in Entwicklung.
 
+Für den Aufbau mit Xiaomi als Kamera und Samsung als Prompter siehe die [Desview-T3-Anleitung](DESVIEW-T3-ANLEITUNG.md). Die App enthält außerdem unter **Hilfe & Aufbau** eine kompakte Übersicht.
+
 ## Implementiert
 
 - Deutsche Compose-Oberfläche und Offline-Skripte; mehrere Skripte werden im privaten App-Speicher gehalten. TXT/MD-Import über den Android-Dateiauswahldialog, Bearbeitung einschließlich Einfügen über die Systemtastatur.

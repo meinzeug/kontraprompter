@@ -104,6 +104,7 @@ private fun KontraApp(activity: MainActivity) {
     var selectedId by rememberSaveable { mutableStateOf(repository.currentId ?: scripts.first().id) }
     val selected = scripts.find { it.id == selectedId } ?: scripts.first()
     var page by rememberSaveable { mutableStateOf("roles") }
+    var helpReturn by rememberSaveable { mutableStateOf("roles") }
     var session by remember { mutableStateOf<LiveSession?>(null) }
     LaunchedEffect(page) { if (page == "roles") cameraPreferFront = preferences.getBoolean("camera_prefer_front", true) }
     val cloud: CloudUploadViewModel = viewModel()
@@ -181,6 +182,7 @@ private fun KontraApp(activity: MainActivity) {
     BackHandler(enabled = page != "roles") {
         when (page) {
             "connection" -> if (recording.isActive() && recording !is de.kontrakurs.kontraprompter.video.LocalRecording.Failed) session?.stopRecording() else { session?.close(); session = null; page = "roles" }
+            "help" -> page = helpReturn
             "scripts" -> page = "roles"
             "studio", "editor" -> page = "scripts"
             "recordings" -> page = "roles"
@@ -329,11 +331,13 @@ private fun KontraApp(activity: MainActivity) {
                     else cameraPermission.launch(Manifest.permission.CAMERA)
                 }
                 Action("Aufnahmen") { page = "recordings" }
+                Action("Hilfe & Aufbau") { helpReturn = "roles"; page = "help" }
                 if (cameraPermissionError) Text("Für die Kamera-Vorschau ist die Kameraerlaubnis erforderlich.", color = Color(0xffff7777))
                 if (cameraBusyError) Text("Die vorherige Aufnahme oder Kamera wird noch abgeschlossen. Bitte erneut versuchen.", color = Color(0xffffcd8a))
                 Spacer(Modifier.height(4.dp))
                 Text("Live-Vorschau zwischen zwei Geräten. Aufnahmen mit Ton bleiben zunächst auf dem Kameragerät.", color = SoftText, style = MaterialTheme.typography.bodySmall)
             }
+            "help" -> HelpScreen(onBack = { page = helpReturn })
             "connection" -> session?.let { active ->
                 ConnectionScreen(active, cloud, onClose = { active.close(); session = null; page = "roles" }, onScripts = { page = "scripts" })
             } ?: Page("Nicht verbunden", "VERBINDUNG", onBack = { page = "roles" }) { Action("Zur Rollenwahl") { page = "roles" } }
@@ -391,6 +395,7 @@ private fun KontraApp(activity: MainActivity) {
                 Action("TXT oder Markdown importieren") { importer.launch(arrayOf("text/*", "application/octet-stream")) }
                 Action("Einstellungen") { page = "settings" }
                 Action("Spiegelung kalibrieren") { page = "calibration" }
+                Action("Hilfe & Aufbau") { helpReturn = "editor"; page = "help" }
             }
             "settings" -> Page("Einstellungen", "TELEPROMPTER", onBack = { page = "editor" }) {
                 Text("Text und Tempo", style = MaterialTheme.typography.titleLarge)
