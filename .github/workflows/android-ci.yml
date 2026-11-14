@@ -1,9 +1,9 @@
-name: Android test and unsigned APK
+name: Android test and unsigned release APK
 
 on:
   push:
     branches:
-      - wip/hid-ready-first-touch-20261114
+      - wip/hid-release-ci-20261114
 
 permissions:
   contents: read
@@ -27,19 +27,19 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'platforms;android-36' 'build-tools;35.0.0'
-      - name: Run unit tests and assemble unsigned APK
+      - name: Run unit tests and assemble unsigned release APK
         run: |
           ./gradlew --no-daemon --max-workers=1 --stacktrace :app:testDebugUnitTest -PciUnsigned=true
-          ./gradlew --no-daemon --max-workers=1 --stacktrace :app:assembleDebug -PciUnsigned=true
-          test -s app/build/outputs/apk/debug/app-debug-unsigned.apk
+          ./gradlew --no-daemon --max-workers=1 --stacktrace :app:assembleRelease
+          test -s app/build/outputs/apk/release/app-release-unsigned.apk
           test -s app/build/reports/tests/testDebugUnitTest/index.html
-          sha256sum app/build/outputs/apk/debug/app-debug-unsigned.apk
+          sha256sum app/build/outputs/apk/release/app-release-unsigned.apk
       - name: Upload unsigned APK and test reports
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: kontraprompter-unsigned-${{ github.sha }}
+          name: kontraprompter-release-unsigned-${{ github.sha }}
           path: |
-            app/build/outputs/apk/debug/*-unsigned.apk
+            app/build/outputs/apk/release/*-unsigned.apk
             app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: error
           retention-days: 2
