@@ -4,12 +4,16 @@ import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.content.Intent
+import android.content.Context
+import android.hardware.input.InputManager
 import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
 import android.view.KeyEvent
 import android.view.InputDevice
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
@@ -52,6 +56,9 @@ import de.kontrakurs.kontraprompter.video.unverifiedRecordings
 import de.kontrakurs.kontraprompter.video.isActive
 import de.kontrakurs.kontraprompter.video.recordingStopDescription
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
@@ -63,12 +70,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private val Red = Accent
-private data class RemoteEvent(val type: String, val completed: CompletableDeferred<Unit>)
+private data class RemoteEvent(val type: String, val completed: CompletableDeferred<Unit>, val stillValid: (() -> Boolean)? = null)
 
 class MainActivity : ComponentActivity() {
-    internal var shutterHandler: (() -> Unit)? = null
-    private val shutterDebounce = ShutterDebounce()
+    internal var shutterHandler: ((InputDevice, Int, Long) -> Unit)? = null
+    private val shutterKeys = ShutterKeyTracker()
     internal var selectedVolumeRemote: String? = null
+    internal fun clearShutterKeys() = shutterKeys.clear()
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val handler = shutterHandler
@@ -76,8 +84,8 @@ class MainActivity : ComponentActivity() {
         if (handler != null && device != null && Build.VERSION.SDK_INT >= 29 &&
             isSelfieTrigger(device.isExternal, device.isVirtual, device.vendorId, device.productId,
                 device.name, device.descriptor, selectedVolumeRemote, event.keyCode)) {
-            when (shutterKeyDecision(true, event.action, event.repeatCount)) {
-                ShutterKeyDecision.TRIGGER -> { if (shutterDebounce.accept(device.descriptor, event.eventTime)) handler(); return true }
+            when (shutterKeys.event(true, device.descriptor, event.keyCode, event.action, event.repeatCount, event.eventTime, event.isCanceled)) {
+                ShutterKeyDecision.SHORT_PRESS -> { handler(device, event.keyCode, event.eventTime); return true }
                 ShutterKeyDecision.CONSUME -> return true
                 ShutterKeyDecision.PASS -> Unit
             }
@@ -124,11 +132,70 @@ private fun KontraApp(activity: MainActivity) {
     var inputRefresh by remember { mutableIntStateOf(0) }
     DisposableEffect(activity, page, session, lanState.ready, selectedVolumeRemote, selected.studioProjectId) {
         val activeSession = session?.takeIf { !it.host && page == "prompter" && lanState.ready }
-        activity.selectedVolumeRemote = selectedVolumeRemote
-        activity.shutterHandler = activeSession?.let { current ->
-            { if (!current.pairedCapture.toggle(selected.studioProjectId)) current.pairedCapture.triggerUnavailable() }
+        val clicks = ShutterClickMachine()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val inputs = activity.getSystemService(Context.INPUT_SERVICE) as InputManager
+        val inputListener = object : InputManager.InputDeviceListener {
+            override fun onInputDeviceAdded(deviceId: Int) = Unit
+            override fun onInputDeviceRemoved(deviceId: Int) { clicks.clear(); activity.clearShutterKeys() }
+            override fun onInputDeviceChanged(deviceId: Int) { clicks.clear(); activity.clearShutterKeys() }
         }
-        onDispose { activity.shutterHandler = null; activity.selectedVolumeRemote = null }
+        val listening = activeSession != null && runCatching { inputs.registerInputDeviceListener(inputListener, Handler(Looper.getMainLooper())); true }.getOrDefault(false)
+        activity.selectedVolumeRemote = selectedVolumeRemote
+        activity.shutterHandler = activeSession?.takeIf { listening }?.let { current ->
+            fun dispatch(gesture: ShutterGesture, context: ShutterContext) {
+                val now = current.pairedCapture.state.value
+                val input = InputDevice.getDevice(context.deviceId)
+                val deviceCurrent = input != null && input.isExternal && !input.isVirtual && input.descriptor == context.descriptor
+                if (!shutterContextCurrent(context, now.phase, now.recordingId, now.pending, current.lan.isApprovedConnection(context.link.state), deviceCurrent)) {
+                    current.pairedCapture.triggerUnavailable(); return
+                }
+                when (shutterAction(context, gesture)) {
+                    ShutterAction.START -> if (!current.pairedCapture.toggle(context.projectId)) current.pairedCapture.triggerUnavailable()
+                    ShutterAction.CAPTURE_TOGGLE -> if (!current.pairedCapture.toggle()) current.pairedCapture.triggerUnavailable()
+                    ShutterAction.SCROLL -> scope.launch {
+                        val event = RemoteEvent("toggle", CompletableDeferred()) {
+                            val state = current.pairedCapture.state.value
+                            val device = InputDevice.getDevice(context.deviceId)
+                            shutterContextCurrent(context, state.phase, state.recordingId, state.pending, current.lan.isApprovedConnection(context.link.state),
+                                device != null && device.isExternal && !device.isVirtual && device.descriptor == context.descriptor)
+                        }
+                        try {
+                            if (withTimeoutOrNull(2_000) { remoteActions.send(event); event.completed.await(); true } != true)
+                                current.pairedCapture.triggerUnavailable()
+                        } catch (error: CancellationException) { throw error }
+                        catch (_: Exception) { current.pairedCapture.triggerUnavailable() }
+                    }
+                    ShutterAction.NONE -> {
+                        if (gesture == ShutterGesture.DOUBLE && context.phase in setOf("idle", "ready", "partial", "failed"))
+                            android.widget.Toast.makeText(activity, "Vor der Aufnahme einmal kurz drücken.", android.widget.Toast.LENGTH_SHORT).show()
+                        else current.pairedCapture.triggerUnavailable()
+                    }
+                }
+            }
+            { device, code, time ->
+                val state = current.pairedCapture.state.value
+                val marker = current.lan.approvedConnectionMarker()
+                if (state.pending || marker == null || (state.phase in setOf("recording", "paused") && state.recordingId == null)) {
+                    clicks.clear(); current.pairedCapture.triggerUnavailable()
+                } else {
+                    val context = ShutterContext(state.phase, state.recordingId, selected.studioProjectId, ShutterLink(marker), device.id, device.descriptor)
+                    when (val result = clicks.press(device.descriptor, code, time, context)) {
+                        is ShutterPress.Wait -> {
+                            result.overdue?.let { dispatch(ShutterGesture.SINGLE, it) }
+                            scope.launch {
+                                delay(400)
+                                clicks.expire(device.descriptor, result.token, android.os.SystemClock.uptimeMillis())?.let { dispatch(ShutterGesture.SINGLE, it) }
+                            }
+                        }
+                        is ShutterPress.Double -> dispatch(ShutterGesture.DOUBLE, result.context)
+                        ShutterPress.Changed -> current.pairedCapture.triggerUnavailable()
+                        ShutterPress.Ignored -> Unit
+                    }
+                }
+            }
+        }
+        onDispose { activity.shutterHandler = null; activity.selectedVolumeRemote = null; if (listening) inputs.unregisterInputDeviceListener(inputListener); activity.clearShutterKeys(); clicks.clear(); scope.cancel() }
     }
     var recordings by remember { mutableStateOf<List<SavedRecording>>(emptyList()) }
     var unverified by remember { mutableStateOf<List<UnverifiedRecording>>(emptyList()) }
@@ -410,7 +477,7 @@ private fun KontraApp(activity: MainActivity) {
                 Toggle("Aufnahme und Teleprompter synchron", recordingScrollSync) { recordingScrollSync = it; preferences.edit().putBoolean("recording_scroll_sync", it).apply() }
                 Text("Bei bestätigter Aufnahme startet oder pausiert der Text automatisch. Bei Stopp bleibt er stehen.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 Text("Bluetooth-Auslöser", style = MaterialTheme.typography.titleLarge)
-                Text("Der ITFIT Selfie P007 ist automatisch verfügbar. Für andere Auslöser mit Lautstärketasten wähle das externe Gerät ausdrücklich aus. Eingebaute Lautstärketasten bleiben unverändert.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                Text("Vor der Aufnahme startet ein kurzer Druck die Kamera. Während der Aufnahme startet oder pausiert ein kurzer Druck nur den Teleprompter; ein schneller Doppeldruck pausiert oder setzt die Aufnahme fort. Der ITFIT Selfie P007 wird automatisch erkannt. Andere Auslöser mit Lautstärketasten bitte unten auswählen. Eingebaute Lautstärketasten bleiben unverändert.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 if (Build.VERSION.SDK_INT >= 29) {
                     val externalDevices = remember(inputRefresh) {
                         InputDevice.getDeviceIds().toList().mapNotNull { id -> InputDevice.getDevice(id) }.filter { it.isExternal && !it.isVirtual && it.descriptor.isNotBlank() }
@@ -488,10 +555,12 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
     LaunchedEffect(remoteActions) {
         for (event in remoteActions) {
             try {
+                if (event.stillValid?.invoke() == false) { event.completed.completeExceptionally(IllegalStateException("Aufnahmezustand geändert")); continue }
                 when (event.type) {
                     "play" -> { countdownJob?.cancel(); remaining = 0; playing = true }
                     "pause" -> { countdownJob?.cancel(); remaining = 0; playing = false }
                     "reset" -> { countdownJob?.cancel(); remaining = 0; playing = false; scroll.scrollTo(0) }
+                    "toggle" -> { countdownJob?.cancel(); remaining = 0; playing = !playing }
                 }
                 event.completed.complete(Unit)
             } catch (e: Exception) { event.completed.completeExceptionally(e); throw e }
