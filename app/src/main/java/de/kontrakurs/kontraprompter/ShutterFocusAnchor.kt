@@ -19,8 +19,12 @@ internal class ShutterFocusAnchor(private val activity: Activity, private val de
     private val accessibilityListener = AccessibilityManager.AccessibilityStateChangeListener { enabled ->
         if (enabled) removeAnchor() else ensureFocus()
     }
+    private val layoutListener = android.view.ViewTreeObserver.OnGlobalLayoutListener { root.post { ensureFocus() } }
 
-    init { accessibility.addAccessibilityStateChangeListener(accessibilityListener) }
+    init {
+        accessibility.addAccessibilityStateChangeListener(accessibilityListener)
+        root.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
+    }
 
     /** Never displace a currently focused view or run while accessibility is enabled. */
     fun ensureFocus() {
@@ -57,6 +61,7 @@ internal class ShutterFocusAnchor(private val activity: Activity, private val de
         if (closed) return
         closed = true
         accessibility.removeAccessibilityStateChangeListener(accessibilityListener)
+        if (root.viewTreeObserver.isAlive) root.viewTreeObserver.removeOnGlobalLayoutListener(layoutListener)
         removeAnchor()
     }
 }

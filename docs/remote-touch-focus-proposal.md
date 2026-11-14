@@ -19,11 +19,14 @@ er vollständig entfernt werden. Bestehender Fokus, Texteingabe und insbesondere
 Barrierefreiheitsfunktionen dürfen dabei nicht still verdrängt werden.
 
 Der Prototyp verdrängt keinen bereits fokussierten Android-View, deaktiviert sich
-bei aktiven Accessibility-Diensten oder aktivem IME und gibt bei jeder nicht
-als Auslöser erkannten Hardwaretasteneingabe auf. Nach einer erneuten expliziten
+bei aktiven Accessibility-Diensten oder aktivem IME und gibt bei jedem nicht
+als Auslöser erkannten Hardware-DOWN auf. Nach einer erneuten expliziten
 Touchaktion wird die Bedingung nochmals geprüft. Kamera-/Medientasten anderer
 externer Geräte werden nur nach expliziter Auswahl als Auslöser behandelt;
 die bekannten Lautstärketasten des P007 bleiben automatisch unterstützt.
+Für die ohne Auswahl erkannten P007-Lautstärketasten wird kein Fokusanker
+angelegt: Sie zählen im geprüften AOSP-Code nicht zu den Navigationstasten;
+der reale P007-Test auf Samsung steht noch aus.
 Bei aktivierter Accessibility ist das ursprüngliche Problem weiterhin offen.
 Er ist noch nicht auf Geräten geprüft. Es ist zu klären, ob sich die Bedingungen
 mit der Compose- und Android-Fokushierarchie auf dem Samsung erfüllen lassen:

@@ -87,7 +87,7 @@ class MainActivity : ComponentActivity() {
         val trigger = device != null && Build.VERSION.SDK_INT >= 29 &&
             isSelfieTrigger(device.isExternal, device.isVirtual, device.vendorId, device.productId,
                 device.name, device.descriptor, selectedVolumeRemote, event.keyCode)
-        if (event.action == KeyEvent.ACTION_DOWN && !trigger && event.isFromSource(InputDevice.SOURCE_KEYBOARD))
+        if (event.action == KeyEvent.ACTION_DOWN && !trigger && device != null)
             shutterFocusAnchor?.yieldToKeyboard()
         if (handler != null && device != null && Build.VERSION.SDK_INT >= 29 &&
             trigger) {
@@ -509,7 +509,8 @@ private fun KontraApp(activity: MainActivity) {
                 Toggle("Aufnahme und Teleprompter synchron", recordingScrollSync) { recordingScrollSync = it; preferences.edit().putBoolean("recording_scroll_sync", it).apply() }
                 Text("Bei bestätigter Aufnahme startet oder pausiert der Text automatisch. Bei Stopp bleibt er stehen.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 Text("Bluetooth-Auslöser", style = MaterialTheme.typography.titleLarge)
-                Text("Vor der Aufnahme startet ein kurzer Druck die Kamera. Während der Aufnahme startet oder pausiert ein kurzer Druck nur den Teleprompter; ein schneller Doppeldruck pausiert oder setzt die Aufnahme fort. Der ITFIT Selfie P007 wird automatisch erkannt. Andere Auslöser mit Lautstärke- oder Tastatureingaben bitte unten auswählen. Eingebaute Tasten bleiben unverändert.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                Text("Vor der Aufnahme startet ein kurzer Druck die Kamera. Während der Aufnahme startet oder pausiert ein kurzer Druck nur den Teleprompter; ein schneller Doppeldruck pausiert oder setzt die Aufnahme fort. Der ITFIT Selfie P007 wird automatisch erkannt. Andere externe Auslöser bitte unten auswählen. Eingebaute Tasten bleiben unverändert.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                Text("Bei aktiver Bedienungshilfe oder Bildschirmtastatur kann der erste Druck einer tastaturartigen Fernbedienung nur den Fokus setzen.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 if (Build.VERSION.SDK_INT >= 29) {
                     val externalDevices = remember(inputRefresh) {
                         InputDevice.getDeviceIds().toList().mapNotNull { id -> InputDevice.getDevice(id) }.filter { it.isExternal && !it.isVirtual && it.descriptor.isNotBlank() }
