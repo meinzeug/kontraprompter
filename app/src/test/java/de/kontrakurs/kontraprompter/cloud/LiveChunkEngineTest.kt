@@ -12,14 +12,16 @@ class LiveChunkEngineTest {
         val data = sortedMapOf<Int, ByteArray>(); val revisions = sortedMapOf<Int, Long>()
         var state = "open"; var final: FinalOriginal? = null; var puts = 0; var commits = 0
         var loseAck = false; var wrongReceipt = false; var onPut: (() -> Unit)? = null
+        var pageLimit = 16; var chunkState = "ready"; var expected = 0L
         override fun begin(binding: LiveChunkBinding) = LiveChunkEngine.CHUNK
         override fun status(binding: LiveChunkBinding, after: Int?): LivePage {
-            val selected = data.keys.filter { it > (after ?: -1) }.take(16)
-            val parts = selected.map { index -> val bytes = data.getValue(index); LivePart(index, revisions.getValue(index), revisions.getValue(index) - 1, bytes.size, hash(bytes), "ready") }
+            val selected = data.keys.filter { it > (after ?: -1) }.take(pageLimit)
+            val parts = selected.map { index -> val bytes = data.getValue(index); LivePart(index, revisions.getValue(index), revisions.getValue(index) - 1, bytes.size, hash(bytes), chunkState).copy(expectedRevision = expected) }
             return LivePage(state, final?.size, final?.sha256, parts, data.keys.any { it > (selected.lastOrNull() ?: (after ?: -1)) })
         }
         override fun put(binding: LiveChunkBinding, index: Int, expectedRevision: Long, bytes: ByteArray, sha256: String): LivePartAck {
-            check((revisions[index] ?: 0) == expectedRevision && hash(bytes) == sha256)
+            check((if (chunkState == "writing") expected else revisions[index] ?: 0) == expectedRevision && hash(bytes) == sha256)
+            chunkState = "ready"
             data[index] = bytes.copyOf(); revisions[index] = expectedRevision + 1; puts++; onPut?.invoke()
             if (loseAck) { loseAck = false; error("lost ACK") }
             return LivePartAck(expectedRevision + 1, sha256)
@@ -63,6 +65,25 @@ class LiveChunkEngineTest {
         val original = FinalOriginal(bytes.size.toLong(), sha(bytes)); bytes[0] = 2; file.writeBytes(bytes)
         assertTrue(runCatching { LiveChunkEngine(fake) { true }.transfer(binding, file, original) }.isFailure)
         assertEquals(0, fake.puts); assertEquals("open", fake.state)
+    }
+    @Test fun `incomplete server write uses expected revision and paginated status`() = withFile { file ->
+        val bytes = ByteArray(LiveChunkEngine.CHUNK * 2 + 5) { (it % 239).toByte() }; file.writeBytes(bytes)
+        val fake = Fake().apply {
+            data[0] = ByteArray(LiveChunkEngine.CHUNK) { 7 }; revisions[0] = 3
+            chunkState = "writing"; expected = 3; pageLimit = 1
+        }
+        val receipt = LiveChunkEngine(fake) { true }.transfer(binding, file, FinalOriginal(bytes.size.toLong(), sha(bytes)))
+        assertEquals(binding.uploadId, receipt?.id); assertEquals(4L, fake.revisions[0]); assertEquals(3, fake.puts)
+    }
+    @Test fun `sealed state is committed only for the same verified original`() = withFile { file ->
+        val bytes = ByteArray(100) { 4 }; file.writeBytes(bytes)
+        val original = FinalOriginal(bytes.size.toLong(), sha(bytes))
+        val fake = Fake().apply { state = "sealed"; final = original }
+        assertEquals(binding.uploadId, LiveChunkEngine(fake) { true }.transfer(binding, file, original)?.id)
+        assertEquals(0, fake.puts)
+        val other = Fake().apply { state = "sealed"; final = FinalOriginal(100, "f".repeat(64)) }
+        assertTrue(runCatching { LiveChunkEngine(other) { true }.transfer(binding, file, original) }.isFailure)
+        assertEquals(0, other.commits)
     }
     @Test fun `published server state does not resurrect a deleted upload`() = withFile { file ->
         val bytes = ByteArray(100) { 2 }; file.writeBytes(bytes); val fake = Fake().apply { state = "published" }
