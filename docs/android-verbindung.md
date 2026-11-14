@@ -178,6 +178,17 @@ Dieser Befund gilt für die zum Testzeitpunkt verwendete Netzwerk- und
 Geräteausrichtung. Ein produktiver Netzwerkrelay und die durchgängige
 Ende-zu-Ende-Paarung bleiben zu implementieren und zu prüfen.
 
+Am 14. November 2026 gegen 22:02 Uhr funktionierte nach einem WLAN-Neuaufbau
+die manuelle direkte Kopplung derselben Geräte mit gegenseitiger Bestätigung,
+ohne ADB-Netzwerktunnel oder Testrelay. Das Kamerabild war mit etwa 30 Bildern
+pro Sekunde sichtbar. Start, Pause, Fortsetzen, Stopp und der Kamerawechsel vom
+Samsung wurden getestet. Das Xiaomi speicherte H.264 mit 480 × 640 Pixeln und
+AAC mit 48 kHz mono; der 27,23 Sekunden lange Clip hatte 6.484.549 Bytes. Der
+automatische Cloud-Upload wurde anhand der identischen SHA-256-Summe
+`d2257722fd7628be115e3fc5e8b210c1a7dd372eaf173d6ac5f2ea5569cb1385`
+nachgewiesen. Ein optischer QR-Scan, ein echter Bluetooth-Tastendruck und der
+verständliche Inhalt der Tonspur sind damit noch nicht getestet.
+
 ## Experimenteller Studio-Rendezvous-Transport
 
 Der Entwicklungsstand enthält einen noch nicht mit der App verbundenen,
