@@ -42,7 +42,7 @@ private fun runProbe() {
             val generator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore")
             generator.initialize(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_SIGN)
                 .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
-                .setDigests(KeyProperties.DIGEST_SHA256).build())
+                .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_NONE).build())
             generator.generateKeyPair()
         }
         for (alias in aliases) {

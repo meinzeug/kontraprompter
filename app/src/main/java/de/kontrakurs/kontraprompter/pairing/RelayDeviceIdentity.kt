@@ -31,7 +31,8 @@ internal class RelayDeviceIdentity private constructor(val id: String, publicKey
     private fun sign(bytes: ByteArray): ByteArray = Signature.getInstance("SHA256withECDSA").run { initSign(key); update(bytes); sign() }
 
     companion object {
-        private const val PREFIX = "videomaker-relay-phone-v1-"
+        private const val PREFIX = "videomaker-relay-phone-v2-"
+        private const val ALL_PAIRING_PREFIX = "videomaker-relay-phone-"
         private val lock = Any()
         fun loadOrCreate(context: Context): RelayDeviceIdentity = synchronized(lock) {
             val dir = File(context.applicationContext.filesDir, "relay-pairing")
@@ -40,8 +41,8 @@ internal class RelayDeviceIdentity private constructor(val id: String, publicKey
             val markerFile = File(dir, "identity.json"); val atomic = AtomicFile(markerFile)
             val keys = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             if (!markerFile.exists() && !File(markerFile.path + ".bak").exists()) {
-                if (keys.aliases().toList().any { it.startsWith(PREFIX) } || (dir.listFiles() ?: throw RelayIdentityRecoveryRequiredException()).isNotEmpty()) throw RelayIdentityRecoveryRequiredException()
-                write(atomic, dir, JSONObject().put("version", 1).put("id", UUID.randomUUID().toString()).put("state", "creating"))
+                if (keys.aliases().toList().any { it.startsWith(ALL_PAIRING_PREFIX) } || (dir.listFiles() ?: throw RelayIdentityRecoveryRequiredException()).isNotEmpty()) throw RelayIdentityRecoveryRequiredException()
+                write(atomic, dir, JSONObject().put("version", 2).put("id", UUID.randomUUID().toString()).put("state", "creating"))
             }
             val marker = try {
                 val text = atomic.openRead().bufferedReader(Charsets.UTF_8).use { reader ->
@@ -50,12 +51,12 @@ internal class RelayDeviceIdentity private constructor(val id: String, publicKey
                 }
                 JSONObject(text)
             } catch (_: Exception) { throw RelayIdentityRecoveryRequiredException() }
-            val id = try { marker.getString("id").also { check(marker.getInt("version") == 1 && UUID.fromString(it).toString() == it) } } catch (_: Exception) { throw RelayIdentityRecoveryRequiredException() }
+            val id = try { marker.getString("id").also { check(marker.getInt("version") == 2 && UUID.fromString(it).toString() == it) } } catch (_: Exception) { throw RelayIdentityRecoveryRequiredException() }
             val state = marker.optString("state", ""); if (state !in setOf("creating", "ready")) throw RelayIdentityRecoveryRequiredException()
             val alias = PREFIX + id
             if (state == "creating" && !keys.containsAlias(alias)) {
                 val generator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore")
-                generator.initialize(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_SIGN).setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1")).setDigests(KeyProperties.DIGEST_SHA256).build())
+                generator.initialize(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_SIGN).setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1")).setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_NONE).build())
                 generator.generateKeyPair()
             }
             val publicKey = keys.getCertificate(alias)?.publicKey?.encoded ?: throw RelayIdentityRecoveryRequiredException()
