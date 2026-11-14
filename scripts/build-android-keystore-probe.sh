@@ -29,6 +29,7 @@ java -Xmx256m -cp "$compiler:$compiler_stdlib:$script:$reflect:$daemon:$coroutin
   -d "$fixture_dir/classes" \
   "$android_root/app/src/main/java/de/kontrakurs/kontraprompter/network/PinnedPairingTls.kt" \
   "$android_root/app/src/test/java/de/kontrakurs/kontraprompter/pairing/AndroidKeystoreTlsProbe.kt" \
+  "$android_root/app/src/test/java/de/kontrakurs/kontraprompter/pairing/CrossDeviceTlsProbe.kt" \
   "$android_root/app/src/test/java/de/kontrakurs/kontraprompter/pairing/KeystoreProbeCleanup.kt" \
   "$android_root/app/src/test/java/de/kontrakurs/kontraprompter/pairing/KeystoreProbeInstrumentation.kt"
 jar cf "$fixture_dir/probe.jar" -C "$fixture_dir/classes" .
