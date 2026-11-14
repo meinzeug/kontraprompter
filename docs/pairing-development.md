@@ -24,3 +24,12 @@ zusätzlich `DIGEST_NONE`. Diese Tests beweisen weder TLS zwischen den beiden
 Geräten noch die erste Paarung, den Widerruf oder die automatische
 Wiederverbindung. Bestehende Schlüssel dürfen bei einer Formatänderung nicht
 unbemerkt ausgetauscht werden.
+
+Zusätzlich bestand am 14. November 2026 der tatsächliche Cross-Device-Test:
+Das Samsung und das Xiaomi erzeugten jeweils einen eigenen AndroidKeyStore-
+Testschlüssel. Gegenseitig gepinntes TLS 1.3, Datenaustausch, ein erneuter
+Handshake mit denselben Testidentitäten und die Ablehnung falscher Pins auf
+beiden Seiten waren erfolgreich. Die Testschlüssel wurden danach entfernt.
+`scripts/test-cross-device-tls.py` dokumentiert den Testablauf. Er verwendet
+USB-ADB ausschließlich als Testtunnel und belegt weder das produktive Relay
+noch eine App-Paarung oder deren automatischen Wiederaufbau.
