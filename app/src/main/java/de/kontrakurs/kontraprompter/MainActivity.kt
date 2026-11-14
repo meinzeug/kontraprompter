@@ -77,6 +77,7 @@ class MainActivity : ComponentActivity() {
     private val shutterKeys = ShutterKeyTracker()
     internal var selectedVolumeRemote: String? = null
     internal fun clearShutterKeys() = shutterKeys.clear()
+    internal fun clearShutterKeysForDevice(deviceId: Int) = shutterKeys.clearDevice(deviceId)
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val handler = shutterHandler
@@ -84,7 +85,7 @@ class MainActivity : ComponentActivity() {
         if (handler != null && device != null && Build.VERSION.SDK_INT >= 29 &&
             isSelfieTrigger(device.isExternal, device.isVirtual, device.vendorId, device.productId,
                 device.name, device.descriptor, selectedVolumeRemote, event.keyCode)) {
-            when (shutterKeys.event(true, device.descriptor, event.keyCode, event.action, event.repeatCount, event.eventTime, event.isCanceled)) {
+            when (shutterKeys.event(true, device.descriptor, event.keyCode, event.action, event.repeatCount, event.eventTime, event.isCanceled, device.id)) {
                 ShutterKeyDecision.SHORT_PRESS -> { handler(device, event.keyCode, event.eventTime); return true }
                 ShutterKeyDecision.CONSUME -> return true
                 ShutterKeyDecision.PASS -> Unit
@@ -138,8 +139,8 @@ private fun KontraApp(activity: MainActivity) {
         val inputs = activity.getSystemService(Context.INPUT_SERVICE) as InputManager
         val inputListener = object : InputManager.InputDeviceListener {
             override fun onInputDeviceAdded(deviceId: Int) = Unit
-            override fun onInputDeviceRemoved(deviceId: Int) { clicks.clear(); activity.clearShutterKeys() }
-            override fun onInputDeviceChanged(deviceId: Int) { clicks.clear(); activity.clearShutterKeys() }
+            override fun onInputDeviceRemoved(deviceId: Int) { clicks.clearDevice(deviceId); activity.clearShutterKeysForDevice(deviceId) }
+            override fun onInputDeviceChanged(deviceId: Int) { clicks.clearDevice(deviceId); activity.clearShutterKeysForDevice(deviceId) }
         }
         val listening = activeSession != null && runCatching { inputs.registerInputDeviceListener(inputListener, Handler(Looper.getMainLooper())); true }.getOrDefault(false)
         activity.selectedVolumeRemote = selectedVolumeRemote
@@ -152,8 +153,11 @@ private fun KontraApp(activity: MainActivity) {
                     current.pairedCapture.triggerUnavailable(); return
                 }
                 when (shutterAction(context, gesture)) {
-                    ShutterAction.START -> if (!current.pairedCapture.toggle(context.projectId)) current.pairedCapture.triggerUnavailable()
-                    ShutterAction.CAPTURE_TOGGLE -> if (!current.pairedCapture.toggle()) current.pairedCapture.triggerUnavailable()
+                    ShutterAction.START -> if (!current.pairedCapture.requestShutter("start", context.projectId, context.phase, context.recordingId, context.link.state)) current.pairedCapture.triggerUnavailable()
+                    ShutterAction.CAPTURE_TOGGLE -> {
+                        val command = if (context.phase == "recording") "pause" else "resume"
+                        if (!current.pairedCapture.requestShutter(command, null, context.phase, context.recordingId, context.link.state)) current.pairedCapture.triggerUnavailable()
+                    }
                     ShutterAction.SCROLL -> scope.launch {
                         val event = RemoteEvent("toggle", CompletableDeferred()) {
                             val state = current.pairedCapture.state.value
@@ -181,12 +185,14 @@ private fun KontraApp(activity: MainActivity) {
                     clicks.clear(); current.pairedCapture.triggerUnavailable()
                 } else {
                     val context = ShutterContext(state.phase, state.recordingId, selected.studioProjectId, ShutterLink(marker), device.id, device.descriptor)
-                    when (val result = clicks.press(device.descriptor, code, time, context)) {
+                    val deviceKey = "${device.id}:${device.descriptor}"
+                    when (val result = clicks.press(deviceKey, code, time, context)) {
                         is ShutterPress.Wait -> {
                             result.overdue?.let { dispatch(ShutterGesture.SINGLE, it) }
                             scope.launch {
-                                delay(400)
-                                clicks.expire(device.descriptor, result.token, android.os.SystemClock.uptimeMillis())?.let { dispatch(ShutterGesture.SINGLE, it) }
+                                var remaining = time + 400 - android.os.SystemClock.uptimeMillis()
+                                while (remaining > 0) { delay(remaining); remaining = time + 400 - android.os.SystemClock.uptimeMillis() }
+                                clicks.expire(deviceKey, result.token, android.os.SystemClock.uptimeMillis())?.let { dispatch(ShutterGesture.SINGLE, it) }
                             }
                         }
                         is ShutterPress.Double -> dispatch(ShutterGesture.DOUBLE, result.context)

@@ -70,9 +70,18 @@ internal class PairedCapture(
         }
     }
 
-    fun request(action: String, projectId: String? = null): Boolean = synchronized(lock) {
+    fun request(action: String, projectId: String? = null): Boolean = requestBound(action, projectId, null)
+
+    private data class ShutterBinding(val phase: String, val recordingId: String?, val connection: Any)
+
+    /** Recheck take, phase and exact connection while admitting the explicit command. */
+    fun requestShutter(action: String, projectId: String?, phase: String, recordingId: String?, connection: Any): Boolean =
+        requestBound(action, projectId, ShutterBinding(phase, recordingId, connection))
+
+    private fun requestBound(action: String, projectId: String?, binding: ShutterBinding?): Boolean = synchronized(lock) {
         if (host || !lan.state.value.ready || pendingId != null) return false
         val snapshot = _state.value
+        if (binding != null && !shutterRequestMatches(binding.phase, binding.recordingId, snapshot.phase, snapshot.recordingId, snapshot.pending, lan.isApprovedConnection(binding.connection))) return false
         if (!pairedActionAllowed(action, snapshot.phase, pending = false)) return false
         if (action == "switch_camera" && (!snapshot.cameraCanSwitch || snapshot.cameraSwitching || snapshot.cameraFront == null)) return false
         val requestId = UUID.randomUUID().toString()
@@ -81,7 +90,9 @@ internal class PairedCapture(
         val message = JSONObject().put("request", requestId).put("action", action).put("recording", recordingId).apply { if (project != null) put("project", project); if (action == "switch_camera") put("cameraFront", snapshot.cameraFront) }.toString()
         pendingId = requestId; pendingAction = action
         _state.value = snapshot.copy(pending = true, message = null)
-        if (!lan.send("capture_command", message)) {
+        val sent = if (binding == null) lan.send("capture_command", message)
+            else lan.sendOnApprovedConnection(binding.connection, "capture_command", message)
+        if (!sent) {
             pendingId = null; pendingAction = null; _state.value = snapshot.copy(message = "Kameraverbindung nicht verfügbar."); return false
         }
         timeout = scope.launch {

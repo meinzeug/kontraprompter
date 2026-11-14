@@ -171,6 +171,13 @@ class LanSession(context: Context) : AutoCloseable {
         scope.launch { try { current.send(type, payload) } catch (_: Exception) { disconnect("Verbindung verloren", current) } }
         return true
     }
+    /** Never let a delayed command migrate to a replacement connection. */
+    internal fun sendOnApprovedConnection(marker: Any, type: String, payload: String): Boolean = synchronized(socketLock) {
+        val current = channel ?: return false
+        if (closed.get() || !connected.get() || !_state.value.ready || current !== marker) return false
+        scope.launch { try { current.send(type, payload) } catch (_: Exception) { disconnect("Verbindung verloren", current) } }
+        true
+    }
     /** An opaque identity for this exact approved connection, invalidated on disconnect or close. */
     internal fun approvedConnectionMarker(): Any? = synchronized(socketLock) {
         if (!closed.get() && connected.get() && _state.value.ready) channel else null
