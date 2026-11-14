@@ -8,6 +8,7 @@ class RecordingOwnerTest {
         assertTrue(recordingOwnerAllowed(true, RecordingOrigin.WEB))
         assertFalse(recordingOwnerAllowed(true, RecordingOrigin.MANUAL))
         assertFalse(recordingOwnerAllowed(true, RecordingOrigin.LAN))
+        assertFalse(recordingOwnerAllowed(true, RecordingOrigin.LAN_UNASSIGNED))
         assertTrue(recordingOwnerAllowed(false, RecordingOrigin.LAN))
     }
     @Test fun `web owner cannot take over an active paired recording`() {

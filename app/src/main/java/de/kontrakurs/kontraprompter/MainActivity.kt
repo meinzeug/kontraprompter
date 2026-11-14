@@ -310,7 +310,7 @@ private fun KontraApp(activity: MainActivity) {
                 Text("Live-Vorschau zwischen zwei Geräten. Aufnahmen mit Ton bleiben zunächst auf dem Kameragerät.", color = SoftText, style = MaterialTheme.typography.bodySmall)
             }
             "connection" -> session?.let { active ->
-                ConnectionScreen(active, onClose = { active.close(); session = null; page = "roles" }, onScripts = { page = "scripts" })
+                ConnectionScreen(active, cloud, onClose = { active.close(); session = null; page = "roles" }, onScripts = { page = "scripts" })
             } ?: Page("Nicht verbunden", "VERBINDUNG", onBack = { page = "roles" }) { Action("Zur Rollenwahl") { page = "roles" } }
             "scripts" -> Page("Deine Skripte", "TELEPROMPTER", onBack = { page = "roles" }) {
                 MainAction("Skripte aus Videomaker öffnen") { page = "studio" }

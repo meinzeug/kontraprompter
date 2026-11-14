@@ -50,6 +50,10 @@ import de.kontrakurs.kontraprompter.video.isActive
 import de.kontrakurs.kontraprompter.video.recordingStopDescription
 import de.kontrakurs.kontraprompter.camera.CAMERA_REMOTE_UI_ENABLED
 import de.kontrakurs.kontraprompter.camera.CameraRemoteRuntime
+import de.kontrakurs.kontraprompter.cloud.CloudUploadViewModel
+import de.kontrakurs.kontraprompter.video.RecordingOrigin
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 @Composable
 fun LivePreview(video: RtcVideo, horizontal: Boolean = false, vertical: Boolean = false, rotation: Int = 0, fill: Boolean = false, opacity: Float = 1f, modifier: Modifier = Modifier) {
@@ -83,7 +87,7 @@ fun LivePreview(video: RtcVideo, horizontal: Boolean = false, vertical: Boolean 
 }
 
 @Composable
-fun ConnectionScreen(session: LiveSession, onClose: () -> Unit, onScripts: () -> Unit) {
+internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel, onClose: () -> Unit, onScripts: () -> Unit) {
     val state by session.lan.state.collectAsState()
     val video by session.video.collectAsState()
     val secureActivity = LocalContext.current as Activity
@@ -94,7 +98,7 @@ fun ConnectionScreen(session: LiveSession, onClose: () -> Unit, onScripts: () ->
         onDispose { if (!alreadySecure) secureActivity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
     }
     if (session.host) {
-        CameraConnectionScreen(session, state, video, onClose)
+        CameraConnectionScreen(session, state, video, cloud, onClose)
         return
     }
     var address by rememberSaveable { mutableStateOf("") }
@@ -174,15 +178,55 @@ fun ConnectionScreen(session: LiveSession, onClose: () -> Unit, onScripts: () ->
 }
 
 
+
+/** Camera credentials stay on this phone and are never sent to the paired display. */
+@Composable
+private fun CameraCloudPanel(cloud: CloudUploadViewModel) {
+    val scope = rememberCoroutineScope()
+    val status by cloud.lanAutoUploader.status.collectAsState()
+    var expanded by remember { mutableStateOf(false) }
+    var password by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    AppPanel {
+        Text("Videomaker-Cloud", style = MaterialTheme.typography.titleMedium)
+        Text(status.message.ifBlank { "Fertige Aufnahmen werden bei aktiver Anmeldung und geöffneter App zur Übertragung geprüft. Das Original bleibt auf diesem Gerät." }, color = SoftText, style = MaterialTheme.typography.bodyMedium)
+        notice?.let { Text(it, color = SoftText, style = MaterialTheme.typography.bodySmall) }
+        val id = status.recordingId
+        if (status.reauthorizeRequired && id != null) QuietAction("Upload für diese Aufnahme erneut freigeben", enabled = !busy) {
+            scope.launch {
+                busy = true; notice = null
+                try { notice = if (cloud.lanAutoUploader.reauthorize(id)) "Freigabe gespeichert. Der Upload wird erneut geprüft." else "Freigabe nicht möglich. Bitte Anmeldung und Skript prüfen." }
+                catch (error: CancellationException) { throw error }
+                catch (_: Exception) { notice = "Freigabe nicht bestätigt. Das Original bleibt lokal." }
+                finally { busy = false }
+            }
+        }
+        QuietAction(if (expanded) "Anmeldung schließen" else "Bei Videomaker anmelden", enabled = !busy) { expanded = !expanded; if (!expanded) password = "" }
+        if (expanded) {
+            OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Studio-Passwort") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
+            MainAction(if (busy) "Melde an …" else "Anmelden", enabled = !busy && password.isNotEmpty()) {
+                val entered = password; password = ""; busy = true; notice = null
+                scope.launch {
+                    try { cloud.client.login(entered); expanded = false; notice = "Angemeldet. Ausstehende Aufnahmen werden geprüft." }
+                    catch (error: CancellationException) { throw error }
+                    catch (_: Exception) { notice = "Anmeldung nicht möglich. Die Aufnahme bleibt lokal." }
+                    finally { busy = false }
+                }
+            }
+        }
+    }
+}
+
 /** Camera-first workspace: pairing and transport state remain visible without implying a recording. */
 @Composable
-private fun CameraConnectionScreen(session: LiveSession, state: LanState, video: RtcVideo?, onClose: () -> Unit) {
+private fun CameraConnectionScreen(session: LiveSession, state: LanState, video: RtcVideo?, cloud: CloudUploadViewModel, onClose: () -> Unit) {
     val context = LocalContext.current
     val recording by session.recording.collectAsState()
     var permissionMessage by remember { mutableStateOf<String?>(null) }
     val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
-            permissionMessage = if (session.startRecording()) null else "Die Kamera ist noch nicht bereit."
+            permissionMessage = if (session.startRecording(origin = RecordingOrigin.LAN_UNASSIGNED)) null else "Die Kamera ist noch nicht bereit."
         } else permissionMessage = "Für eine Aufnahme mit Ton ist die Mikrofonfreigabe erforderlich."
     }
     val connected = state.status == "Videoverbindung hergestellt" && state.error == null
@@ -225,7 +269,7 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
                 } else if (recording !is LocalRecording.Finalizing) {
                     MainAction("Aufnahme starten", enabled = connected && video != null && (recording as? LocalRecording.Failed)?.blocked != true) {
                         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                            permissionMessage = if (session.startRecording()) null else "Die Kamera ist noch nicht bereit."
+                            permissionMessage = if (session.startRecording(origin = RecordingOrigin.LAN_UNASSIGNED)) null else "Die Kamera ist noch nicht bereit."
                         } else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
                     }
                 }
@@ -257,6 +301,7 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
                     Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .5f)))
                 ))
             }
+            CameraCloudPanel(cloud)
             if (CAMERA_REMOTE_UI_ENABLED) CameraRemotePanel(session, connected)
             Surface(Modifier.fillMaxWidth(), color = Panel.copy(alpha = .96f), shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, Color(0xff343a44))) {
                 Column(Modifier.padding(horizontal = 18.dp, vertical = 15.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -107,7 +107,7 @@ internal class PairedCapture(
             if (action != "start" && project != null) return true
             val accepted = handled.execute(request, PairedCommand(action, recording, project)) {
                 when (action) {
-                    "start" -> session.startRecording(recording, project, if (project == null) RecordingOrigin.MANUAL else RecordingOrigin.LAN)
+                    "start" -> session.startRecording(recording, project, if (project == null) RecordingOrigin.LAN_UNASSIGNED else RecordingOrigin.LAN)
                     "pause" -> session.pauseRecording(recording)
                     "resume" -> session.resumeRecording(recording)
                     "stop" -> session.stopRecording(recording)
