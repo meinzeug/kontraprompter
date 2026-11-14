@@ -7,6 +7,7 @@ import java.net.InetAddress
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.MessageDigest
+import java.security.Security
 import java.security.spec.ECGenParameterSpec
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -14,6 +15,13 @@ import java.util.concurrent.TimeUnit
 
 /** Shell-context fixture: creates and removes only its two random test aliases. */
 fun main() {
+    // A plain shell app_process does not run Android's normal provider setup.
+    // Try only a publicly callable framework entry point; do not change hidden-API policy.
+    if (Security.getProvider("AndroidKeyStore") == null) {
+        val installed = sequenceOf("android.security.keystore2.AndroidKeyStoreProvider", "android.security.keystore.AndroidKeyStoreProvider")
+            .any { name -> runCatching { Class.forName(name).getMethod("install").invoke(null); Security.getProvider("AndroidKeyStore") != null }.getOrDefault(false) }
+        check(installed) { "AndroidKeyStore provider unavailable in shell context" }
+    }
     val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
     val prefix = "kp-shell-tls-fixture-${UUID.randomUUID()}-"
     val aliases = listOf(prefix + "camera", prefix + "prompter")
