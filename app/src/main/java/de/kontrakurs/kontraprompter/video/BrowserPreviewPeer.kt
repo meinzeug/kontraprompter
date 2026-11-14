@@ -31,20 +31,25 @@ internal class BrowserPreviewPeer(
     private val manager = context.getSystemService(ConnectivityManager::class.java) ?: error("Netzwerk nicht verfügbar")
     private val network = PreviewCandidatePolicy.snapshot(context) ?: error("Lokales Netzwerk nicht verfügbar")
     private var callbackRegistered = false
+    // Latch on the callback thread: examining only the later executor state can miss a
+    // transient change which has already reverted by the time the queue is drained.
+    private val networkGuard = PreviewNetworkGuard(network) { post { fail() } }
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
-        private fun checkNetwork() = post { if (!closed && PreviewCandidatePolicy.snapshot(context) != network) fail() }
-        override fun onAvailable(value: Network) = checkNetwork()
-        override fun onLost(value: Network) {
-            if (value == network.network) post { fail() } else checkNetwork()
+        override fun onAvailable(value: Network) { if (value != network.network) networkGuard.invalidate() }
+        override fun onLost(value: Network) { networkGuard.invalidate() }
+        override fun onCapabilitiesChanged(value: Network, caps: NetworkCapabilities) {
+            if (value != network.network || !PreviewCandidatePolicy.permitted(caps)) networkGuard.invalidate()
         }
-        override fun onCapabilitiesChanged(value: Network, caps: NetworkCapabilities) = checkNetwork()
-        override fun onLinkPropertiesChanged(value: Network, properties: LinkProperties) = checkNetwork()
+        override fun onLinkPropertiesChanged(value: Network, properties: LinkProperties) {
+            val links = PreviewCandidatePolicy.linkSnapshot(properties)
+            networkGuard.observe(if (links == null) null else PreviewCandidatePolicy.NetworkSnapshot(value, links))
+        }
     }
 
     init {
         try {
             manager.registerDefaultNetworkCallback(networkCallback); callbackRegistered = true
-            check(PreviewCandidatePolicy.snapshot(context) == network) { "Lokales Netzwerk hat sich geändert" }
+            check(networkGuard.isValid() && PreviewCandidatePolicy.snapshot(context) == network) { "Lokales Netzwerk hat sich geändert" }
             val config = PeerConnection.RTCConfiguration(emptyList()).apply { sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN }
             connection = factory.createPeerConnection(config, observer()) ?: error("Vorschau-Peer nicht verfügbar")
             check(connection!!.addTrack(track, listOf("kontra-preview")) != null) { "Vorschauspur nicht verfügbar" }
@@ -56,7 +61,7 @@ internal class BrowserPreviewPeer(
         connection?.setRemoteDescription(object : PreviewSdpObserver() {
             override fun onSetSuccess() = post {
                 if (!closed) {
-                    if (PreviewCandidatePolicy.snapshot(context) != network) { fail(); return@post }
+                    if (!networkGuard.isValid() || PreviewCandidatePolicy.snapshot(context) != network) { fail(); return@post }
                     remoteSet = true
                     pendingRemote.forEach { connection?.addIceCandidate(it) }; pendingRemote.clear()
                     connection?.createAnswer(object : PreviewSdpObserver() {
@@ -66,7 +71,7 @@ internal class BrowserPreviewPeer(
                                 connection?.setLocalDescription(object : PreviewSdpObserver() {
                                     override fun onSetSuccess() = post {
                                         if (!closed) {
-                                            if (PreviewCandidatePolicy.snapshot(context) != network) { fail(); return@post }
+                                            if (!networkGuard.isValid() || PreviewCandidatePolicy.snapshot(context) != network) { fail(); return@post }
                                             emit("answer", description.description, null, null)
                                             answerSent = true
                                             pendingLocal.forEach(::emitCandidate); pendingLocal.clear()
@@ -88,10 +93,11 @@ internal class BrowserPreviewPeer(
     fun candidate(data: String, mid: String?, line: Int?) {
         if (closed || (mid == null && line == null) || (line != null && line !in 0..255) || (mid?.length ?: 0) > 64) return
         runCatching { candidateWorker.execute {
+            if (!networkGuard.isValid()) return@execute
             val checked = PreviewCandidatePolicy.checked(context, data, network) ?: return@execute
             post {
                 if (!closed) {
-                    if (PreviewCandidatePolicy.snapshot(context) != network) { fail(); return@post }
+                    if (!networkGuard.isValid() || PreviewCandidatePolicy.snapshot(context) != network) { fail(); return@post }
                     val c = IceCandidate(mid ?: "", line ?: 0, checked)
                     if (remoteSet) connection?.addIceCandidate(c) else if (pendingRemote.size < 64) pendingRemote.add(c) else fail()
                 }
@@ -114,10 +120,11 @@ internal class BrowserPreviewPeer(
         }
         override fun onIceCandidate(candidate: IceCandidate) {
             runCatching { candidateWorker.execute {
+                if (!networkGuard.isValid()) return@execute
                 val checked = PreviewCandidatePolicy.checked(context, candidate.sdp, network) ?: return@execute
                 post {
                     if (!closed) {
-                        if (PreviewCandidatePolicy.snapshot(context) != network) { fail(); return@post }
+                        if (!networkGuard.isValid() || PreviewCandidatePolicy.snapshot(context) != network) { fail(); return@post }
                         val safe = IceCandidate(candidate.sdpMid, candidate.sdpMLineIndex, checked)
                         if (answerSent) emitCandidate(safe) else if (pendingLocal.size < 64) pendingLocal.add(safe) else fail()
                     }

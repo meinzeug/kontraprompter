@@ -2,6 +2,7 @@ package de.kontrakurs.kontraprompter.video
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import java.net.Inet4Address
@@ -13,7 +14,8 @@ import java.util.concurrent.TimeUnit
 
 /** The preview may contact only a host on the current Wi-Fi or Ethernet subnet. */
 internal object PreviewCandidatePolicy {
-    internal data class NetworkSnapshot(val network: Network, val links: Set<String>)
+    internal data class LinkSnapshot(val interfaceName: String, val links: Set<String>, val routes: Set<String>)
+    internal data class NetworkSnapshot(val network: Network, val properties: LinkSnapshot)
     private val resolver = ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, ArrayBlockingQueue(1), { task ->
         Thread(task, "preview-mdns").apply { isDaemon = true }
     }, ThreadPoolExecutor.AbortPolicy())
@@ -23,11 +25,21 @@ internal object PreviewCandidatePolicy {
         val manager = context.getSystemService(ConnectivityManager::class.java) ?: return null
         val network = manager.activeNetwork ?: return null
         val capabilities = manager.getNetworkCapabilities(network) ?: return null
-        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) ||
-            !(capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))) return null
-        val links = manager.getLinkProperties(network)?.linkAddresses?.map { "${it.address.hostAddress}/${it.prefixLength}" }?.toSet().orEmpty()
-        if (links.isEmpty() || manager.activeNetwork != network) return null
-        return NetworkSnapshot(network, links)
+        if (!permitted(capabilities)) return null
+        val properties = manager.getLinkProperties(network)?.let(::linkSnapshot) ?: return null
+        if (manager.activeNetwork != network) return null
+        return NetworkSnapshot(network, properties)
+    }
+
+    fun permitted(capabilities: NetworkCapabilities): Boolean =
+        !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+            (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
+
+    fun linkSnapshot(properties: LinkProperties): LinkSnapshot? {
+        val name = properties.interfaceName?.takeIf { it.isNotBlank() } ?: return null
+        val links = properties.linkAddresses.map { "${it.address.hostAddress}/${it.prefixLength}" }.toSet()
+        if (links.isEmpty()) return null
+        return LinkSnapshot(name, links, properties.routes.map { it.toString() }.toSet())
     }
 
     fun checked(context: Context, candidate: String, expected: NetworkSnapshot): String? {
