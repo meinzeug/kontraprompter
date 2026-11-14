@@ -39,5 +39,7 @@ class PeerJournalPolicyTest {
         val newPair = candidate.copy(pairId = "44444444-4444-4444-8444-444444444444", peerSpkiSha256 = "d".repeat(64))
         assertThrows(IllegalArgumentException::class.java) { stagePeer(staged, newPair) }
         assertThrows(IllegalArgumentException::class.java) { stagePeer(empty, candidate.copy(peerDeviceId = local)) }
+        val reusedKey = candidate.copy(pairId = "44444444-4444-4444-8444-444444444444", peerDeviceId = "55555555-5555-4555-8555-555555555555")
+        assertThrows(IllegalArgumentException::class.java) { stagePeer(staged, reusedKey) }
     }
 }
