@@ -70,6 +70,7 @@ class LiveChunkEngineTest {
         val bytes = ByteArray(LiveChunkEngine.CHUNK * 2 + 5) { (it % 239).toByte() }; file.writeBytes(bytes)
         val fake = Fake().apply {
             data[0] = ByteArray(LiveChunkEngine.CHUNK) { 7 }; revisions[0] = 3
+            data[1] = ByteArray(LiveChunkEngine.CHUNK) { 8 }; revisions[1] = 3
             chunkState = "writing"; expected = 3; pageLimit = 1
         }
         val receipt = LiveChunkEngine(fake) { true }.transfer(binding, file, FinalOriginal(bytes.size.toLong(), sha(bytes)))
