@@ -56,7 +56,8 @@ internal fun HelpScreen(onBack: () -> Unit) {
         }
         HelpSection("Bluetooth-Auslöser") {
             HelpParagraph("Den Auslöser zuerst in den Android-Bluetooth-Einstellungen mit dem Samsung koppeln. Ab Android 10 wird der ITFIT Selfie P007 unterstützt; andere externe Auslöser können in den App-Einstellungen ausgewählt werden.")
-            HelpParagraph("Im verbundenen Prompter löst eine unterstützte Taste Start, Pause oder Fortsetzen der Aufnahme aus. Zum endgültigen Beenden „Stopp“ in der App verwenden. Eingebaute Lautstärketasten bleiben unverändert.")
+            HelpParagraph("Vor der Aufnahme startet ein kurzer Druck die Kamera. Während der Aufnahme pausiert oder startet ein kurzer Druck nur den Teleprompter. Ein schneller Doppeldruck pausiert oder setzt die Aufnahme fort. Zum endgültigen Beenden „Stopp“ in der App verwenden.")
+            HelpParagraph("Bei ausgewählten externen Auslösern können auch Enter, Leertaste oder Steuerkreuz-Mitte verwendet werden. Eingebaute und virtuelle Tastaturen bleiben unverändert. Prüfe die Tasten deines Auslösers vor der Aufnahme.")
         }
         HelpSection("Speichern und Grenzen") {
             HelpParagraph("Die fertige Aufnahme liegt zunächst auf dem Xiaomi. Unter „Aufnahmen“ kannst du sie exportieren oder nach Anmeldung einem Studio-Skript zuordnen und hochladen. Das lokale Original bleibt erhalten.")
