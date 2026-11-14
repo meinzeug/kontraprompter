@@ -301,7 +301,7 @@ private fun KontraApp(activity: MainActivity) {
                 Spacer(Modifier.height(8.dp))
                 Text("Dieses Gerät verwenden als", style = MaterialTheme.typography.titleMedium, color = SoftText)
                 RoleTile("Teleprompter", "Skripte lesen und fernsteuern", camera = false) { page = "scripts" }
-                Toggle("Frontkamera bevorzugen", cameraPreferFront) { cameraPreferFront = it; preferences.edit().putBoolean("camera_prefer_front", it).apply() }
+                Toggle("Frontkamera verwenden (aus: Rückkamera)", cameraPreferFront) { cameraPreferFront = it; preferences.edit().putBoolean("camera_prefer_front", it).apply() }
                 Text("Die Auswahl gilt für die nächste Kamerasitzung. Fehlt die gewählte Kamera, wird die andere verwendet. Bei aktiver Aufnahme bleibt sie unverändert.", color = SoftText, style = MaterialTheme.typography.bodySmall)
                 RoleTile("Kamera", "Livebild für den Teleprompter", camera = true) {
                     if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startHost()
