@@ -11,19 +11,23 @@ class SelfieRemoteKeysTest {
         assertFalse(keyboardEpochCurrent(firstEpoch, nextEpoch, true))
         assertFalse(keyboardEpochCurrent(null, nextEpoch, true))
         val keys = ShutterKeyTracker()
-        keys.event(true, "keyboard", 66, 0, 0, 100, deviceId = 1)
-        keys.event(true, "p007", 25, 0, 0, 100, deviceId = 2)
-        keys.clearDescriptor("keyboard")
-        assertEquals(ShutterKeyDecision.CONSUME, keys.event(true, "keyboard", 66, 1, 0, 150, deviceId = 1))
-        assertEquals(ShutterKeyDecision.SHORT_PRESS, keys.event(true, "p007", 25, 1, 0, 150, deviceId = 2))
+        keys.event(true, "p007", 66, 0, 0, 100, deviceId = 1)
+        keys.event(true, "p007", 25, 0, 0, 100, deviceId = 1)
+        keys.clearKeyboardDescriptor("p007")
+        assertEquals(ShutterKeyDecision.CONSUME, keys.event(true, "p007", 66, 1, 0, 150, deviceId = 1))
+        assertEquals(ShutterKeyDecision.SHORT_PRESS, keys.event(true, "p007", 25, 1, 0, 150, deviceId = 1))
         val clicks = ShutterClickMachine()
-        val keyboard = context(id = 1, descriptor = "keyboard")
-        val remote = context(id = 2, descriptor = "p007")
-        val first = clicks.press("1:keyboard", 66, 1000, keyboard) as ShutterPress.Wait
-        val second = clicks.press("2:p007", 25, 1000, remote) as ShutterPress.Wait
-        clicks.clearDescriptor("keyboard")
-        assertNull(clicks.expire("1:keyboard", first.token, 1400))
-        assertEquals(remote, clicks.expire("2:p007", second.token, 1400))
+        val keyboard = context(id = 1, descriptor = "p007").copy(keyboardBased = true, keyboardEpoch = firstEpoch)
+        val remote = context(id = 1, descriptor = "p007")
+        val first = clicks.press("1:keyboard:p007", 66, 1000, keyboard) as ShutterPress.Wait
+        val second = clicks.press("1:trigger:p007", 25, 1000, remote) as ShutterPress.Wait
+        clicks.clearKeyboardDescriptor("p007")
+        assertNull(clicks.expire("1:keyboard:p007", first.token, 1400))
+        assertEquals(remote, clicks.expire("1:trigger:p007", second.token, 1400))
+        clicks.press("1:trigger:p007", 25, 2000, remote)
+        assertEquals(ShutterPress.Double(remote), clicks.press("1:trigger:p007", 25, 2120, remote))
+        clicks.clearKeyboardDescriptor("p007")
+        assertEquals(ShutterPress.Ignored, clicks.press("1:trigger:p007", 25, 2200, remote))
     }
     @Test fun `keyboard shutter requires explicit readiness while P007 volume remains available`() {
         for (key in listOf(23, 62, 66, 160)) {

@@ -43,7 +43,7 @@ internal class ShutterKeyTracker(private val maximumPressMs: Long = 500L) {
 
     @Synchronized fun clear() { pressed.clear() }
     @Synchronized fun clearDevice(deviceId: Int) { pressed.keys.removeAll { it.deviceId == deviceId } }
-    @Synchronized fun clearDescriptor(descriptor: String) { pressed.keys.removeAll { it.device == descriptor } }
+    @Synchronized fun clearKeyboardDescriptor(descriptor: String) { pressed.keys.removeAll { it.device == descriptor && isKeyboardShutterKey(it.code) } }
 }
 
 /** Reference identity makes a disconnect/reconnect invalidate pending clicks. */
@@ -84,7 +84,7 @@ internal sealed interface ShutterPress {
 internal class ShutterClickMachine(private val windowMs: Long = 400L, private val bounceMs: Long = 80L) {
     private data class Pending(val at: Long, val keyCode: Int, val token: Long, val context: ShutterContext)
     private val pending = mutableMapOf<String, Pending>()
-    private data class Cooldown(val until: Long, val deviceId: Int)
+    private data class Cooldown(val until: Long, val deviceId: Int, val descriptor: String, val keyboardBased: Boolean)
     private val cooldown = mutableMapOf<String, Cooldown>()
     private var nextToken = 0L
 
@@ -100,7 +100,7 @@ internal class ShutterClickMachine(private val windowMs: Long = 400L, private va
             if (elapsed < 0L || elapsed < bounceMs || (old.keyCode != keyCode && elapsed < 250L)) return ShutterPress.Ignored
             if (elapsed < windowMs) {
                 pending.remove(device)
-                cooldown[device] = Cooldown(timeMs + windowMs, context.deviceId)
+                cooldown[device] = Cooldown(timeMs + windowMs, context.deviceId, context.descriptor, context.keyboardBased)
                 return if (old.context == context) ShutterPress.Double(context) else ShutterPress.Changed
             }
         } else if (pending.size + cooldown.size >= 8) return ShutterPress.Ignored
@@ -117,9 +117,9 @@ internal class ShutterClickMachine(private val windowMs: Long = 400L, private va
     }
 
     @Synchronized fun clear() { pending.clear(); cooldown.clear() }
-    @Synchronized fun clearDescriptor(descriptor: String) {
-        pending.entries.removeAll { it.value.context.descriptor == descriptor }
-        cooldown.keys.removeAll { it == descriptor || it.substringAfter(':', "") == descriptor }
+    @Synchronized fun clearKeyboardDescriptor(descriptor: String) {
+        pending.entries.removeAll { it.value.context.descriptor == descriptor && it.value.context.keyboardBased }
+        cooldown.entries.removeAll { it.value.descriptor == descriptor && it.value.keyboardBased }
     }
     @Synchronized fun clearDevice(deviceId: Int) {
         pending.entries.removeAll { it.value.context.deviceId == deviceId }

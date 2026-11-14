@@ -85,7 +85,7 @@ class MainActivity : ComponentActivity() {
         if (view == null || view === shutterReadyView) {
             val previous = selectedVolumeRemote?.takeIf { shutterKeyboardReady || shutterReadyView != null }
             shutterKeyboardEpoch = Any(); shutterKeyboardReady = false; shutterReadyView = null
-            previous?.let { shutterKeys.clearDescriptor(it); onKeyboardReadinessInvalidated?.invoke(it) }
+            previous?.let { shutterKeys.clearKeyboardDescriptor(it); onKeyboardReadinessInvalidated?.invoke(it) }
         }
     }
     internal fun keyboardRemoteReadyFor(descriptor: String): Boolean = shutterKeyboardReady && selectedVolumeRemote == descriptor &&
@@ -109,7 +109,7 @@ class MainActivity : ComponentActivity() {
         if (handler != null && device != null && Build.VERSION.SDK_INT >= 29 &&
             isSelfieTrigger(device.isExternal, device.isVirtual, device.vendorId, device.productId,
                 device.name, device.descriptor, selectedVolumeRemote, event.keyCode)) {
-            if (!keyboardShutterAdmitted(event.keyCode, keyboardRemoteReadyFor(device.descriptor))) { shutterKeys.clearDevice(device.id); return true }
+            if (!keyboardShutterAdmitted(event.keyCode, keyboardRemoteReadyFor(device.descriptor))) { shutterKeys.clearKeyboardDescriptor(device.descriptor); return true }
             when (shutterKeys.event(true, device.descriptor, event.keyCode, event.action, event.repeatCount, event.eventTime, event.isCanceled, device.id)) {
                 ShutterKeyDecision.SHORT_PRESS -> { handler(device, event.keyCode, event.eventTime); return true }
                 ShutterKeyDecision.CONSUME -> return true
@@ -168,7 +168,7 @@ private fun KontraApp(activity: MainActivity) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val inputs = activity.getSystemService(Context.INPUT_SERVICE) as InputManager
         val selectedDeviceIds = InputDevice.getDeviceIds().filter { selectedVolumeRemote != null && InputDevice.getDevice(it)?.descriptor == selectedVolumeRemote }.toMutableSet()
-        activity.onKeyboardReadinessInvalidated = { clicks.clearDescriptor(it) }
+        activity.onKeyboardReadinessInvalidated = { clicks.clearKeyboardDescriptor(it) }
         val inputListener = object : InputManager.InputDeviceListener {
             override fun onInputDeviceAdded(deviceId: Int) { inputRefresh++; if (selectedVolumeRemote != null && InputDevice.getDevice(deviceId)?.descriptor == selectedVolumeRemote) { selectedDeviceIds.add(deviceId); activity.disarmKeyboardRemote() } }
             override fun onInputDeviceRemoved(deviceId: Int) { inputRefresh++; if (selectedDeviceIds.remove(deviceId)) activity.disarmKeyboardRemote(); clicks.clearDevice(deviceId); activity.clearShutterKeysForDevice(deviceId) }
@@ -227,7 +227,7 @@ private fun KontraApp(activity: MainActivity) {
                     val keyboardEpoch = if (keyboardBased) activity.keyboardRemoteMarkerFor(device.descriptor) else null
                     if (keyboardBased && keyboardEpoch == null) { current.pairedCapture.triggerUnavailable(); return@shutter }
                     val context = ShutterContext(state.phase, state.recordingId, selected.studioProjectId, ShutterLink(marker), device.id, device.descriptor, keyboardBased, keyboardEpoch)
-                    val deviceKey = "${device.id}:${device.descriptor}"
+                    val deviceKey = "${device.id}:${if (keyboardBased) "keyboard" else "trigger"}:${device.descriptor}"
                     when (val result = clicks.press(deviceKey, code, time, context)) {
                         is ShutterPress.Wait -> {
                             result.overdue?.let { dispatch(ShutterGesture.SINGLE, it) }
