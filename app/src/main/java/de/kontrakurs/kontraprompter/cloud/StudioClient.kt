@@ -282,7 +282,9 @@ class StudioClient {
             val ack = JSONArray().apply { request.acknowledgements.forEach { put(JSONObject().put("id", it.id).put("result", it.result)) } }
             val name = android.os.Build.MODEL.filter { it.code >= 32 && it.code != 127 }.take(80).ifBlank { "Android-Kamera" }
             val body = JSONObject().put("id", sessionId).put("sequence", request.sequence).put("name", name)
-                .put("capability", "remote-record-v1").put("phase", request.report.phase)
+                .put("capability", "remote-record-v2").put("phase", request.report.phase)
+                .put("paused", request.report.paused ?: JSONObject.NULL)
+                .put("cameraFront", request.report.cameraFront ?: JSONObject.NULL).put("cameraCanSwitch", request.report.cameraCanSwitch)
                 .put("recordingId", request.report.recordingId ?: JSONObject.NULL).put("projectId", request.report.projectId ?: JSONObject.NULL)
                 .put("sizeBytes", request.report.sizeBytes ?: JSONObject.NULL).put("sha256", request.report.sha256 ?: JSONObject.NULL).put("ack", ack)
                 .toString().toByteArray(Charsets.UTF_8)

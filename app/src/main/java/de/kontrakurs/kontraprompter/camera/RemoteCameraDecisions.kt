@@ -13,12 +13,16 @@ private val activeCapturePhases = setOf("accepted", "preparing", "recording", "f
 internal val allowedCapturePhases = activeCapturePhases + setOf("ready", "partial", "error")
 internal const val MAX_CAMERA_DECISIONS = 10_000
 internal const val MAX_CAMERA_SEQUENCE = 9_007_199_254_740_991L
-internal fun cameraJournalVersion(state: CameraDecisionState): Int = if (state.captures.any { it.quarantinedPhase != null }) 2 else 1
+internal fun cameraJournalVersion(state: CameraDecisionState): Int = when {
+    state.decisions.any { it.command.type in setOf("record_pause", "record_resume", "camera_switch") } -> 3
+    state.captures.any { it.quarantinedPhase != null } -> 2
+    else -> 1
+}
 internal fun cameraJournalQuarantinesValid(version: Int, captures: List<CameraCapture>): Boolean {
-    if (version !in 1..2 || version == 2 && captures.none { it.quarantinedPhase != null }) return false
+    if (version !in 1..3 || version == 2 && captures.none { it.quarantinedPhase != null }) return false
     return captures.all { capture ->
         val phase = capture.quarantinedPhase
-        phase == null || (version == 2 && phase == capture.phase && capture.projectId != null && capture.reportedPhase != phase &&
+        phase == null || (version >= 2 && phase == capture.phase && capture.projectId != null && capture.reportedPhase != phase &&
             when (phase) {
                 "error" -> capture.sizeBytes == null && capture.sha256 == null
                 "partial" -> capture.sizeBytes != null && capture.sizeBytes in 1..1_073_741_824L && capture.sha256?.matches(Regex("^[0-9a-f]{64}$")) == true
@@ -38,10 +42,11 @@ internal fun reserveCameraSequence(state: CameraDecisionState): CameraDecisionSt
 private fun canonicalUuid(value: String): Boolean = runCatching { UUID.fromString(value).toString() == value }.getOrDefault(false)
 
 /** A caller persists [CameraDecisionOutcome.state] before ACK or executing [CameraDecisionOutcome.action]. */
-internal fun decideCameraCommand(state: CameraDecisionState, command: CameraCommand, expired: Boolean, canStart: Boolean): CameraDecisionOutcome {
+internal fun decideCameraCommand(state: CameraDecisionState, command: CameraCommand, expired: Boolean, canStart: Boolean, canPause: Boolean = false, canResume: Boolean = false, canSwitch: Boolean = false): CameraDecisionOutcome {
     require(canonicalUuid(command.id) && canonicalUuid(command.recordingId))
-    require(command.type == "record_start" || command.type == "record_stop")
+    require(command.type in setOf("record_start", "record_stop", "record_pause", "record_resume", "camera_switch"))
     require(if (command.type == "record_start") command.projectId != null && canonicalUuid(command.projectId) else command.projectId == null)
+    require(command.type != "camera_switch" || command.recordingId == command.id)
     state.decisions.firstOrNull { it.command.id == command.id }?.let { previous ->
         check(previous.command == command) { "A command ID was reused for different data" }
         check(previous.revision < Long.MAX_VALUE) { "Camera decision revision exhausted" }
@@ -61,11 +66,17 @@ internal fun decideCameraCommand(state: CameraDecisionState, command: CameraComm
     val eligible = when (command.type) {
         "record_start" -> canStart && state.decisions.size < MAX_CAMERA_DECISIONS - 1 && capture == null &&
             state.captures.none { it.phase in activeCapturePhases || it.reportedPhase != it.phase || it.quarantinedPhase != null }
+        "record_pause" -> capture?.phase == "recording" && capture.projectId != null && canPause
+        "record_resume" -> capture?.phase == "recording" && capture.projectId != null && canResume
+        "camera_switch" -> canSwitch && state.captures.none { it.phase in activeCapturePhases || it.reportedPhase != it.phase || it.quarantinedPhase != null }
         else -> capture != null
     }
     val result = when { expired -> "expired"; !eligible -> "rejected"; else -> "accepted" }
     val action = if (result != "accepted") null else when (command.type) {
         "record_start" -> "start"
+        "record_pause" -> "pause"
+        "record_resume" -> "resume"
+        "camera_switch" -> "switch"
         else -> if (capture!!.phase in activeCapturePhases) "stop" else null
     }
     val captures = if (action == "start") state.captures + CameraCapture(command.recordingId, command.projectId!!, "accepted") else state.captures

@@ -139,4 +139,40 @@ class RemoteCameraDecisionsTest {
         val stop = CameraCommand(id(), "record_stop", begin.recordingId, null)
         assertEquals("stop", decideCameraCommand(almostFull, stop, false, true).action)
     }
+    @Test fun `pause and resume require the matching active project and are not repeated after a crash`() {
+        val begin = start()
+        val accepted = decideCameraCommand(CameraDecisionState(), begin, false, true).state
+        val running = updateCameraCapture(accepted, begin.recordingId, "recording")
+        val pause = CameraCommand(id(), "record_pause", begin.recordingId, null)
+        val denied = decideCameraCommand(running, pause, false, true, canPause = false)
+        assertEquals("rejected", denied.result)
+        val paused = decideCameraCommand(running, pause, false, true, canPause = true)
+        assertEquals("accepted", paused.result)
+        assertEquals("pause", paused.action)
+        assertEquals(3, cameraJournalVersion(paused.state))
+        assertNull(decideCameraCommand(paused.state, pause, false, true, canPause = true).action)
+        val recovered = recoverCameraCaptures(paused.state)
+        assertNull(decideCameraCommand(recovered, pause, false, true, canPause = true).action)
+        val resume = CameraCommand(id(), "record_resume", begin.recordingId, null)
+        assertEquals("rejected", decideCameraCommand(running, resume, false, true).result)
+        assertEquals("resume", decideCameraCommand(running, resume, false, true, canResume = true).action)
+        val foreign = resume.copy(id = id(), recordingId = id())
+        assertEquals("rejected", decideCameraCommand(running, foreign, false, true, canResume = true).result)
+        assertEquals("expired", decideCameraCommand(running, resume, true, true, canResume = true).result)
+    }
+
+    @Test fun `camera switch is only accepted when idle and never repeats after an acknowledged decision`() {
+        val commandId = id()
+        val command = CameraCommand(commandId, "camera_switch", commandId, null)
+        assertEquals("rejected", decideCameraCommand(CameraDecisionState(), command, false, true).result)
+        val accepted = decideCameraCommand(CameraDecisionState(), command, false, true, canSwitch = true)
+        assertEquals("switch", accepted.action)
+        assertEquals(3, cameraJournalVersion(accepted.state))
+        assertNull(decideCameraCommand(accepted.state, command, false, true, canSwitch = true).action)
+        assertThrows(IllegalArgumentException::class.java) { decideCameraCommand(CameraDecisionState(), command.copy(recordingId = id()), false, true, canSwitch = true) }
+        val begin = start()
+        val recording = decideCameraCommand(CameraDecisionState(), begin, false, true).state
+        assertEquals("rejected", decideCameraCommand(recording, command, false, true, canSwitch = true).result)
+    }
+
 }

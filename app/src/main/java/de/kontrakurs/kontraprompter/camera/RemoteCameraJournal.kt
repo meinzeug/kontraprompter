@@ -48,9 +48,9 @@ internal class RemoteCameraJournal private constructor(context: Context, private
         return next.sequence
     }
 
-    @Synchronized fun decide(command: CameraCommand, expired: Boolean, canStart: Boolean): CameraDecisionOutcome {
+    @Synchronized fun decide(command: CameraCommand, expired: Boolean, canStart: Boolean, canPause: Boolean = false, canResume: Boolean = false, canSwitch: Boolean = false): CameraDecisionOutcome {
         check(!broken)
-        val outcome = decideCameraCommand(current, command, expired, canStart)
+        val outcome = decideCameraCommand(current, command, expired, canStart, canPause, canResume, canSwitch)
         commit(outcome.state)
         return outcome
     }
@@ -134,7 +134,7 @@ internal class RemoteCameraJournal private constructor(context: Context, private
             result.toString()
         }
         val root = JSONObject(text)
-        val version = root.getInt("version"); check(version == 1 || version == 2)
+        val version = root.getInt("version"); check(version in 1..3)
         val rawSequence = if (root.has("sequence")) root.get("sequence") else 0
         check(rawSequence is Int || rawSequence is Long)
         val sequence = (rawSequence as Number).toLong(); check(sequence in 0..MAX_CAMERA_SEQUENCE)
@@ -143,7 +143,7 @@ internal class RemoteCameraJournal private constructor(context: Context, private
         val decisions = (0 until rawDecisions.length()).map { index -> rawDecisions.getJSONObject(index).let { d ->
             val project = if (d.isNull("projectId")) null else d.getString("projectId")
             val command = CameraCommand(uuid(d.getString("id")), d.getString("type"), uuid(d.getString("recordingId")), project?.let(::uuid))
-            check(command.type == "record_start" && project != null || command.type == "record_stop" && project == null)
+            check(command.type == "record_start" && project != null || command.type == "record_stop" && project == null || version >= 3 && command.type in setOf("record_pause", "record_resume", "camera_switch") && project == null && (command.type != "camera_switch" || command.recordingId == command.id))
             val result = d.getString("result"); check(result in setOf("accepted", "rejected", "expired"))
             CameraDecision(command, result, d.getBoolean("pendingAck"), d.getLong("revision").also { check(it > 0) })
         } }

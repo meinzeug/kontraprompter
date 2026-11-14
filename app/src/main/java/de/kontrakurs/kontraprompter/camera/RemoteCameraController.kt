@@ -13,7 +13,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-internal data class CameraReport(val phase: String, val recordingId: String?, val projectId: String?, val sizeBytes: Long? = null, val sha256: String? = null)
+internal data class CameraReport(val phase: String, val recordingId: String?, val projectId: String?, val sizeBytes: Long? = null, val sha256: String? = null, val paused: Boolean? = null, val cameraFront: Boolean? = null, val cameraCanSwitch: Boolean = false)
 internal data class CameraAck(val id: String, val result: String, val revision: Long)
 internal data class CameraPollRequest(val sequence: Long, val report: CameraReport, val acknowledgements: List<CameraAck>)
 internal data class CameraPollResponse(val command: CameraCommand?, val remainingMs: Long)
@@ -32,7 +32,8 @@ internal class RemoteCameraController private constructor(private val journal: R
             val sequence: Long
             try {
                 sequence = withContext(Dispatchers.IO) { journal.reserveSequence() }
-                report = snapshot()
+                val selection = session.cameraSelection.value
+                report = snapshot().copy(cameraFront = selection.front, cameraCanSwitch = selection.canSwitch && selection.front != null && !selection.switching && !session.recording.value.isActive())
                 acknowledgements = withContext(Dispatchers.IO) { journal.snapshot().decisions.filter { it.pendingAck }.take(32).map { CameraAck(it.command.id, it.result, it.revision) } }
             } catch (error: CancellationException) { throw error }
             catch (error: CameraReconciliationPendingException) { throw error }
@@ -101,7 +102,10 @@ internal class RemoteCameraController private constructor(private val journal: R
         withContext(NonCancellable) {
             check(!closing) { "Camera remote session is closing" }
             val outcome = try {
-                withContext(Dispatchers.IO) { journal.decide(command, expired, session.canStartRemoteRecording()) }
+                val live = session.recording.value
+                val canPause = live is LocalRecording.Recording && live.id == command.recordingId
+                val canResume = live is LocalRecording.Paused && live.id == command.recordingId
+                withContext(Dispatchers.IO) { journal.decide(command, expired, session.canStartRemoteRecording(), canPause, canResume, !live.isActive() && session.cameraSelection.value.canSwitch && !session.cameraSelection.value.switching) }
             } catch (error: Exception) {
                 // A failed durable ACK must not prevent a correctly targeted active camera from stopping.
                 if (!expired && command.type == "record_stop") session.stopRecording(command.recordingId)
@@ -115,6 +119,9 @@ internal class RemoteCameraController private constructor(private val journal: R
                     }
                 }
                 "stop" -> session.stopRecording(command.recordingId)
+                "pause" -> session.pauseRemoteRecording(command.recordingId)
+                "resume" -> session.resumeRemoteRecording(command.recordingId)
+                "switch" -> session.switchRemoteCamera()
             }
             outcome
         }
@@ -149,7 +156,7 @@ internal class RemoteCameraController private constructor(private val journal: R
         // active recording. Reconciliation is resumed once the recorder is terminal.
         if (cameraReportBeforeReconciliation(phase)) {
             val active = withContext(Dispatchers.IO) { journal.snapshot() }.captures.firstOrNull { it.recordingId == id }
-            return@withLock CameraReport(phase, id, active?.projectId)
+            return@withLock CameraReport(phase, id, active?.projectId, paused = if (phase == "recording") state is LocalRecording.Paused else null)
         }
         if (!withContext(Dispatchers.IO) { journal.reconcilePending() }) throw CameraReconciliationPendingException()
         val current = withContext(Dispatchers.IO) { journal.snapshot() }
