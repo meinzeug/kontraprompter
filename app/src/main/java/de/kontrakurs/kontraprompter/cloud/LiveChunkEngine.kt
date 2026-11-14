@@ -30,6 +30,7 @@ internal interface LiveChunkTransport {
     fun put(binding: LiveChunkBinding, index: Int, expectedRevision: Long, bytes: ByteArray, sha256: String): LivePartAck
     fun seal(binding: LiveChunkBinding, original: FinalOriginal): LiveSeal
     fun commit(binding: LiveChunkBinding, original: FinalOriginal): LiveReceipt
+    fun receipt(binding: LiveChunkBinding): LiveReceipt
 }
 
 /** A single attempt; retry by recreating the engine with the same durable binding and querying server state. */
@@ -70,14 +71,23 @@ internal class LiveChunkEngine(private val transport: LiveChunkTransport, privat
         }
     }
     /** Sends full chunks only during recording. A stopped original must come from the verified recorder manifest. */
-    fun transfer(binding: LiveChunkBinding, file: File, finalized: FinalOriginal? = null): LiveReceipt? = try {
-        transferAttempt(binding, file, finalized)
+    fun transfer(binding: LiveChunkBinding, file: File, finalized: FinalOriginal? = null, commitAttempted: Boolean = false, beforeCommit: () -> Unit = {}): LiveReceipt? = try {
+        transferAttempt(binding, file, finalized, commitAttempted, beforeCommit)
     } catch (failure: Exception) {
         // A failed request may have committed remotely despite a lost acknowledgement.
         cached = null
         throw failure
     }
-    private fun transferAttempt(binding: LiveChunkBinding, file: File, finalized: FinalOriginal?): LiveReceipt? {
+    private fun transferAttempt(binding: LiveChunkBinding, file: File, finalized: FinalOriginal?, commitAttempted: Boolean, beforeCommit: () -> Unit): LiveReceipt? {
+        if (commitAttempted) {
+            // The previous commit might have succeeded and the user might have
+            // subsequently deleted it. Never begin or commit again in this state.
+            val original = checkNotNull(finalized)
+            check(fileHash(file, original.size) == original.sha256)
+            authorized(); val receipt = transport.receipt(binding); authorized()
+            checkReceipt(binding, original, receipt)
+            return receipt
+        }
         authorized(); check(transport.begin(binding) == CHUNK)
         // On a live poll, reuse acknowledged state in this process. Restart, error and
         // finalization always re-query and rehash the remote parts. This avoids hashing
@@ -90,10 +100,17 @@ internal class LiveChunkEngine(private val transport: LiveChunkTransport, privat
         if (finalized != null) {
             check(finalized.sha256.matches(Regex("[0-9a-f]{64}")) && fileHash(file, size) == finalized.sha256)
         }
-        if (state.state == "published") return null // never recreate a server copy deleted by the user
+        if (state.state == "published") {
+            // Read-only receipt query must rehash the actual server file; never call
+            // commit on a published stage because the user may have deleted it.
+            check(finalized != null)
+            authorized(); val receipt = transport.receipt(binding); authorized()
+            checkReceipt(binding, finalized, receipt)
+            return receipt
+        }
         if (state.state == "sealed") {
             check(finalized != null && state.finalSize == size && state.finalSha256 == finalized.sha256)
-            return finish(binding, file, finalized)
+            return finish(binding, file, finalized, beforeCommit)
         }
         check(state.state == "open")
         val count = if (finalized == null) (size / CHUNK).toInt() else ((size + CHUNK - 1) / CHUNK).toInt()
@@ -117,13 +134,16 @@ internal class LiveChunkEngine(private val transport: LiveChunkTransport, privat
         check(fileHash(file, size) == finalized.sha256) { "Final original changed" }
         authorized(); val sealed = transport.seal(binding, finalized)
         check(sealed.state == "sealed" && !sealed.published && sealed.size == size && sealed.sha256 == finalized.sha256)
-        return finish(binding, file, finalized)
+        return finish(binding, file, finalized, beforeCommit)
     }
-    private fun finish(binding: LiveChunkBinding, file: File, original: FinalOriginal): LiveReceipt {
+    private fun finish(binding: LiveChunkBinding, file: File, original: FinalOriginal, beforeCommit: () -> Unit): LiveReceipt {
         check(fileHash(file, original.size) == original.sha256)
-        authorized(); val receipt = transport.commit(binding, original)
+        authorized(); beforeCommit(); authorized(); val receipt = transport.commit(binding, original)
         authorized()
-        check(receipt.published && receipt.id == binding.uploadId && receipt.projectId == binding.projectId && receipt.size == original.size && receipt.sha256 == original.sha256)
+        checkReceipt(binding, original, receipt)
         return receipt
+    }
+    private fun checkReceipt(binding: LiveChunkBinding, original: FinalOriginal, receipt: LiveReceipt) {
+        check(receipt.published && receipt.id == binding.uploadId && receipt.projectId == binding.projectId && receipt.size == original.size && receipt.sha256 == original.sha256)
     }
 }

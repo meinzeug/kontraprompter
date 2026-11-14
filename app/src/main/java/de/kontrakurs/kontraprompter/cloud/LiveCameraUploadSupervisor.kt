@@ -19,7 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 
-internal data class LiveCameraStatus(val recordingId: String? = null, val message: String = "")
+internal data class LiveCameraStatus(val recordingId: String? = null, val message: String = "", val reauthorizeRequired: Boolean = false)
 /** Must be derived from the living session, never from a persisted manifest. */
 internal data class LiveRecorderSnapshot(val recordingId: String?, val active: Boolean)
 internal fun liveRecorderId(snapshot: LiveRecorderSnapshot): String? = snapshot.recordingId.takeIf { snapshot.active }
@@ -93,7 +93,7 @@ internal class LiveCameraUploadSupervisor(context: Context, private val client: 
                 val prior = bindings.get(activeId)
                 val target = prior?.binding?.projectId ?: initial.project ?: client.ensureLanRecordingProject(activeId, session)
                 if (prior != null && prior.binding.sessionHash != hash) {
-                    _status.value = LiveCameraStatus(activeId, "Studio-Sitzung geändert. Live-Upload braucht eine erneute Freigabe; Original bleibt lokal."); return
+                    _status.value = LiveCameraStatus(activeId, "Studio-Sitzung geändert. Live-Upload braucht eine erneute Freigabe; Original bleibt lokal.", true); return
                 }
                 // The whole-file gate closes the race with a recording that finalizes
                 // while project creation is in flight. Existing journal means no live path.
@@ -115,10 +115,10 @@ internal class LiveCameraUploadSupervisor(context: Context, private val client: 
         for (entry in pending) {
             val item = saved[entry.binding.recordingId] ?: continue // incomplete, partial or crashed: never publish
             if (!mayFinalizeLive(entry, item)) continue
-            if (entry.binding.sessionHash != hash) { _status.value = LiveCameraStatus(item.id, "Studio-Sitzung geändert. Erneute Freigabe erforderlich; Original bleibt lokal."); continue }
+            if (entry.binding.sessionHash != hash) { _status.value = LiveCameraStatus(item.id, "Studio-Sitzung geändert. Erneute Freigabe erforderlich; Original bleibt lokal.", true); continue }
             _status.value = LiveCameraStatus(item.id, "Abgeschlossene Aufnahme wird geprüft und übertragen …")
             val original = FinalOriginal(item.bytes, item.sha256)
-            val receipt = engine(session, hash).transfer(entry.binding, item.file, original)
+            val receipt = engine(session, hash).transfer(entry.binding, item.file, original, entry.commitAttempted) { bindings.markCommitAttempted(entry.binding) }
             if (receipt != null) {
                 bindings.confirm(entry.binding, original, receipt)
                 _status.value = LiveCameraStatus(item.id, "Video in der Cloud bestätigt; Original bleibt lokal.")

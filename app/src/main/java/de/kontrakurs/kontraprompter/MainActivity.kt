@@ -106,6 +106,7 @@ private fun KontraApp(activity: MainActivity) {
     var session by remember { mutableStateOf<LiveSession?>(null) }
     val cloud: CloudUploadViewModel = viewModel()
     val studioClient = cloud.client
+    LaunchedEffect(session) { cloud.observeLiveCamera(session) }
     var remoteEnabled by remember { mutableStateOf(false) }
     var remoteStatus by remember { mutableStateOf("Aus") }
     var playbackStatus by remember { mutableStateOf("Pausiert") }

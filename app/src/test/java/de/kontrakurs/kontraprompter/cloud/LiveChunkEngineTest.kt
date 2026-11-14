@@ -10,10 +10,10 @@ class LiveChunkEngineTest {
     private fun sha(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
     private class Fake : LiveChunkTransport {
         val data = sortedMapOf<Int, ByteArray>(); val revisions = sortedMapOf<Int, Long>()
-        var state = "open"; var final: FinalOriginal? = null; var puts = 0; var commits = 0
-        var loseAck = false; var wrongReceipt = false; var onPut: (() -> Unit)? = null
+        var state = "open"; var final: FinalOriginal? = null; var puts = 0; var commits = 0; var begins = 0
+        var loseAck = false; var wrongReceipt = false; var deleted = false; var onPut: (() -> Unit)? = null
         var pageLimit = 16; var chunkState = "ready"; var expected = 0L
-        override fun begin(binding: LiveChunkBinding) = LiveChunkEngine.CHUNK
+        override fun begin(binding: LiveChunkBinding): Int { begins++; return LiveChunkEngine.CHUNK }
         override fun status(binding: LiveChunkBinding, after: Int?): LivePage {
             val selected = data.keys.filter { it > (after ?: -1) }.take(pageLimit)
             val parts = selected.map { index -> val bytes = data.getValue(index); LivePart(index, revisions.getValue(index), revisions.getValue(index) - 1, bytes.size, hash(bytes), chunkState).copy(expectedRevision = expected) }
@@ -34,6 +34,11 @@ class LiveChunkEngineTest {
         override fun commit(binding: LiveChunkBinding, original: FinalOriginal): LiveReceipt {
             commits++; state = "published"
             return LiveReceipt(if (wrongReceipt) binding.recordingId else binding.uploadId, binding.projectId, original.size, original.sha256, true)
+        }
+        override fun receipt(binding: LiveChunkBinding): LiveReceipt {
+            check(state in setOf("sealed", "published") && !deleted)
+            val original = checkNotNull(final)
+            return LiveReceipt(binding.uploadId, binding.projectId, original.size, original.sha256, true)
         }
         private fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
     }
@@ -86,9 +91,25 @@ class LiveChunkEngineTest {
         assertTrue(runCatching { LiveChunkEngine(other) { true }.transfer(binding, file, original) }.isFailure)
         assertEquals(0, other.commits)
     }
+    @Test fun `lost commit response never repeats a commit or recreates a stage`() = withFile { file ->
+        val bytes = ByteArray(100) { 7 }; file.writeBytes(bytes)
+        val original = FinalOriginal(bytes.size.toLong(), sha(bytes))
+        // Server may still say sealed if it crashed after inserting a row, which
+        // the user can then delete before the app reconnects.
+        val fake = Fake().apply { state = "sealed"; final = original; deleted = true }
+        assertTrue(runCatching { LiveChunkEngine(fake) { true }.transfer(binding, file, original, commitAttempted = true) }.isFailure)
+        assertEquals(0, fake.commits); assertEquals(0, fake.begins)
+        fake.deleted = false
+        assertEquals(binding.uploadId, LiveChunkEngine(fake) { true }.transfer(binding, file, original, commitAttempted = true)?.id)
+        assertEquals(0, fake.commits); assertEquals(0, fake.begins)
+    }
     @Test fun `published server state does not resurrect a deleted upload`() = withFile { file ->
-        val bytes = ByteArray(100) { 2 }; file.writeBytes(bytes); val fake = Fake().apply { state = "published" }
-        assertNull(LiveChunkEngine(fake) { true }.transfer(binding, file, FinalOriginal(bytes.size.toLong(), sha(bytes))))
+        val bytes = ByteArray(100) { 2 }; file.writeBytes(bytes); val original = FinalOriginal(bytes.size.toLong(), sha(bytes))
+        val fake = Fake().apply { state = "published"; final = original; deleted = true }
+        assertTrue(runCatching { LiveChunkEngine(fake) { true }.transfer(binding, file, original) }.isFailure)
+        assertEquals(0, fake.commits)
+        fake.deleted = false
+        assertEquals(binding.uploadId, LiveChunkEngine(fake) { true }.transfer(binding, file, original)?.id)
         assertEquals(0, fake.commits)
     }
 }

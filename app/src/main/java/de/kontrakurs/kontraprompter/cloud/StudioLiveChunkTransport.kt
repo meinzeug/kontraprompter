@@ -13,6 +13,7 @@ internal class StudioLiveChunkTransport(
     private val sessionBinding: String,
     private val sessionMatches: () -> Boolean,
     private val open: (String, String) -> HttpURLConnection,
+    private val origin: String = "https://videomaker.dorfspy.de",
 ) : LiveChunkTransport {
     private fun request(binding: LiveChunkBinding, method: String, query: String = "", headers: Map<String, String> = emptyMap(), body: ByteArray? = null): JSONObject {
         check(binding.sessionHash == sessionBinding && sessionMatches()) { "Studio session changed" }
@@ -26,7 +27,7 @@ internal class StudioLiveChunkTransport(
                 Thread({ runCatching { connection.disconnect() } }, "KontraLiveUploadCancel").apply { isDaemon = true }.start()
             }, 60, TimeUnit.SECONDS)
             connection.setRequestProperty("Cookie", cookie)
-            connection.setRequestProperty("Origin", "https://videomaker.dorfspy.de")
+            connection.setRequestProperty("Origin", origin)
             connection.setRequestProperty("X-Recording-Id", binding.recordingId)
             connection.setRequestProperty("X-Live-Origin", "lan")
             headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
@@ -76,6 +77,11 @@ internal class StudioLiveChunkTransport(
     override fun seal(binding: LiveChunkBinding, original: FinalOriginal): LiveSeal {
         val response = request(binding, "POST", headers = finalHeaders("seal", original))
         return LiveSeal(response.getString("state"), response.getBoolean("published"), response.getLong("sizeBytes"), response.getString("sha256"))
+    }
+    override fun receipt(binding: LiveChunkBinding): LiveReceipt {
+        val response = request(binding, "GET", "?receipt=1")
+        check(response.getString("recordingId") == binding.recordingId)
+        return LiveReceipt(response.getString("id"), response.getString("projectId"), response.getLong("sizeBytes"), response.getString("sha256"), response.getBoolean("published"))
     }
     override fun commit(binding: LiveChunkBinding, original: FinalOriginal): LiveReceipt {
         val response = request(binding, "POST", headers = finalHeaders("commit", original))

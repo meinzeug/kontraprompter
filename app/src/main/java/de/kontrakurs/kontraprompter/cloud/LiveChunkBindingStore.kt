@@ -8,7 +8,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
-internal data class LiveBindingEntry(val binding: LiveChunkBinding, val confirmed: Boolean, val size: Long? = null, val sha256: String? = null)
+internal data class LiveBindingEntry(val binding: LiveChunkBinding, val confirmed: Boolean, val size: Long? = null, val sha256: String? = null, val commitAttempted: Boolean = false)
 
 /** Durable upload-path fence. Never stores cookies, media or scripts. */
 internal class LiveChunkBindingStore(context: Context) {
@@ -34,7 +34,9 @@ internal class LiveChunkBindingStore(context: Context) {
         val sha = if (json.isNull("sha256")) null else json.getString("sha256")
         if (confirmed) check(size != null && size in 1..LiveChunkEngine.MAX_SIZE && sha != null && sha.matches(Regex("[0-9a-f]{64}")))
         else check(size == null && sha == null)
-        LiveBindingEntry(binding, confirmed, size, sha)
+        val commitAttempted = if (json.has("commitAttempted")) json.getBoolean("commitAttempted") else confirmed
+        if (confirmed) check(commitAttempted)
+        LiveBindingEntry(binding, confirmed, size, sha, commitAttempted)
     }
     /** Invalid entries fail closed instead of allowing a competing upload. */
     fun all(): List<LiveBindingEntry> = synchronized(lock) {
@@ -53,19 +55,25 @@ internal class LiveChunkBindingStore(context: Context) {
     fun reauthorize(previous: LiveChunkBinding, sessionHash: String): LiveBindingEntry = synchronized(lock) {
         val old = checkNotNull(get(previous.recordingId))
         check(!old.confirmed && old.binding == previous)
-        LiveBindingEntry(previous.copy(sessionHash = sessionHash), false).also { write(it) }
+        old.copy(binding = previous.copy(sessionHash = sessionHash)).also { write(it) }
+    }
+    /** Persist before issuing commit; a lost response may never cause automatic republication. */
+    fun markCommitAttempted(binding: LiveChunkBinding): LiveBindingEntry = synchronized(lock) {
+        val old = checkNotNull(get(binding.recordingId)); check(old.binding == binding && !old.confirmed)
+        if (old.commitAttempted) return@synchronized old
+        old.copy(commitAttempted = true).also { write(it) }
     }
     fun confirm(binding: LiveChunkBinding, original: FinalOriginal, receipt: LiveReceipt): LiveBindingEntry = synchronized(lock) {
         val current = checkNotNull(get(binding.recordingId)); check(current.binding == binding)
         check(receipt.published && receipt.id == binding.uploadId && receipt.projectId == binding.projectId && receipt.size == original.size && receipt.sha256 == original.sha256)
-        val entry = LiveBindingEntry(binding, true, original.size, original.sha256)
+        val entry = LiveBindingEntry(binding, true, original.size, original.sha256, true)
         if (current.confirmed) { check(current == entry); return@synchronized current }
         entry.also { write(it) }
     }
     private fun write(entry: LiveBindingEntry) {
         val target = target(entry.binding.recordingId); val atomic = AtomicFile(target)
         val json = JSONObject().put("version", 1).put("recordingId", entry.binding.recordingId).put("projectId", entry.binding.projectId)
-            .put("sessionHash", entry.binding.sessionHash).put("confirmed", entry.confirmed)
+            .put("sessionHash", entry.binding.sessionHash).put("confirmed", entry.confirmed).put("commitAttempted", entry.commitAttempted)
             .put("sizeBytes", entry.size ?: JSONObject.NULL).put("sha256", entry.sha256 ?: JSONObject.NULL)
         val stream = atomic.startWrite()
         try { stream.write(json.toString().toByteArray(Charsets.UTF_8)); stream.fd.sync(); atomic.finishWrite(stream) }

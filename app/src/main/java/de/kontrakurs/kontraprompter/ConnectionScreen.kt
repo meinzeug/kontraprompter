@@ -51,6 +51,7 @@ import de.kontrakurs.kontraprompter.video.recordingStopDescription
 import de.kontrakurs.kontraprompter.camera.CAMERA_REMOTE_UI_ENABLED
 import de.kontrakurs.kontraprompter.camera.CameraRemoteRuntime
 import de.kontrakurs.kontraprompter.cloud.CloudUploadViewModel
+import de.kontrakurs.kontraprompter.cloud.EXPERIMENTAL_LIVE_UPLOAD
 import de.kontrakurs.kontraprompter.video.RecordingOrigin
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -184,6 +185,7 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
 private fun CameraCloudPanel(cloud: CloudUploadViewModel) {
     val scope = rememberCoroutineScope()
     val status by cloud.lanAutoUploader.status.collectAsState()
+    val liveStatus by cloud.liveUploader.status.collectAsState()
     var expanded by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -191,6 +193,19 @@ private fun CameraCloudPanel(cloud: CloudUploadViewModel) {
     AppPanel {
         Text("Videomaker-Cloud", style = MaterialTheme.typography.titleMedium)
         Text(status.message.ifBlank { "Fertige Aufnahmen werden bei aktiver Anmeldung und geöffneter App zur Übertragung geprüft. Das Original bleibt auf diesem Gerät." }, color = SoftText, style = MaterialTheme.typography.bodyMedium)
+        if (EXPERIMENTAL_LIVE_UPLOAD && liveStatus.message.isNotBlank()) {
+            Text(liveStatus.message, color = SoftText, style = MaterialTheme.typography.bodyMedium)
+            val liveId = liveStatus.recordingId
+            if (liveStatus.reauthorizeRequired && liveId != null) QuietAction("Live-Upload erneut freigeben", enabled = !busy) {
+                scope.launch {
+                    busy = true; notice = null
+                    try { notice = if (cloud.liveUploader.reauthorize(liveId)) "Freigabe gespeichert." else "Freigabe nicht möglich. Das Original bleibt lokal." }
+                    catch (error: CancellationException) { throw error }
+                    catch (_: Exception) { notice = "Freigabe nicht bestätigt. Das Original bleibt lokal." }
+                    finally { busy = false }
+                }
+            }
+        }
         notice?.let { Text(it, color = SoftText, style = MaterialTheme.typography.bodySmall) }
         val id = status.recordingId
         if (status.reauthorizeRequired && id != null) QuietAction("Upload für diese Aufnahme erneut freigeben", enabled = !busy) {

@@ -1,6 +1,7 @@
 package de.kontrakurs.kontraprompter.cloud
 
 import de.kontrakurs.kontraprompter.video.RecordingOrigin
+import de.kontrakurs.kontraprompter.video.LocalRecording
 import de.kontrakurs.kontraprompter.video.SavedRecording
 import org.junit.Assert.*
 import org.junit.Test
@@ -15,6 +16,13 @@ class LiveCameraUploadPolicyTest {
         assertNull(liveRecorderId(LiveRecorderSnapshot(id, false)))
         assertEquals(id, liveRecorderId(LiveRecorderSnapshot(id, true)))
         assertNull(liveRecorderId(LiveRecorderSnapshot(null, true)))
+    }
+    @Test fun `only living recording and pause states feed active upload`() {
+        assertEquals(LiveRecorderSnapshot(id, true), recorderSnapshot(LocalRecording.Recording(id)))
+        assertEquals(LiveRecorderSnapshot(id, true), recorderSnapshot(LocalRecording.Paused(id)))
+        assertEquals(LiveRecorderSnapshot(null, false), recorderSnapshot(LocalRecording.Preparing(id)))
+        assertEquals(LiveRecorderSnapshot(null, false), recorderSnapshot(LocalRecording.Finalizing(id)))
+        assertEquals(LiveRecorderSnapshot(null, false), recorderSnapshot(LocalRecording.Idle))
     }
     @Test fun `only matching complete LAN origin can finalize`() {
         assertTrue(mayFinalizeLive(entry, recording(RecordingOrigin.LAN, project)))
