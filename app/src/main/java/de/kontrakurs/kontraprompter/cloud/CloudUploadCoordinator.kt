@@ -31,6 +31,12 @@ internal class CloudUploadCoordinator(context: Context, private val client: Stud
     private val _state = MutableStateFlow<CloudUploadState>(CloudUploadState.Idle)
     val state: StateFlow<CloudUploadState> = _state
 
+    /** Select the live path while the full-file upload gate is held. */
+    internal fun <T> selectLivePath(action: () -> T): T? {
+        val ticket = gate.acquire() ?: return null
+        return try { action() } finally { gate.operationFinished(ticket) }
+    }
+
     suspend fun upload(recording: SavedRecording, projectId: String, requiredSession: StudioClient.ManualUploadSession? = null): CloudUploadState {
         if (recording.partial) {
             val failure = CloudUploadState.Failed(recording.id, projectId, "partial", "Unvollständige Teilvideos können derzeit nur lokal exportiert werden.")
