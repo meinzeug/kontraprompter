@@ -23,6 +23,9 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     val egl: EglBase = EglBase.create()
     private val executor = Executors.newSingleThreadExecutor()
     private val closed = AtomicBoolean(false)
+    private val primaryGeneration = PrimaryPeerGeneration()
+    // Captured with the pipeline object, before LiveSession releases its ownership lock.
+    private val initialPrimaryGeneration = primaryGeneration.current()
     private var factory: PeerConnectionFactory? = null
     private var peer: PeerConnection? = null
     private var source: VideoSource? = null
@@ -41,29 +44,33 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     private var browserPreviewId: String? = null
     @Volatile private var cameraFrameAvailable = false
 
-    fun start() = execute {
-        try {
-            initialize(context)
-            factory = PeerConnectionFactory.builder()
-                .setVideoEncoderFactory(DefaultVideoEncoderFactory(egl.eglBaseContext, true, true))
-                .setVideoDecoderFactory(DefaultVideoDecoderFactory(egl.eglBaseContext)).createPeerConnectionFactory()
-            val config = PeerConnection.RTCConfiguration(emptyList()).apply { sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN }
-            peer = factory!!.createPeerConnection(config, observer()) ?: error("PeerConnection nicht verfügbar")
-            if (host) {
-                val enumerator: CameraEnumerator = if (Camera2Enumerator.isSupported(context)) Camera2Enumerator(context) else Camera1Enumerator(false)
-                val name = enumerator.deviceNames.firstOrNull { enumerator.isBackFacing(it) } ?: enumerator.deviceNames.firstOrNull() ?: error("Keine Kamera verfügbar")
-                camera = enumerator.createCapturer(name, cameraEvents()) ?: error("Kamera konnte nicht geöffnet werden")
-                textureHelper = SurfaceTextureHelper.create("KontraCamera", egl.eglBaseContext) ?: error("Kameraoberfläche nicht verfügbar")
-                source = factory!!.createVideoSource(false)
-                camera!!.initialize(textureHelper, context.applicationContext, source!!.capturerObserver)
-                val track = factory!!.createVideoTrack("camera", source)
-                synchronized(sinks) { localTrack = track; sinks.forEach { track.addSink(it) } }
-                peer!!.addTrack(track, listOf("kontra")) ?: error("Videospur konnte nicht hinzugefügt werden")
-                preferVp8()
-                camera!!.startCapture(640, 480, 20)
-                peer!!.createOffer(createDescriptionObserver(), MediaConstraints())
-            }
-        } catch (e: Exception) { lan.report("Videofehler", e.localizedMessage ?: "Video konnte nicht gestartet werden") }
+    fun start() {
+        // A disconnect can invalidate the initial generation before start() is called.
+        val generation = initialPrimaryGeneration
+        executePrimary(generation) {
+            try {
+                initialize(context)
+                factory = PeerConnectionFactory.builder()
+                    .setVideoEncoderFactory(DefaultVideoEncoderFactory(egl.eglBaseContext, true, true))
+                    .setVideoDecoderFactory(DefaultVideoDecoderFactory(egl.eglBaseContext)).createPeerConnectionFactory()
+                val config = PeerConnection.RTCConfiguration(emptyList()).apply { sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN }
+                peer = factory!!.createPeerConnection(config, observer(generation)) ?: error("PeerConnection nicht verfügbar")
+                if (host) {
+                    val enumerator: CameraEnumerator = if (Camera2Enumerator.isSupported(context)) Camera2Enumerator(context) else Camera1Enumerator(false)
+                    val name = enumerator.deviceNames.firstOrNull { enumerator.isBackFacing(it) } ?: enumerator.deviceNames.firstOrNull() ?: error("Keine Kamera verfügbar")
+                    camera = enumerator.createCapturer(name, cameraEvents()) ?: error("Kamera konnte nicht geöffnet werden")
+                    textureHelper = SurfaceTextureHelper.create("KontraCamera", egl.eglBaseContext) ?: error("Kameraoberfläche nicht verfügbar")
+                    source = factory!!.createVideoSource(false)
+                    camera!!.initialize(textureHelper, context.applicationContext, source!!.capturerObserver)
+                    val track = factory!!.createVideoTrack("camera", source)
+                    synchronized(sinks) { localTrack = track; sinks.forEach { track.addSink(it) } }
+                    peer!!.addTrack(track, listOf("kontra")) ?: error("Videospur konnte nicht hinzugefügt werden")
+                    preferVp8()
+                    camera!!.startCapture(640, 480, 20)
+                    peer!!.createOffer(createDescriptionObserver(generation), MediaConstraints())
+                }
+            } catch (e: Exception) { lan.report("Videofehler", e.localizedMessage ?: "Video konnte nicht gestartet werden") }
+        }
     }
     private fun preferVp8() {
         val p = peer ?: return
@@ -79,9 +86,9 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
         override fun onFirstFrameAvailable() { cameraFrameAvailable = true; lan.reportFirstCameraFrame() }
         override fun onCameraClosed() { cameraFrameAvailable = false; stopAnyBrowserPreview() }
     }
-    private fun observer() = object : PeerConnection.Observer {
+    private fun observer(generation: Long) = object : PeerConnection.Observer {
         override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
-        override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
+        override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) = executePrimary(generation) {
             when (state) {
                 PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> lan.report("Videoverbindung hergestellt")
                 PeerConnection.IceConnectionState.FAILED -> lan.report("Videoverbindung fehlgeschlagen", "Gleiches lokales Netz prüfen; Hotspot oder WLAN kann Geräte isolieren.")
@@ -91,13 +98,18 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
         }
         override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) = Unit
-        override fun onIceCandidate(c: IceCandidate) { lan.send("ice", JSONObject().put("mid", c.sdpMid).put("line", c.sdpMLineIndex).put("candidate", c.sdp).toString()) }
+        override fun onIceCandidate(c: IceCandidate) = executePrimary(generation) {
+            lan.send("ice", JSONObject().put("mid", c.sdpMid).put("line", c.sdpMLineIndex).put("candidate", c.sdp).toString())
+        }
         override fun onIceCandidatesRemoved(c: Array<out IceCandidate>) = Unit
         override fun onAddStream(stream: MediaStream) = Unit
         override fun onRemoveStream(stream: MediaStream) = Unit
         override fun onDataChannel(channel: DataChannel) = Unit
         override fun onRenegotiationNeeded() = Unit
-        override fun onTrack(transceiver: RtpTransceiver) { (transceiver.receiver.track() as? VideoTrack)?.let { track -> execute { setRemoteTrack(track) } } }
+        override fun onTrack(transceiver: RtpTransceiver) {
+            if (!primaryGeneration.isCurrent(generation)) return
+            (transceiver.receiver.track() as? VideoTrack)?.let { track -> executePrimary(generation) { setRemoteTrack(track) } }
+        }
     }
     private fun setRemoteTrack(track: VideoTrack) {
         synchronized(sinks) {
@@ -107,36 +119,47 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
             sinks.forEach { track.addSink(it) }
         }
     }
-    fun message(type: String, value: String) = execute {
-        try {
-            when (type) {
-                "sdp" -> {
-                    val json = JSONObject(value)
-                    val kind = when (json.getString("type")) { "offer" -> SessionDescription.Type.OFFER; "answer" -> SessionDescription.Type.ANSWER; else -> error("Ungültiger SDP-Typ") }
-                    if ((host && kind != SessionDescription.Type.ANSWER) || (!host && kind != SessionDescription.Type.OFFER)) error("Unerwarteter SDP-Typ")
-                    peer?.setRemoteDescription(object : SimpleSdpObserver(lan) {
-                        override fun onSetSuccess() = execute {
-                            remoteDescriptionSet = true
-                            pendingCandidates.forEach { peer?.addIceCandidate(it) }; pendingCandidates.clear()
-                            if (kind == SessionDescription.Type.OFFER) peer?.createAnswer(createDescriptionObserver(), MediaConstraints())
-                        }
-                    }, SessionDescription(kind, json.getString("sdp")))
+    fun message(type: String, value: String) {
+        val generation = primaryGeneration.current()
+        executePrimary(generation) {
+            if (!lan.state.value.ready) return@executePrimary
+            try {
+                when (type) {
+                    "sdp" -> {
+                        val json = JSONObject(value)
+                        val kind = when (json.getString("type")) { "offer" -> SessionDescription.Type.OFFER; "answer" -> SessionDescription.Type.ANSWER; else -> error("Ungültiger SDP-Typ") }
+                        if ((host && kind != SessionDescription.Type.ANSWER) || (!host && kind != SessionDescription.Type.OFFER)) error("Unerwarteter SDP-Typ")
+                        peer?.setRemoteDescription(object : SimpleSdpObserver({ error -> reportSdpFailure(generation, error) }) {
+                            override fun onSetSuccess() = executePrimary(generation) {
+                                remoteDescriptionSet = true
+                                pendingCandidates.forEach { peer?.addIceCandidate(it) }; pendingCandidates.clear()
+                                if (kind == SessionDescription.Type.OFFER) peer?.createAnswer(createDescriptionObserver(generation), MediaConstraints())
+                            }
+                        }, SessionDescription(kind, json.getString("sdp")))
+                    }
+                    "ice" -> {
+                        val j = JSONObject(value)
+                        val candidate = IceCandidate(j.optString("mid", ""), j.getInt("line"), j.getString("candidate"))
+                        if (remoteDescriptionSet) peer?.addIceCandidate(candidate) else if (pendingCandidates.size < 256) pendingCandidates.add(candidate) else error("Zu viele ICE-Kandidaten")
+                    }
                 }
-                "ice" -> {
-                    val j = JSONObject(value)
-                    val candidate = IceCandidate(j.optString("mid", ""), j.getInt("line"), j.getString("candidate"))
-                    if (remoteDescriptionSet) peer?.addIceCandidate(candidate) else if (pendingCandidates.size < 256) pendingCandidates.add(candidate) else error("Zu viele ICE-Kandidaten")
-                }
-            }
-        } catch (e: Exception) { lan.report("Videofehler", e.localizedMessage ?: "Ungültige Videonachricht") }
+            } catch (e: Exception) { lan.report("Videofehler", e.localizedMessage ?: "Ungültige Videonachricht") }
+        }
     }
-    private fun createDescriptionObserver() = object : SimpleSdpObserver(lan) {
-        override fun onCreateSuccess(description: SessionDescription) = execute {
-            peer?.setLocalDescription(object : SimpleSdpObserver(lan) {
-                override fun onSetSuccess() { lan.send("sdp", JSONObject().put("type", description.type.canonicalForm()).put("sdp", description.description).toString()) }
+    private fun createDescriptionObserver(generation: Long) = object : SimpleSdpObserver({ error -> reportSdpFailure(generation, error) }) {
+        override fun onCreateSuccess(description: SessionDescription) = executePrimary(generation) {
+            peer?.setLocalDescription(object : SimpleSdpObserver({ error -> reportSdpFailure(generation, error) }) {
+                override fun onSetSuccess() = executePrimary(generation) {
+                    lan.send("sdp", JSONObject().put("type", description.type.canonicalForm()).put("sdp", description.description).toString())
+                }
             }, description)
         }
     }
+    private fun reportSdpFailure(generation: Long, error: String) = executePrimary(generation) { lan.report("Videofehler", error) }
+    private fun executePrimary(generation: Long, action: () -> Unit) = execute {
+        if (primaryGeneration.isCurrent(generation)) action()
+    }
+    internal fun invalidatePrimaryPeer() = primaryGeneration.invalidate()
     fun attach(sink: VideoSink) { synchronized(sinks) { if (!closed.get() && sinks.add(sink)) (if (host) localTrack else remoteTrack)?.addSink(sink) } }
     fun detach(sink: VideoSink) { synchronized(sinks) { (if (host) localTrack else remoteTrack)?.removeSink(sink); sinks.remove(sink) } }
     internal fun createPreview(context: Context): VideoView? = synchronized(sinks) {
@@ -243,9 +266,9 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
         executor.shutdown()
     }
 }
-private open class SimpleSdpObserver(private val lan: LanSession) : SdpObserver {
+private open class SimpleSdpObserver(private val failure: (String) -> Unit) : SdpObserver {
     override fun onCreateSuccess(description: SessionDescription) = Unit
     override fun onSetSuccess() = Unit
-    override fun onCreateFailure(error: String) { lan.report("Videofehler", error) }
-    override fun onSetFailure(error: String) { lan.report("Videofehler", error) }
+    override fun onCreateFailure(error: String) { failure(error) }
+    override fun onSetFailure(error: String) { failure(error) }
 }

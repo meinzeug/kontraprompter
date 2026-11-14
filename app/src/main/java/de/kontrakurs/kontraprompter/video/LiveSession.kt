@@ -61,6 +61,7 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
         lan.onDisconnect = {
             val release = synchronized(guard) {
                 disconnected = true
+                _video.value?.invalidatePrimaryPeer()
                 _video.value?.stopAnyBrowserPreview()
                 if (shouldReleaseVideo(_recording.value, closed, disconnected)) _video.value.also { _video.value = null } else null
             }
