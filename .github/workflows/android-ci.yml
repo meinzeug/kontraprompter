@@ -29,7 +29,8 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'platforms;android-36' 'build-tools;35.0.0'
       - name: Run unit tests and assemble unsigned APK
         run: |
-          ./gradlew --no-daemon --max-workers=1 :app:testDebugUnitTest :app:assembleDebug -PciUnsigned=true
+          ./gradlew --no-daemon --max-workers=1 --stacktrace :app:testDebugUnitTest -PciUnsigned=true
+          ./gradlew --no-daemon --max-workers=1 --stacktrace :app:assembleDebug -PciUnsigned=true
           test -s app/build/outputs/apk/debug/app-debug-unsigned.apk
           test -s app/build/reports/tests/testDebugUnitTest/index.html
           sha256sum app/build/outputs/apk/debug/app-debug-unsigned.apk
