@@ -1,6 +1,7 @@
 package de.kontrakurs.kontraprompter.pairing
 
 import de.kontrakurs.kontraprompter.network.PinnedPairingTls
+import de.kontrakurs.kontraprompter.network.SinglePairingKeyManager
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.FileInputStream
@@ -16,6 +17,7 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import javax.security.auth.x500.X500Principal
 
 /** Synthetic loopback fixture only. Credentials and keys are created by the test runner. */
 private class FixtureEndpoint(private val url: String, private val role: String, private val key: String) : RelayByteEndpoint {
@@ -113,14 +115,21 @@ fun main(args: Array<String>) {
     testAdapterSequence()
     val (url, cameraKey, clientKey, cameraPath, clientPath) = args
     val wrongPin = args[5]
-    require(wrongPin in setOf("none", "server", "client", "lost-send", "lost-ack"))
+    require(wrongPin in setOf("none", "server", "client", "client-alias", "lost-send", "lost-ack"))
     require(url.startsWith("http://127.0.0.1:"))
     val password = "fixture-only".toCharArray()
     fun store(path: String) = KeyStore.getInstance("PKCS12").apply { FileInputStream(path).use { load(it, password) } }
     fun pin(store: KeyStore) = MessageDigest.getInstance("SHA-256").digest(store.getCertificate("device").publicKey.encoded)
     val camera = store(cameraPath); val client = store(clientPath)
-    val cameraTls = PinnedPairingTls(camera, password, if (wrongPin == "client") ByteArray(32) else pin(client))
-    val clientTls = PinnedPairingTls(client, password, if (wrongPin == "server") ByteArray(32) else pin(camera))
+    val manager = SinglePairingKeyManager(camera, password, "device")
+    check(manager.getPrivateKey("device") != null && manager.getPrivateKey("distractor") == null)
+    check(manager.getCertificateChain("device")?.size == 1 && manager.getCertificateChain("distractor") == null)
+    check(manager.getServerAliases("EC", null)?.contentEquals(arrayOf("device")) == true)
+    check(manager.getServerAliases("RSA", null) == null)
+    check(manager.getServerAliases("EC", arrayOf(X500Principal("CN=unrelated"))) == null)
+    check(runCatching { SinglePairingKeyManager(camera, password, "missing") }.isFailure)
+    val cameraTls = PinnedPairingTls(camera, password, if (wrongPin == "client") ByteArray(32) else pin(client), "device")
+    val clientTls = PinnedPairingTls(client, password, if (wrongPin == "server") ByteArray(32) else pin(camera), if (wrongPin == "client-alias") "distractor" else "device")
     val loopback = InetAddress.getByName("127.0.0.1")
     val cameraListener = cameraTls.listen(loopback, 0, 10000)
     val proxy = ServerSocket(0, 1, loopback).apply { soTimeout = 10000 }
@@ -161,7 +170,7 @@ fun main(args: Array<String>) {
         } catch (error: Exception) {
             if (wrongPin == "none") throw error
             if (wrongPin == "server") check(generateSequence(error as Throwable?) { it.cause }.any { it.message?.contains("Gegenstelle nicht gepinnt") == true })
-            else if (wrongPin == "client") {
+            else if (wrongPin == "client" || wrongPin == "client-alias") {
                 cameraThread.join(5000)
                 check(generateSequence(errors.get()) { it.cause }.any { it.message?.contains("Gegenstelle nicht gepinnt") == true })
             } else check(bridgeFailed.await(5, TimeUnit.SECONDS))

@@ -50,8 +50,8 @@ class PinnedPairingTlsTest {
     }
 
     @Test fun `mutual pinned peers complete TLS before exchanging messages`() {
-        val host = PinnedPairingTls(identity("host"), password, pin("client"))
-        val client = PinnedPairingTls(identity("client"), password, pin("host"))
+        val host = PinnedPairingTls(identity("host"), password, pin("client"), "host")
+        val client = PinnedPairingTls(identity("client"), password, pin("host"), "client")
         val worker = Executors.newSingleThreadExecutor()
         try {
             host.listen(loopback, 0, 5000).use { listener ->
@@ -74,8 +74,8 @@ class PinnedPairingTlsTest {
     }
 
     @Test fun `client rejects a different server key`() {
-        val host = PinnedPairingTls(identity("host"), password, pin("client"))
-        val client = PinnedPairingTls(identity("client"), password, pin("client"))
+        val host = PinnedPairingTls(identity("host"), password, pin("client"), "host")
+        val client = PinnedPairingTls(identity("client"), password, pin("client"), "client")
         val worker = Executors.newSingleThreadExecutor()
         try {
             host.listen(loopback, 0, 5000).use { listener ->
@@ -87,8 +87,8 @@ class PinnedPairingTlsTest {
     }
 
     @Test fun `server rejects a different client key`() {
-        val host = PinnedPairingTls(identity("host"), password, pin("host"))
-        val client = PinnedPairingTls(identity("client"), password, pin("host"))
+        val host = PinnedPairingTls(identity("host"), password, pin("host"), "host")
+        val client = PinnedPairingTls(identity("client"), password, pin("host"), "client")
         val worker = Executors.newSingleThreadExecutor()
         try {
             host.listen(loopback, 0, 5000).use { listener ->
@@ -112,7 +112,7 @@ class PinnedPairingTlsTest {
     }
 
     @Test fun `silent server times out and client closes the attempted connection`() {
-        val client = PinnedPairingTls(identity("client"), password, pin("host"))
+        val client = PinnedPairingTls(identity("client"), password, pin("host"), "client")
         val worker = Executors.newSingleThreadExecutor()
         try {
             ServerSocket(0, 1, loopback).use { listener ->
@@ -131,7 +131,7 @@ class PinnedPairingTlsTest {
     }
 
     @Test fun `client rejects a server that completes TLS without confirming client authentication`() {
-        val client = PinnedPairingTls(identity("client"), password, pin("host"))
+        val client = PinnedPairingTls(identity("client"), password, pin("host"), "client")
         val worker = Executors.newSingleThreadExecutor()
         try {
             rawServer().use { server ->
@@ -149,7 +149,7 @@ class PinnedPairingTlsTest {
     }
 
     @Test fun `server rejects a client that does not confirm its challenge`() {
-        val host = PinnedPairingTls(identity("host"), password, pin("client"))
+        val host = PinnedPairingTls(identity("host"), password, pin("client"), "host")
         val worker = Executors.newSingleThreadExecutor()
         try {
             host.listen(loopback, 0, 5000).use { listener ->
@@ -166,7 +166,7 @@ class PinnedPairingTlsTest {
     }
 
     @Test fun `closing listener cancels an accepted socket waiting for confirmation`() {
-        val host = PinnedPairingTls(identity("host"), password, pin("client"))
+        val host = PinnedPairingTls(identity("host"), password, pin("client"), "host")
         val worker = Executors.newSingleThreadExecutor()
         try {
             host.listen(loopback, 0, 5000).use { listener ->
@@ -183,7 +183,7 @@ class PinnedPairingTlsTest {
     }
 
     @Test fun `acknowledgement captured from one TLS session is rejected in another`() {
-        val client = PinnedPairingTls(identity("client"), password, pin("host"))
+        val client = PinnedPairingTls(identity("client"), password, pin("host"), "client")
         val worker = Executors.newSingleThreadExecutor()
         try {
             rawServer().use { server ->

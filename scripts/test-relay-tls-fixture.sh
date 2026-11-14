@@ -17,6 +17,8 @@ reflect=$(find_one "$cache/org.jetbrains.kotlin/kotlin-reflect/1.6.10/**/*.jar")
 daemon=$(find_one "$cache/org.jetbrains.kotlin/kotlin-daemon-embeddable/2.2.20/**/*.jar")
 coroutines=$(find_one "$cache/org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm/1.8.0/**/*.jar")
 annotations=$(find_one "$cache/org.jetbrains/annotations/13.0/**/*.jar")
+junit=$(find_one "$cache/junit/junit/4.13.2/**/*.jar")
+hamcrest=$(find_one "$cache/org.hamcrest/hamcrest-core/1.3/**/*.jar")
 fixture_dir=$(mktemp -d "${TMPDIR:-/tmp}/kontraprompter-tls-fixture.XXXXXXXX")
 trap 'rm -rf -- "$fixture_dir"' EXIT
 mkdir "$fixture_dir/classes"
@@ -24,13 +26,19 @@ for identity in camera client; do
   keytool -genkeypair -alias device -keyalg EC -groupname secp256r1 -dname "CN=synthetic-$identity" \
     -validity 1 -storetype PKCS12 -keystore "$fixture_dir/$identity.p12" \
     -storepass fixture-only -keypass fixture-only -noprompt >/dev/null 2>&1
+  keytool -genkeypair -alias distractor -keyalg EC -groupname secp256r1 -dname "CN=synthetic-$identity-other" \
+    -validity 1 -storetype PKCS12 -keystore "$fixture_dir/$identity.p12" \
+    -storepass fixture-only -keypass fixture-only -noprompt >/dev/null 2>&1
 done
 java -Xmx256m -cp "$compiler:$stdlib:$script:$reflect:$daemon:$coroutines:$annotations" \
-  org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect -classpath "$stdlib:$annotations" \
+  org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect -classpath "$stdlib:$annotations:$junit:$hamcrest" \
   -d "$fixture_dir/classes" \
   "$android_root/app/src/main/java/de/kontrakurs/kontraprompter/network/PinnedPairingTls.kt" \
   "$android_root/app/src/main/java/de/kontrakurs/kontraprompter/pairing/RelayByteBridge.kt" \
+  "$android_root/app/src/test/java/de/kontrakurs/kontraprompter/network/PinnedPairingTlsTest.kt" \
   "$android_root/app/src/test/java/de/kontrakurs/kontraprompter/pairing/RelayTlsHttpProbe.kt"
+java -Xmx96m -cp "$fixture_dir/classes:$stdlib:$junit:$hamcrest:$android_root/app/src/test/resources" \
+  org.junit.runner.JUnitCore de.kontrakurs.kontraprompter.network.PinnedPairingTlsTest
 cd "$web_root"
 RELAY_TLS_HTTP_TEST=1 RELAY_TLS_PROBE_CP="$fixture_dir/classes:$stdlib" \
   RELAY_TLS_CAMERA_KEYSTORE="$fixture_dir/camera.p12" RELAY_TLS_CLIENT_KEYSTORE="$fixture_dir/client.p12" \

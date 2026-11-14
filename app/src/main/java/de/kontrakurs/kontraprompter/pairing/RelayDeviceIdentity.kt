@@ -20,6 +20,8 @@ import java.util.UUID
 internal class RelayDeviceIdentity private constructor(val id: String, publicKeyDer: ByteArray, private val key: PrivateKey) {
     private val publicKey = publicKeyDer.copyOf()
     val publicKeyDer: ByteArray get() = publicKey.copyOf()
+    /** Alias is only a selector; the Android Keystore retains the non-exportable private key. */
+    fun tlsKeyAlias(): String = PREFIX + id
     fun signPairing(owner: String, pairId: String, challengeId: String, nonce: String, transcriptHash: String, cameraId: String, cameraKey: ByteArray, prompterId: String, prompterKey: ByteArray, role: RelayRole): ByteArray {
         require(if (role == RelayRole.CAMERA) id == cameraId && publicKeyDer.contentEquals(cameraKey) else id == prompterId && publicKeyDer.contentEquals(prompterKey))
         return sign(relayPairingProofMessage(owner, pairId, challengeId, nonce, transcriptHash, cameraId, cameraKey, prompterId, prompterKey, role))

@@ -5,26 +5,29 @@ import java.io.DataInputStream
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.Socket
 import java.security.KeyStore
 import java.security.MessageDigest
+import java.security.Principal
+import java.security.PrivateKey
 import java.security.SecureRandom
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
-import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLEngine
 import javax.net.ssl.SSLServerSocket
 import javax.net.ssl.SSLSocket
+import javax.net.ssl.X509ExtendedKeyManager
 import javax.net.ssl.X509TrustManager
 
 /**
  * Experimental transport primitive for a later, separately authenticated pairing flow.
  * It is deliberately not connected to LanSession or the camera UI.
  */
-internal class PinnedPairingTls(identity: KeyStore, password: CharArray?, peerSpkiSha256: ByteArray) {
+internal class PinnedPairingTls(identity: KeyStore, password: CharArray?, peerSpkiSha256: ByteArray, identityAlias: String) {
     private val peerTrust = PinnedPeerTrust(peerSpkiSha256)
     private val context = SSLContext.getInstance("TLS").apply {
-        val keys = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply { init(identity, password) }
-        init(keys.keyManagers, arrayOf(peerTrust), null)
+        init(arrayOf(SinglePairingKeyManager(identity, password, identityAlias)), arrayOf(peerTrust), null)
     }
 
     /** Returns a socket only after a full mutual TLS handshake has completed. */
@@ -106,6 +109,28 @@ internal class PinnedPairingTls(identity: KeyStore, password: CharArray?, peerSp
             return arrayOf("TLSv1.3")
         }
     }
+}
+
+/** Exposes exactly the pairing key, never other keys present in the Android Keystore. */
+internal class SinglePairingKeyManager(identity: KeyStore, password: CharArray?, private val alias: String) : X509ExtendedKeyManager() {
+    private val key: PrivateKey = (identity.getKey(alias, password) as? PrivateKey) ?: throw CertificateException("Pairing-Schlüssel fehlt")
+    private val chain: Array<X509Certificate> = identity.getCertificateChain(alias)?.map {
+        it as? X509Certificate ?: throw CertificateException("Ungültiges Pairing-Zertifikat")
+    }?.toTypedArray()?.also {
+        if (it.isEmpty() || it.size > 8 || key.algorithm != "EC" || it[0].publicKey.algorithm != "EC") throw CertificateException("Ungültiger Pairing-Schlüssel")
+    } ?: throw CertificateException("Pairing-Zertifikat fehlt")
+
+    private fun allowed(keyType: String?, issuers: Array<out Principal>?): Boolean =
+        keyType == "EC" && (issuers.isNullOrEmpty() || chain.any { it.issuerX500Principal in issuers || it.subjectX500Principal in issuers })
+    private fun select(keyType: String?, issuers: Array<out Principal>?) = if (allowed(keyType, issuers)) alias else null
+    override fun getClientAliases(keyType: String?, issuers: Array<out Principal>?): Array<String>? = select(keyType, issuers)?.let { arrayOf(it) }
+    override fun chooseClientAlias(keyType: Array<out String>?, issuers: Array<out Principal>?, socket: Socket?): String? = keyType?.firstNotNullOfOrNull { select(it, issuers) }
+    override fun getServerAliases(keyType: String?, issuers: Array<out Principal>?): Array<String>? = select(keyType, issuers)?.let { arrayOf(it) }
+    override fun chooseServerAlias(keyType: String?, issuers: Array<out Principal>?, socket: Socket?): String? = select(keyType, issuers)
+    override fun chooseEngineClientAlias(keyType: Array<out String>?, issuers: Array<out Principal>?, engine: SSLEngine?): String? = chooseClientAlias(keyType, issuers, null)
+    override fun chooseEngineServerAlias(keyType: String?, issuers: Array<out Principal>?, engine: SSLEngine?): String? = select(keyType, issuers)
+    override fun getCertificateChain(alias: String?): Array<X509Certificate>? = if (alias == this.alias) chain.copyOf() else null
+    override fun getPrivateKey(alias: String?): PrivateKey? = if (alias == this.alias) key else null
 }
 
 /**
