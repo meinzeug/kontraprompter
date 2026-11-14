@@ -46,4 +46,13 @@ class PairedCapturePolicyTest {
         assertTrue(isNewCaptureStatus(43, 42))
         assertFalse(isNewCaptureStatus(-1, -2))
     }
+    @Test fun `late switch acknowledgement requires a correlated snapshot without replacing status`() {
+        assertTrue(cameraAckNeedsStatus("switch_camera", true))
+        assertFalse(cameraAckNeedsStatus("switch_camera", false))
+        assertFalse(cameraAckNeedsStatus("pause", true))
+        assertFalse(cameraStatusAnswersPending("switch_camera", "new", "old"))
+        assertFalse(cameraStatusAnswersPending("pause", "new", "new"))
+        assertFalse(cameraStatusAnswersPending("switch_camera", null, null))
+        assertTrue(cameraStatusAnswersPending("switch_camera", "new", "new"))
+    }
 }

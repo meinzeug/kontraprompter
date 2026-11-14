@@ -34,3 +34,10 @@ internal fun isCurrentCaptureAck(pendingRequest: String?, acknowledgement: Strin
 
 internal fun isNewCaptureStatus(revision: Long, previous: Long): Boolean =
     revision >= 0 && revision > previous
+
+/** A switch ACK means admission only; a correlated snapshot confirms its actual state. */
+internal fun cameraAckNeedsStatus(action: String?, accepted: Boolean): Boolean =
+    action == "switch_camera" && accepted
+
+internal fun cameraStatusAnswersPending(action: String?, pendingId: String?, queryId: String?): Boolean =
+    action == "switch_camera" && pendingId != null && pendingId == queryId

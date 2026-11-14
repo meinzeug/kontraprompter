@@ -100,7 +100,10 @@ internal class PairedCapture(
     fun message(type: String, payload: String): Boolean {
         if (type !in setOf("capture_query", "capture_command", "capture_status", "capture_ack")) return false
         if (!lan.state.value.ready) return true
-        if (host && type == "capture_query") { sendStatus(); return true }
+        if (host && type == "capture_query") {
+            val queryId = runCatching { canonicalUuid(JSONObject(payload).optString("request")) }.getOrNull()
+            sendStatus(queryId); return true
+        }
         val data = runCatching { JSONObject(payload) }.getOrNull() ?: return true
         if (host && type == "capture_command") {
             val request = canonicalUuid(data.optString("request")) ?: return true
@@ -128,10 +131,15 @@ internal class PairedCapture(
             val request = canonicalUuid(data.optString("request")) ?: return true
             synchronized(lock) {
                 if (isCurrentCaptureAck(pendingId, request)) {
-                    val wasSwitch = pendingAction == "switch_camera"
                     val accepted = data.optBoolean("accepted", false)
-                    pendingId = null; pendingAction = null; timeout?.cancel(); timeout = null
-                    _state.value = _state.value.copy(pending = false, cameraSwitching = if (wasSwitch && accepted) true else _state.value.cameraSwitching, message = if (accepted) null else "Befehl wurde von der Kamera nicht angenommen.")
+                    if (cameraAckNeedsStatus(pendingAction, accepted)) {
+                        // Admission is not a completed switch. Query an authoritative snapshot tied
+                        // to this request; status may arrive before or after the acknowledgement.
+                        lan.send("capture_query", JSONObject().put("request", request).toString())
+                    } else {
+                        pendingId = null; pendingAction = null; timeout?.cancel(); timeout = null
+                        _state.value = _state.value.copy(pending = false, message = if (accepted) null else "Befehl wurde von der Kamera nicht angenommen.")
+                    }
                 }
             }
             return true
@@ -151,12 +159,17 @@ internal class PairedCapture(
                     val cameraError = data.optString("cameraError").take(200).takeIf { it.isNotBlank() }
                     _state.value = _state.value.copy(phase = phase, recordingId = id, message = failure ?: _state.value.message, cameraFront = facing, cameraCanSwitch = data.optBoolean("cameraCanSwitch", false), cameraSwitching = data.optBoolean("cameraSwitching", false), cameraError = cameraError)
                 }
+                val query = canonicalUuid(data.optString("query"))
+                if (cameraStatusAnswersPending(pendingAction, pendingId, query)) {
+                    pendingId = null; pendingAction = null; timeout?.cancel(); timeout = null
+                    _state.value = _state.value.copy(pending = false)
+                }
             }
         }
         return true
     }
 
-    private fun sendStatus() {
+    private fun sendStatus(queryId: String? = null) {
       val payload = synchronized(statusLock) {
         val recording = session.recording.value
         val (phase, id) = when (recording) {
@@ -175,6 +188,7 @@ internal class PairedCapture(
             .put("cameraCanSwitch", camera.canSwitch).put("cameraSwitching", camera.switching)
         camera.error?.let { data.put("cameraError", it.take(200)) }
         if (id != null) data.put("recording", id)
+        if (queryId != null) data.put("query", queryId)
         if (recording is LocalRecording.Failed) data.put("message", recording.message.take(240))
         data.toString()
       }
