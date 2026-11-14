@@ -177,3 +177,17 @@ Fernbedienung war auf keinem der Telefone als verbundenes Eingabegerät aktiv.
 Dieser Befund gilt für die zum Testzeitpunkt verwendete Netzwerk- und
 Geräteausrichtung. Ein produktiver Netzwerkrelay und die durchgängige
 Ende-zu-Ende-Paarung bleiben zu implementieren und zu prüfen.
+
+## Experimenteller Studio-Rendezvous-Transport
+
+Der Entwicklungsstand enthält einen noch nicht mit der App verbundenen,
+begrenzten Queue-Adapter. Ein isolierter Test mit zwei synthetischen
+Studio-Sitzungen und einem ausschließlich lokalen HTTP-Testserver bestätigte
+die idempotente Raumerstellung, beidseitige Freigabe, den vorhandenen
+HMAC-Handshake, Nachrichten in beide Richtungen und das Schließen nach
+Sitzungswiderruf. Der Testserver ist kein produktiver Anmelde- oder Relaydienst;
+er sieht die Signalisierung. Die Test-Fixture akzeptiert nur Loopback und keine
+Produktionszugänge. Ein produktiver Pfad benötigt geschütztes HTTPS, reale
+Sitzungsprüfung, eine geprüfte Lebensdauerverwaltung und die App-Anbindung.
+Ein Medientransport über TURN und ein echter Test auf beiden Geräten bleiben
+offen; die bestehende direkte WLAN-Verbindung bleibt bevorzugt.
