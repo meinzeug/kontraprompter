@@ -14,6 +14,7 @@ internal class ShutterFocusAnchor(private val activity: Activity, private val de
     private val accessibility = activity.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
     private val inputMethod = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
     private var anchor: View? = null
+    private var lastTrace: String? = null
     private var closed = false
     private var keyboardNavigation = false
     private val accessibilityListener = AccessibilityManager.AccessibilityStateChangeListener { enabled ->
@@ -28,6 +29,13 @@ internal class ShutterFocusAnchor(private val activity: Activity, private val de
 
     /** Never displace a currently focused view or run while accessibility is enabled. */
     fun ensureFocus() {
+        if (BuildConfig.DEBUG) {
+            val focused = root.findFocus()
+            val focusKind = when { focused == null -> "none"; focused === anchor -> "anchor"; focused is ViewGroup -> "otherGroup"; else -> "otherView" }
+            val mode = (focused as? ViewGroup)?.descendantFocusability
+            val snapshot = "closed=$closed keyboard=$keyboardNavigation accessibility=${accessibility.isEnabled} imeActive=${inputMethod.isActive} imeAccepting=${inputMethod.isAcceptingText} window=${activity.hasWindowFocus()} selectedConnected=${selectedRemoteConnected()} focus=$focusKind groupMode=$mode focusableInTouch=${focused?.isFocusableInTouchMode}"
+            if (snapshot != lastTrace) { lastTrace = snapshot; android.util.Log.d("KpFocusTrace", "check $snapshot") }
+        }
         if (closed || keyboardNavigation || accessibility.isEnabled || inputMethod.isActive || inputMethod.isAcceptingText ||
             !activity.hasWindowFocus() || !selectedRemoteConnected()) {
             removeAnchor()
@@ -42,7 +50,9 @@ internal class ShutterFocusAnchor(private val activity: Activity, private val de
             root.addView(this, ViewGroup.LayoutParams(1, 1))
             anchor = this
         }
-        if (!target.requestFocus()) removeAnchor()
+        val success = target.requestFocus()
+        if (BuildConfig.DEBUG && !success) android.util.Log.d("KpFocusTrace", "requestFocus failed")
+        if (!success) removeAnchor()
     }
 
     /** A normal navigation key immediately yields focus to ordinary keyboard navigation. */

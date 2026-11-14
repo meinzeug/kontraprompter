@@ -87,6 +87,8 @@ class MainActivity : ComponentActivity() {
         val trigger = device != null && Build.VERSION.SDK_INT >= 29 &&
             isSelfieTrigger(device.isExternal, device.isVirtual, device.vendorId, device.productId,
                 device.name, device.descriptor, selectedVolumeRemote, event.keyCode)
+        if (BuildConfig.DEBUG && device != null && device.isExternal && event.keyCode in setOf(23, 24, 25, 27, 62, 66, 80, 85, 126, 127, 130, 160))
+            android.util.Log.d("KpFocusTrace", "key action=${event.action} code=${event.keyCode} match=$trigger selected=${device.descriptor == selectedVolumeRemote} handler=${handler != null} touchMode=${window.decorView.isInTouchMode}")
         if (event.action == KeyEvent.ACTION_DOWN && !trigger && device != null)
             shutterFocusAnchor?.yieldToKeyboard()
         if (handler != null && device != null && Build.VERSION.SDK_INT >= 29 &&
@@ -114,6 +116,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (BuildConfig.DEBUG) window.decorView.viewTreeObserver.addOnTouchModeChangeListener { android.util.Log.d("KpFocusTrace", "touchMode=$it") }
         setContent {
             KontraTheme {
                 KontraApp(this)
@@ -162,6 +165,7 @@ private fun KontraApp(activity: MainActivity) {
         }
         val listening = activeSession != null && runCatching { inputs.registerInputDeviceListener(inputListener, Handler(Looper.getMainLooper())); true }.getOrDefault(false)
         val focusAnchor = selectedVolumeRemote?.takeIf { listening }?.let { ShutterFocusAnchor(activity, it) }
+        if (BuildConfig.DEBUG) android.util.Log.d("KpFocusTrace", "effect prompter=${page == "prompter"} ready=${lanState.ready} listening=$listening selected=${selectedVolumeRemote != null} anchorCreated=${focusAnchor != null}")
         activity.shutterFocusAnchor = focusAnchor
         activity.window.decorView.post { if (activity.shutterFocusAnchor === focusAnchor) focusAnchor?.ensureFocus() }
         activity.selectedVolumeRemote = selectedVolumeRemote
