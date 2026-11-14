@@ -18,10 +18,11 @@ fun StudioScreen(client: StudioClient, remoteEnabled: Boolean, remoteStatus: Str
     var projects by remember { mutableStateOf<List<StudioProject>?>(null) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var stale by remember { mutableStateOf(false) }
     fun load() {
         scope.launch {
             loading = true; error = null
-            try { projects = client.projects() } catch (e: Exception) { error = e.message ?: "Verbindung fehlgeschlagen." }
+            try { projects = client.projects(); stale = false } catch (e: Exception) { stale = projects != null; error = e.message ?: "Verbindung fehlgeschlagen." }
             finally { loading = false }
         }
     }
@@ -36,7 +37,7 @@ fun StudioScreen(client: StudioClient, remoteEnabled: Boolean, remoteStatus: Str
                     password = ""
                     scope.launch {
                         loading = true; error = null
-                        try { client.login(entered); projects = client.projects() } catch (e: Exception) { error = e.message ?: "Verbindung fehlgeschlagen." }
+                        try { client.login(entered); projects = client.projects(); stale = false } catch (e: Exception) { error = e.message ?: "Verbindung fehlgeschlagen." }
                         finally { loading = false }
                     }
                 })
@@ -47,9 +48,11 @@ fun StudioScreen(client: StudioClient, remoteEnabled: Boolean, remoteStatus: Str
             QuietAction(if (remoteEnabled) "Fernsteuerung beenden" else "Fernsteuerung aktivieren") { onRemote(!remoteEnabled) }
             Spacer(Modifier.height(4.dp))
             Text("Skripte", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            if (stale) Text("Zuletzt geladene Daten: Die Aktualisierung ist fehlgeschlagen. Hinweise können veraltet sein.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             if (projects!!.isEmpty()) Text("Im Studio sind noch keine Skripte gespeichert.", color = SoftText)
             projects!!.forEach { project ->
-                ScriptTile(project.title, "Auf diesem Gerät öffnen") { onSelect(project) }
+                val notice = if (stale || loading) project.generationNotice.copy(status = GenerationNoticeStatus.INCOMPLETE) else project.generationNotice
+                ScriptTile(project.title, notice.summary()) { onSelect(project.copy(generationNotice = notice)) }
             }
             QuietAction(if (loading) "Lade …" else "Skripte aktualisieren", enabled = !loading) { load() }
         }

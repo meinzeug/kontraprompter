@@ -23,6 +23,10 @@ import de.kontrakurs.kontraprompter.camera.CameraPollRequest
 import de.kontrakurs.kontraprompter.camera.CameraPollResponse
 import de.kontrakurs.kontraprompter.camera.CameraDeviceIdentity
 import android.util.Base64
+import de.kontrakurs.kontraprompter.GenerationNotice
+import de.kontrakurs.kontraprompter.GenerationNoticeStatus
+import de.kontrakurs.kontraprompter.parseGenerationNotice
+import de.kontrakurs.kontraprompter.requireProjectString
 
 /** HTTPS-only, in-memory session. No password or session cookie is persisted. */
 class StudioClient {
@@ -56,7 +60,15 @@ class StudioClient {
             if (connection.responseCode == 401) { cookie.invalidate(session); throw IllegalStateException("Sitzung abgelaufen. Bitte erneut anmelden.") }
             if (connection.responseCode != 200) throw IllegalStateException("Skripte konnten nicht geladen werden.")
             val array = JSONArray(connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
-            (0 until array.length()).map { i -> array.getJSONObject(i).let { p -> StudioProject(p.getString("id"), p.getString("title"), p.getJSONObject("content").getString("script")) } }
+            val projects = (0 until array.length()).map { i -> array.getJSONObject(i).let { p ->
+                val content = p.getJSONObject("content")
+                val raw = content.opt("generation_warnings")
+                val values = if (raw is JSONArray) (0 until minOf(raw.length(), 11)).map { raw.opt(it) } else raw
+                val id = requireProjectString(p.opt("id"))
+                StudioProject(id, requireProjectString(p.opt("title")), requireProjectString(content.opt("script")), parseGenerationNotice(content.has("generation_warnings"), values))
+            } }
+            check(cookie.get() == session) { "Studio-Sitzung hat sich geändert. Bitte erneut laden." }
+            projects
         } finally { connection.disconnect() }
     }
 
@@ -340,7 +352,7 @@ class StudioClient {
     }
 }
 
-data class StudioProject(val id: String, val title: String, val text: String)
+data class StudioProject(val id: String, val title: String, val text: String, val generationNotice: GenerationNotice = GenerationNotice(GenerationNoticeStatus.UNKNOWN))
 data class StudioCommand(val id: String, val type: String, val projectId: String, val remainingMs: Long)
 internal class UploadException(val kind: String, message: String) : IOException(message)
 internal class CameraDeviceTicketException(message: String) : IOException(message)

@@ -192,7 +192,7 @@ private fun KontraApp(activity: ComponentActivity) {
     var savedPosition by rememberSaveable(selectedId) { mutableIntStateOf(preferences.getInt("position_$selectedId", 0)) }
     LaunchedEffect(selectedId, savedPosition) { delay(500); preferences.edit().putInt("position_$selectedId", savedPosition).apply() }
     LaunchedEffect(keepAwake, fontSize, speed, width, lineSpacing, textH, textV, textRotation, videoH, videoV, videoRotation, videoFill, videoOpacity, videoBrightness, backgroundOpacity, brightness, focusLine, bold, countdown) { preferences.edit().putBoolean("awake", keepAwake).putFloat("font", fontSize).putFloat("speed", speed).putFloat("width", width).putFloat("line", lineSpacing).putBoolean("textH", textH).putBoolean("textV", textV).putInt("rotation", textRotation).putBoolean("videoH", videoH).putBoolean("videoV", videoV).putInt("videoRotation", videoRotation).putBoolean("videoFill", videoFill).putFloat("videoOpacity", videoOpacity).putFloat("videoBrightness", videoBrightness).putFloat("opacity", backgroundOpacity).putFloat("brightness", brightness).putBoolean("focus", focusLine).putBoolean("bold", bold).putInt("countdown", countdown).apply() }
-    fun update(script: Script) { scripts = scripts.map { if (it.id == script.id) script else it }; repository.save(scripts) }
+    fun update(script: Script) { scripts = scripts.map { if (it.id == script.id) preserveNoticeOnEdit(it, script) else it }; repository.save(scripts) }
     fun select(id: String) { selectedId = id; repository.currentId = id }
     LaunchedEffect(remoteEnabled) {
         if (remoteEnabled) {
@@ -214,7 +214,7 @@ private fun KontraApp(activity: ComponentActivity) {
                                 "load" -> {
                                     val project = studioClient.projects().firstOrNull { it.id == command.projectId } ?: continue
                                     if (android.os.SystemClock.elapsedRealtime() >= deadline) continue
-                                    val copy = Script(title = project.title, text = project.text)
+                                    val copy = Script(title = project.title, text = project.text, generationNotice = project.generationNotice)
                                     scripts = scripts + copy; repository.save(scripts); select(copy.id)
                                     page = "prompter"
                                 }
@@ -319,10 +319,11 @@ private fun KontraApp(activity: ComponentActivity) {
                 }
             }
             "studio" -> StudioScreen(studioClient, remoteEnabled, remoteStatus, onRemote = { remoteEnabled = it; remoteStatus = if (it) "Verbinde …" else "Aus" }, onSelect = { project ->
-                val copy = Script(title = project.title, text = project.text)
+                val copy = Script(title = project.title, text = project.text, generationNotice = project.generationNotice)
                 scripts = scripts + copy; repository.save(scripts); select(copy.id); page = "editor"
             }, onBack = { page = "scripts" })
             "editor" -> Page("Skript bearbeiten", "LOKAL GESPEICHERT", onBack = { page = "scripts" }) {
+                selected.generationNotice?.let { GenerationNoticePanel(it) }
                 OutlinedTextField(value = selected.title, onValueChange = { update(selected.copy(title = it)) }, label = { Text("Titel") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = selected.text, onValueChange = { update(selected.copy(text = it)) }, label = { Text("Skripttext") }, modifier = Modifier.fillMaxWidth().height(260.dp))
                 MainAction("Teleprompter öffnen") { page = "prompter" }
@@ -365,7 +366,7 @@ private fun KontraApp(activity: ComponentActivity) {
                 Toggle("Text vertikal spiegeln", textV) { textV = it }
                 Action("Drehen: $textRotation°") { textRotation = (textRotation + 90) % 360 }
             }
-            "prompter" -> key(selected.id) { Prompter(selected.text, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, remoteActions) { playbackStatus = it } }
+            "prompter" -> key(selected.id) { Prompter(selected.text, selected.generationNotice, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, remoteActions) { playbackStatus = it } }
         }
     }
     }
@@ -387,7 +388,7 @@ private fun Page(title: String, eyebrow: String, onBack: (() -> Unit)? = null, c
 }
 
 @Composable
-private fun Prompter(text: String, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
+private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
     val remote = LocalRemoteIndicator.current
     val scroll = rememberScrollState(initialPosition)
     val density = LocalDensity.current.density
@@ -438,8 +439,9 @@ private fun Prompter(text: String, fontSize: Float, speed: Float, width: Float, 
                 Spacer(Modifier.height(400.dp))
             }
         }
-        if (controls || remote != null) Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (controls || remote != null || notice?.needsAttention() == true) Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (remote != null) RemoteBanner(remote)
+            notice?.let { PrompterGenerationNotice(it) }
             if (controls) Text(
                 if (lanState.role.isEmpty()) "Offline-Prompter" else lanState.status + (lanState.rttMs?.let { " · RTT $it ms" } ?: ""),
                 modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xe6202329)).padding(horizontal = 14.dp, vertical = 9.dp),
