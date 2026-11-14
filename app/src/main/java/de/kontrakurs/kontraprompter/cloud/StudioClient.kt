@@ -184,6 +184,34 @@ class StudioClient {
         return pollCamera(ticket.deviceId, request, ticket)
     }
 
+    /** Ephemeral preview signaling; it shares only the explicitly authenticated device ticket. */
+    internal fun pollCameraPreview(ticket: CameraDeviceTicket, payload: JSONObject): JSONObject {
+        check(cookie.get() == ticket.studioSession) { "Studio-Sitzung hat sich geändert." }
+        if (android.os.SystemClock.elapsedRealtime() >= ticket.expiresAt) throw CameraDeviceTicketException("Kameraticket abgelaufen.")
+        val body = payload.toString().toByteArray(Charsets.UTF_8)
+        check(body.size <= 96 * 1024)
+        val connection = open("/api/camera-preview/device", "POST")
+        try {
+            connection.connectTimeout = 3000; connection.readTimeout = 3000
+            connection.setRequestProperty("Cookie", ticket.studioSession)
+            connection.setRequestProperty("X-Camera-Device-Ticket", ticket.value)
+            connection.setRequestProperty("Origin", BASE)
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            connection.doOutput = true; connection.setFixedLengthStreamingMode(body.size)
+            connection.outputStream.use { it.write(body) }
+            val code = connection.responseCode
+            if (code == 403) throw CameraDeviceTicketException("Kameraticket nicht verfügbar.")
+            if (code != 200) throw IOException("Webvorschau nicht verfügbar (HTTP $code).")
+            val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
+                val result = StringBuilder(); val block = CharArray(2048)
+                while (true) { val count = input.read(block); if (count < 0) break; check(result.length + count <= 96 * 1024); result.append(block, 0, count) }
+                result.toString()
+            }
+            check(cookie.get() == ticket.studioSession) { "Studio-Sitzung hat sich geändert." }
+            return JSONObject(text)
+        } finally { connection.disconnect() }
+    }
+
     private fun pollCamera(sessionId: String, request: CameraPollRequest, ticket: CameraDeviceTicket?): CameraPollResponse {
         require(UUID.fromString(sessionId).toString() == sessionId)
         val session = cookie.get() ?: throw IllegalStateException("Bitte erneut anmelden.")

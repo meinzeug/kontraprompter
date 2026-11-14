@@ -14,17 +14,20 @@ import java.nio.file.Files
 import java.util.UUID
 
 /** All decisions are synchronously durable before they can be acknowledged or executed. */
-internal class RemoteCameraJournal private constructor(context: Context) {
+internal class RemoteCameraJournal private constructor(context: Context, private val deviceId: String) {
     private val app = context.applicationContext
     private val dir = File(app.filesDir, "remote-camera")
-    private val target = File(dir, "decisions.json")
-    private var broken = false
+    private val target = File(dir, cameraJournalFileName(deviceId))
+    @Volatile private var broken = false
     private var current: CameraDecisionState
 
     init {
         check((dir.isDirectory || dir.mkdirs()) && dir.isDirectory) { "Camera journal directory is unavailable" }
         syncDirectory(dir.parentFile!!)
-        current = load()
+        current = try { load() }
+        catch (error: org.json.JSONException) { throw CameraIdentityRecoveryRequiredException() }
+        catch (error: IllegalStateException) { throw CameraIdentityRecoveryRequiredException() }
+        catch (error: IllegalArgumentException) { throw CameraIdentityRecoveryRequiredException() }
         val recovered = reconcile(recoverCameraCaptures(current), app)
         if (recovered != current) commit(recovered)
     }
@@ -111,7 +114,7 @@ internal class RemoteCameraJournal private constructor(context: Context) {
     }
 
     private fun load(): CameraDecisionState {
-        if (!target.exists() && !File(target.path + ".bak").exists()) return CameraDecisionState()
+        if (!target.exists() && !File(target.path + ".bak").exists()) throw CameraIdentityRecoveryRequiredException()
         val text = AtomicFile(target).openRead().bufferedReader(Charsets.UTF_8).use { input ->
             val result = StringBuilder(); val buffer = CharArray(2048)
             while (true) { val count = input.read(buffer); if (count < 0) break; check(result.length + count <= MAX_BYTES); result.append(buffer, 0, count) }
@@ -188,15 +191,86 @@ internal class RemoteCameraJournal private constructor(context: Context) {
 
     companion object {
         private const val MAX_BYTES = 8 * 1024 * 1024
-        private var instance: RemoteCameraJournal? = null
-        @Synchronized fun open(context: Context): RemoteCameraJournal {
+        private val instances = mutableMapOf<String, RemoteCameraJournal>()
+        /** Only the identity initialization transaction may create an empty journal. */
+        @Synchronized fun ensureInitialized(dir: File, deviceId: String, mayCreate: Boolean, mayMigrate: Boolean) {
+            val target = File(dir, cameraJournalFileName(deviceId))
+            fun present() = target.exists() || File(target.path + ".bak").exists()
+            if (!present() && mayMigrate) migrateLegacy(dir, deviceId)
+            if (present()) return
+            if (!mayCreate) throw CameraIdentityRecoveryRequiredException()
+            val data = JSONObject().put("version", 1).put("sequence", 0)
+                .put("decisions", JSONArray()).put("captures", JSONArray()).toString().toByteArray(Charsets.UTF_8)
+            val atomic = AtomicFile(target); val out = atomic.startWrite()
+            try { out.write(data); out.fd.sync(); atomic.finishWrite(out) }
+            catch (error: Exception) { atomic.failWrite(out); throw error }
+            syncDir(dir)
+        }
+        @Synchronized fun open(context: Context, deviceId: String): RemoteCameraJournal {
+            require(UUID.fromString(deviceId).toString() == deviceId)
             val application = context.applicationContext
-            val existing = instance
+            val existing = instances[deviceId]
             if (existing != null) {
                 check(existing.dir.parentFile?.canonicalFile == application.filesDir.canonicalFile)
+                // A failed write left the in-memory owner unusable. Never silently reuse it
+                // or start executing commands with uncertain durable history.
+                if (existing.broken) throw CameraIdentityRecoveryRequiredException()
                 return existing
             }
-            return RemoteCameraJournal(application).also { instance = it }
+            return RemoteCameraJournal(application, deviceId).also { instances[deviceId] = it }
+        }
+
+        /** Bind an older unscoped journal before changing identity; never delete the old file. */
+        @Synchronized fun bindLegacyOwner(context: Context, oldDeviceId: String?) {
+            val dir = File(context.applicationContext.filesDir, "remote-camera")
+            check((dir.isDirectory || dir.mkdirs()) && dir.isDirectory)
+            val legacy = File(dir, "decisions.json")
+            if (!legacy.exists() && !File(legacy.path + ".bak").exists()) return
+            val owner = File(dir, "legacy-owner.json")
+            if (owner.exists() || File(owner.path + ".bak").exists()) return
+            oldDeviceId?.let { require(UUID.fromString(it).toString() == it) }
+            val data = JSONObject().put("deviceId", oldDeviceId ?: JSONObject.NULL).toString().toByteArray(Charsets.UTF_8)
+            val atomic = AtomicFile(owner); val out = atomic.startWrite()
+            try { out.write(data); out.fd.sync(); atomic.finishWrite(out) }
+            catch (error: Exception) { atomic.failWrite(out); throw error }
+            syncDir(dir)
+        }
+
+        private fun migrateLegacy(dir: File, deviceId: String) {
+            val legacy = File(dir, "decisions.json")
+            if (!legacy.exists() && !File(legacy.path + ".bak").exists()) return
+            val ownerFile = File(dir, "legacy-owner.json")
+            if (!ownerFile.exists() && !File(ownerFile.path + ".bak").exists()) {
+                val atomic = AtomicFile(ownerFile); val out = atomic.startWrite()
+                try { out.write(JSONObject().put("deviceId", deviceId).toString().toByteArray(Charsets.UTF_8)); out.fd.sync(); atomic.finishWrite(out) }
+                catch (error: Exception) { atomic.failWrite(out); throw error }
+                syncDir(dir)
+            }
+            val owner = try { AtomicFile(ownerFile).openRead().bufferedReader(Charsets.UTF_8).use { input ->
+                val text = StringBuilder(); val block = CharArray(1024)
+                while (true) { val count = input.read(block); if (count < 0) break; check(text.length + count <= 4096); text.append(block, 0, count) }
+                JSONObject(text.toString())
+            } } catch (_: org.json.JSONException) { throw CameraIdentityRecoveryRequiredException() }
+              catch (_: IllegalStateException) { throw CameraIdentityRecoveryRequiredException() }
+            val ownerId = try { if (owner.isNull("deviceId")) null else owner.getString("deviceId") }
+                catch (_: org.json.JSONException) { throw CameraIdentityRecoveryRequiredException() }
+            if (!legacyCameraJournalBelongsTo(ownerId, deviceId)) return
+            val destination = File(dir, cameraJournalFileName(deviceId))
+            if (destination.exists() || File(destination.path + ".bak").exists()) return
+            val bytes = AtomicFile(legacy).openRead().use { input ->
+                val output = java.io.ByteArrayOutputStream(); val block = ByteArray(8192)
+                while (true) { val count = input.read(block); if (count < 0) break; check(output.size() + count <= MAX_BYTES); output.write(block, 0, count) }
+                output.toByteArray()
+            }
+            val atomic = AtomicFile(destination); val out = atomic.startWrite()
+            try { out.write(bytes); out.fd.sync(); atomic.finishWrite(out) }
+            catch (error: Exception) { atomic.failWrite(out); throw error }
+            syncDir(dir)
+        }
+
+        private fun syncDir(path: File) {
+            val fd = Os.open(path.absolutePath, OsConstants.O_RDONLY, 0)
+            try { check(OsConstants.S_ISDIR(Os.fstat(fd).st_mode)); Os.fsync(fd) } finally { Os.close(fd) }
         }
     }
 }

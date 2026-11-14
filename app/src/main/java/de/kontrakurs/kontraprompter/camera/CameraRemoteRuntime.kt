@@ -36,6 +36,8 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
     val status: StateFlow<String> = _status
     private val _active = MutableStateFlow(false)
     val active: StateFlow<Boolean> = _active
+    private val _recoveryRequired = MutableStateFlow(false)
+    val recoveryRequired: StateFlow<Boolean> = _recoveryRequired
     private val _uploadStatus = MutableStateFlow("")
     val uploadStatus: StateFlow<String> = _uploadStatus
     // Last defense: a child failure must never crash the Android process.
@@ -45,6 +47,10 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
     private var uploadJob: Job? = null
     private val uploads = CloudUploadCoordinator(app, client)
     private var nextUploadCheck = 0L
+    @Volatile private var previewTicket: StudioClient.CameraDeviceTicket? = null
+    private val preview = CameraPreviewRuntime(session, client) { previewTicket }
+    val previewEnabled: StateFlow<Boolean> = preview.enabled
+    val previewStatus: StateFlow<String> = preview.status
 
     fun activate(password: String) {
         if (job?.isActive == true) return
@@ -61,17 +67,24 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
                     client.registerCameraDevice(identity)
                     client.startCameraDeviceSession(identity)
                 }
-                val journal = withContext(Dispatchers.IO) { RemoteCameraJournal.open(app) }
+                val journal = withContext(Dispatchers.IO) { RemoteCameraJournal.open(app, identity.id) }
                 controller = RemoteCameraController.open(journal, session)
+                // A reset can occur while an older login/challenge is in flight. After acquiring
+                // the process owner, recheck before sending any poll or executing any command.
+                val currentIdentity = withContext(Dispatchers.IO) { CameraDeviceIdentity.loadOrCreate(app) }
+                check(currentIdentity.id == identity.id && currentIdentity.publicKeyDer.contentEquals(identity.publicKeyDer)) { "Kameraidentität hat sich geändert. Bitte erneut verbinden." }
                 while (isActive) {
                     try {
                         val currentTicket = ticket ?: client.startCameraDeviceSession(identity).also { ticket = it }
+                        previewTicket = currentTicket
                         controller.poll { client.pollCameraDevice(currentTicket, it) }
                         _status.value = "Websteuerung verbunden"
                         scheduleUpload(journal)
                         delay(1000)
                     } catch (_: CameraDeviceTicketException) {
                         _status.value = "Kamerasitzung wird erneuert …"
+                        previewTicket = null
+                        preview.disable("Webvorschau aus · Kamerasitzung wird erneuert")
                         ticket = null
                     } catch (_: CameraRegistrationRequiredException) {
                         _status.value = "Kamera muss erneut registriert werden · Aufnahme läuft gegebenenfalls lokal weiter"
@@ -85,9 +98,12 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
                     }
                 }
             } catch (error: CancellationException) { throw error }
+            catch (error: CameraIdentityRecoveryRequiredException) { _recoveryRequired.value = true; _status.value = error.message ?: "Kameraidentität nicht verfügbar." }
             catch (error: Exception) { _status.value = error.message?.take(220) ?: "Websteuerung konnte nicht aktiviert werden." }
             finally {
                 withContext(NonCancellable) {
+                    previewTicket = null
+                    preview.disable()
                     uploadJob?.cancel()
                     val failure = runCatching { controller?.close() }.exceptionOrNull()
                     if (failure != null) {
@@ -138,5 +154,21 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
     }
 
     fun deactivate() { _status.value = "Wird getrennt …"; job?.cancel() }
-    fun dispose() { scope.cancel() }
+    fun enablePreview() { if (_active.value && previewTicket != null) preview.enable() }
+    fun disablePreview() { preview.disable() }
+    fun createNewIdentityAfterConfirmation() {
+        if (_active.value || job?.isActive == true) return
+        _active.value = true
+        job = scope.launch {
+            try {
+                _status.value = "Neue Kameraidentität wird vorbereitet …"
+                withContext(Dispatchers.IO) { CameraDeviceIdentity.createNewAfterConfirmation(app) }
+                _recoveryRequired.value = false
+                _status.value = "Neue Identität vorbereitet. Alte Aufnahmen bleiben unter ‚Aufnahmen‘ exportierbar; alte Aufträge müssen separat geklärt werden."
+            } catch (error: CancellationException) { throw error }
+            catch (error: Exception) { _recoveryRequired.value = true; _status.value = error.message?.take(220) ?: "Neue Kameraidentität konnte nicht erstellt werden." }
+            finally { _active.value = false }
+        }
+    }
+    fun dispose() { preview.close(); scope.cancel() }
 }

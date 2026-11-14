@@ -58,6 +58,7 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
         lan.onDisconnect = {
             val release = synchronized(guard) {
                 disconnected = true
+                _video.value?.stopAnyBrowserPreview()
                 if (shouldReleaseVideo(_recording.value, closed, disconnected)) _video.value.also { _video.value = null } else null
             }
             release?.close()
@@ -70,7 +71,24 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
             ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     }
 
-    fun setRemoteExclusive(enabled: Boolean) = synchronized(guard) { remoteExclusive = enabled }
+    fun setRemoteExclusive(enabled: Boolean) = synchronized(guard) {
+        remoteExclusive = enabled
+        if (!enabled) _video.value?.stopAnyBrowserPreview()
+    }
+
+    internal fun browserPreviewAvailable(): Boolean = synchronized(guard) {
+        host && remoteExclusive && !closed && !disconnected && _video.value?.browserPreviewAvailable() == true
+    }
+
+    internal fun startBrowserPreview(id: String, offer: String, allowed: () -> Boolean, emit: (String, String, String?, Int?) -> Unit) {
+        val current = synchronized(guard) { if (browserPreviewAvailable()) _video.value else null }
+        if (current == null) emit("end", "", null, null)
+        else current.startBrowserPreview(id, offer, { allowed() && browserPreviewAvailable() && _video.value === current }, emit)
+    }
+    internal fun browserPreviewCandidate(id: String, data: String, mid: String?, line: Int?) {
+        synchronized(guard) { _video.value }?.browserPreviewCandidate(id, data, mid, line)
+    }
+    internal fun stopBrowserPreview(id: String) { synchronized(guard) { _video.value }?.stopBrowserPreview(id) }
 
     fun startRecording(id: String = UUID.randomUUID().toString(), projectId: String? = null): Boolean {
         val current: RtcVideo
@@ -179,6 +197,7 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
         synchronized(guard) {
             if (closed) return
             closed = true
+            _video.value?.stopAnyBrowserPreview()
             stopWhenStarted = true
             if (shouldReleaseVideo(_recording.value, closed, disconnected)) { release = _video.value; _video.value = null }
             else { recorder?.stop(); release = null }

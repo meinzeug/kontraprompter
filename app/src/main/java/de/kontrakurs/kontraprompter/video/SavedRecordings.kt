@@ -8,6 +8,26 @@ import java.util.UUID
 /** Only finalized, locally retained files are offered for export. */
 data class SavedRecording(val id: String, val file: File, val bytes: Long, val durationUs: Long, val createdAtMs: Long, val sha256: String, val partial: Boolean, val reason: String, val projectId: String? = null)
 
+/** A leftover is exportable as raw data only, never as a validated recording or cloud upload. */
+data class UnverifiedRecording(val id: String, val file: File, val bytes: Long)
+
+fun unverifiedRecordings(context: Context): List<UnverifiedRecording> {
+    val dir = File(context.applicationContext.filesDir, "camera-recordings")
+    val validated = savedRecordings(context).map { it.id }.toSet()
+    return unverifiedRecordingsInDirectory(dir, validated)
+}
+
+internal fun unverifiedRecordingsInDirectory(dir: File, validated: Set<String>): List<UnverifiedRecording> {
+    return dir.listFiles().orEmpty().mapNotNull { file ->
+        runCatching {
+            val id = file.name.removeSuffix(".mp4")
+            require(file.name == "$id.mp4" && UUID.fromString(id).toString() == id && id !in validated)
+            require(file.canonicalFile.parentFile == dir.canonicalFile && file.canonicalFile.name == file.name && file.isFile && file.length() > 0)
+            UnverifiedRecording(id, file, file.length())
+        }.getOrNull()
+    }.sortedBy { it.id }
+}
+
 fun recordingStopDescription(reason: String): String? = when (reason.lowercase()) {
     "storage" -> "Automatisch beendet: Gerätespeicher fast voll."
     "size_limit" -> "Automatisch beendet: maximale Dateigröße erreicht."

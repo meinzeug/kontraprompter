@@ -38,6 +38,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import de.kontrakurs.kontraprompter.network.LanState
 import de.kontrakurs.kontraprompter.video.LiveSession
 import de.kontrakurs.kontraprompter.video.RtcVideo
@@ -296,20 +299,41 @@ private fun CameraRemotePanel(session: LiveSession, connected: Boolean) {
     val active by runtime.active.collectAsState()
     val status by runtime.status.collectAsState()
     val uploadStatus by runtime.uploadStatus.collectAsState()
+    val recoveryRequired by runtime.recoveryRequired.collectAsState()
+    val previewEnabled by runtime.previewEnabled.collectAsState()
+    val previewStatus by runtime.previewStatus.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
     var password by remember { mutableStateOf("") }
     var pendingPassword by remember { mutableStateOf<String?>(null) }
     var permissionError by remember { mutableStateOf(false) }
+    var confirmIdentityReset by remember { mutableStateOf(false) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val entered = pendingPassword; pendingPassword = null
         if (granted && entered != null) { permissionError = false; runtime.activate(entered) }
         else permissionError = true
     }
     DisposableEffect(runtime) { onDispose { runtime.dispose() } }
+    DisposableEffect(runtime, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) runtime.disablePreview() }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer); runtime.disablePreview() }
+    }
+    if (confirmIdentityReset) AlertDialog(
+        onDismissRequest = { confirmIdentityReset = false },
+        title = { Text("Neue Kameraidentität anlegen?") },
+        text = { Text("Alte Kameraaufträge können nicht automatisch übernommen werden. Lokale Aufnahmen bleiben erhalten und sind unter ‚Aufnahmen‘ exportierbar; offene Aufträge müssen separat geklärt werden.") },
+        confirmButton = { TextButton(onClick = { confirmIdentityReset = false; runtime.createNewIdentityAfterConfirmation() }) { Text("Neue Identität anlegen") } },
+        dismissButton = { TextButton(onClick = { confirmIdentityReset = false }) { Text("Abbrechen") } },
+    )
     AppPanel {
         Text("Websteuerung", style = MaterialTheme.typography.titleMedium)
         Text(status, color = SoftText)
         if (active) {
             Text("Beim Beenden der Websteuerung wird eine laufende Aufnahme gestoppt.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+            Text("Das Kamerabild wird nur nach deiner Freigabe an das Dashboard übertragen; die Vorschau enthält keinen Ton.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+            Text(previewStatus, color = SoftText, style = MaterialTheme.typography.bodySmall)
+            if (previewEnabled) QuietAction("Webvorschau beenden") { runtime.disablePreview() }
+            else QuietAction("Kamerabild für Dashboard freigeben") { runtime.enablePreview() }
             QuietAction("Websteuerung beenden") { runtime.deactivate() }
         } else {
             Text("Verbinde diese Kamera mit Videomaker, um Aufnahmen vom Dashboard zu steuern.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
@@ -319,6 +343,7 @@ private fun CameraRemotePanel(session: LiveSession, connected: Boolean) {
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) runtime.activate(entered)
                 else { pendingPassword = entered; permission.launch(Manifest.permission.RECORD_AUDIO) }
             }
+            if (recoveryRequired) QuietAction("Neue Kameraidentität anlegen") { confirmIdentityReset = true }
             if (!connected) Text("Verbinde zuerst die Kamera mit dem Teleprompter.", color = SoftText, style = MaterialTheme.typography.bodySmall)
         }
         if (permissionError) Text("Für Aufnahmen mit Ton ist die Mikrofonfreigabe erforderlich.", color = MaterialTheme.colorScheme.error)

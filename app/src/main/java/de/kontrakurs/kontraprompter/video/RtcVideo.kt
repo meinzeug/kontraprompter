@@ -36,6 +36,9 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     private var eglReleased = false
     private val pendingCandidates = mutableListOf<IceCandidate>()
     private var remoteDescriptionSet = false
+    private var browserPreview: BrowserPreviewPeer? = null
+    private var browserPreviewId: String? = null
+    @Volatile private var cameraFrameAvailable = false
 
     fun start() = execute {
         try {
@@ -68,12 +71,12 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
         if (vp8.isNotEmpty()) p.transceivers.firstOrNull { it.mediaType == MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO }?.setCodecPreferences(vp8 + caps.filterNot { it.name.equals("VP8", true) })
     }
     private fun cameraEvents() = object : CameraVideoCapturer.CameraEventsHandler {
-        override fun onCameraError(error: String) { lan.report("Kamerafehler", error); onCameraFailure?.invoke("Kamera meldet einen Fehler") }
-        override fun onCameraDisconnected() { lan.report("Kamerafehler", "Kamera wurde getrennt"); onCameraFailure?.invoke("Kamera wurde getrennt") }
-        override fun onCameraFreezed(error: String) { lan.report("Kamerafehler", error); onCameraFailure?.invoke("Kamerabild ist stehengeblieben") }
+        override fun onCameraError(error: String) { cameraFrameAvailable = false; stopAnyBrowserPreview(); lan.report("Kamerafehler", error); onCameraFailure?.invoke("Kamera meldet einen Fehler") }
+        override fun onCameraDisconnected() { cameraFrameAvailable = false; stopAnyBrowserPreview(); lan.report("Kamerafehler", "Kamera wurde getrennt"); onCameraFailure?.invoke("Kamera wurde getrennt") }
+        override fun onCameraFreezed(error: String) { cameraFrameAvailable = false; stopAnyBrowserPreview(); lan.report("Kamerafehler", error); onCameraFailure?.invoke("Kamerabild ist stehengeblieben") }
         override fun onCameraOpening(name: String) = Unit
-        override fun onFirstFrameAvailable() { lan.reportFirstCameraFrame() }
-        override fun onCameraClosed() = Unit
+        override fun onFirstFrameAvailable() { cameraFrameAvailable = true; lan.reportFirstCameraFrame() }
+        override fun onCameraClosed() { cameraFrameAvailable = false; stopAnyBrowserPreview() }
     }
     private fun observer() = object : PeerConnection.Observer {
         override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
@@ -158,10 +161,44 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
             executor.execute { action(if (closed.get() || !host) null else localTrack, egl.eglBaseContext) }
         }.isSuccess
     }
+    internal fun browserPreviewAvailable(): Boolean = host && !closed.get() && cameraFrameAvailable
+
+    /** All peer operations run on the camera owner executor; closing this peer never closes the track. */
+    internal fun startBrowserPreview(id: String, offer: String, permitted: () -> Boolean, emit: (String, String, String?, Int?) -> Unit) = execute {
+        if (!permitted() || !browserPreviewAvailable() || browserPreview != null || factory == null || localTrack == null) {
+            emit("end", "", null, null)
+            return@execute
+        }
+        browserPreviewId = id
+        try {
+            val created = BrowserPreviewPeer(context.applicationContext, factory!!, localTrack!!, ::execute) { kind, data, mid, line ->
+                if (browserPreviewId == id) {
+                    emit(kind, data, mid, line)
+                    if (kind == "end") stopBrowserPreview(id)
+                }
+            }
+            browserPreview = created
+            created.offer(offer)
+        } catch (_: Exception) {
+            browserPreview?.close(); browserPreview = null; browserPreviewId = null
+            emit("end", "", null, null)
+        }
+    }
+    internal fun browserPreviewCandidate(id: String, data: String, mid: String?, line: Int?) = execute {
+        if (browserPreviewId == id) browserPreview?.candidate(data, mid, line)
+    }
+    internal fun stopBrowserPreview(id: String) = execute {
+        if (browserPreviewId == id) { browserPreviewId = null; browserPreview?.close(); browserPreview = null }
+    }
+    internal fun stopAnyBrowserPreview() = execute {
+        browserPreviewId = null; browserPreview?.close(); browserPreview = null
+    }
     private fun execute(block: () -> Unit) { if (!closed.get()) runCatching { executor.execute { if (!closed.get()) block() } } }
     override fun close() {
         synchronized(sinks) { if (!closed.compareAndSet(false, true)) return }
         executor.execute {
+            browserPreviewId = null
+            runCatching { browserPreview?.close() }; browserPreview = null
             val track = synchronized(sinks) {
                 sinks.forEach { (if (host) localTrack else remoteTrack)?.removeSink(it) }
                 sinks.clear()

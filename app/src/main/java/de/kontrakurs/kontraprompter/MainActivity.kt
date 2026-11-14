@@ -43,6 +43,8 @@ import de.kontrakurs.kontraprompter.video.LiveSession
 import de.kontrakurs.kontraprompter.video.RtcVideo
 import de.kontrakurs.kontraprompter.video.SavedRecording
 import de.kontrakurs.kontraprompter.video.savedRecordings
+import de.kontrakurs.kontraprompter.video.UnverifiedRecording
+import de.kontrakurs.kontraprompter.video.unverifiedRecordings
 import de.kontrakurs.kontraprompter.video.isActive
 import de.kontrakurs.kontraprompter.video.recordingStopDescription
 import kotlinx.coroutines.Job
@@ -92,16 +94,28 @@ private fun KontraApp(activity: ComponentActivity) {
     val emptyRecording = remember { kotlinx.coroutines.flow.MutableStateFlow<de.kontrakurs.kontraprompter.video.LocalRecording>(de.kontrakurs.kontraprompter.video.LocalRecording.Idle) }
     val recording by (session?.recording ?: emptyRecording).collectAsState()
     var recordings by remember { mutableStateOf<List<SavedRecording>>(emptyList()) }
+    var unverified by remember { mutableStateOf<List<UnverifiedRecording>>(emptyList()) }
     var uploadRecordingId by rememberSaveable { mutableStateOf<String?>(null) }
     var recordingsLoaded by remember { mutableStateOf(false) }
     var pendingExportId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingUnverifiedExport by rememberSaveable { mutableStateOf(false) }
     val exportScope = rememberCoroutineScope()
     val exportDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { uri ->
         val id = pendingExportId
+        val raw = pendingUnverifiedExport
         pendingExportId = null
+        pendingUnverifiedExport = false
         if (uri != null && id != null) exportScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
+                    if (raw) {
+                        check(RtcVideo.cameraAvailable()) { "Kamera wird noch verwendet" }
+                        val item = unverifiedRecordings(activity).firstOrNull { it.id == id } ?: error("Datei nicht verfügbar")
+                        activity.contentResolver.openOutputStream(uri, "w")?.use { output -> item.file.inputStream().buffered().use { it.copyTo(output) } }
+                            ?: error("Zieldatei nicht verfügbar")
+                        check(item.file.length() == item.bytes) { "Datei hat sich während des Exports geändert" }
+                        return@runCatching
+                    }
                     val item = savedRecordings(activity).firstOrNull { it.id == id } ?: error("Aufnahme nicht gefunden")
                     val digest = java.security.MessageDigest.getInstance("SHA-256")
                     item.file.inputStream().buffered().use { input ->
@@ -121,6 +135,7 @@ private fun KontraApp(activity: ComponentActivity) {
         if (page == "recordings" || page == "upload") {
             recordingsLoaded = false
             recordings = withContext(Dispatchers.IO) { savedRecordings(activity) }
+            unverified = withContext(Dispatchers.IO) { unverifiedRecordings(activity) }
             recordingsLoaded = true
         }
     }
@@ -276,7 +291,7 @@ private fun KontraApp(activity: ComponentActivity) {
                 }
             }
             "recordings" -> Page("Aufnahmen", "LOKAL GESPEICHERT", onBack = { page = "roles" }) {
-                if (recordings.isEmpty()) Text("Noch keine abgeschlossenen Aufnahmen auf diesem Gerät.", color = SoftText)
+                if (recordings.isEmpty() && unverified.isEmpty()) Text("Noch keine Aufnahmen auf diesem Gerät.", color = SoftText)
                 recordings.forEach { item ->
                     AppPanel {
                         Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(item.createdAtMs)), style = MaterialTheme.typography.titleMedium)
@@ -285,6 +300,14 @@ private fun KontraApp(activity: ComponentActivity) {
                         else recordingStopDescription(item.reason)?.let { Text(it, color = Color(0xffffcd8a)) }
                         MainAction("Video exportieren") { pendingExportId = item.id; exportDocument.launch("KontraPrompter-${item.id.take(8)}.mp4") }
                         if (!item.partial) Action("In Videomaker hochladen") { uploadRecordingId = item.id; recordingsLoaded = false; page = "upload" }
+                    }
+                }
+                unverified.forEach { item ->
+                    AppPanel {
+                        Text("Nicht geprüfte Aufnahmedatei", style = MaterialTheme.typography.titleMedium)
+                        Text("Die Aufnahme wurde unterbrochen. Die Datei kann unvollständig oder nicht abspielbar sein. Das Original bleibt auf dem Gerät.", color = Color(0xffffcd8a))
+                        Text("${item.bytes / (1024 * 1024)} MB · ${item.id.take(8)}", color = SoftText)
+                        Action("Ungeprüfte Datei exportieren") { pendingExportId = item.id; pendingUnverifiedExport = true; exportDocument.launch("KontraPrompter-ungeprueft-${item.id.take(8)}.mp4") }
                     }
                 }
             }

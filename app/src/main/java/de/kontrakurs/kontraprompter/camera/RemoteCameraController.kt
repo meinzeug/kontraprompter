@@ -60,18 +60,22 @@ internal class RemoteCameraController private constructor(private val journal: R
     suspend fun close() = withContext(NonCancellable) {
         synchronized(ownerLock) { closing = true }
         // A stuck network transport must not keep an active recording running during explicit shutdown.
-        session.stopRecording()
-        mutex.withLock { session.stopRecording() }
-        poller.closeAndDrain()
-        session.recording.first { !it.isActive() }
-        // Persist the final state before another session can claim this journal.
-        try { snapshot() } catch (_: CameraReconciliationPendingException) { /* terminal state remains durable and is retried on reactivation */ }
-        synchronized(ownerLock) { if (owner === this@RemoteCameraController) { session.setRemoteExclusive(false); owner = null } }
+        finishCameraRemote(
+            stop = { session.stopRecording(); mutex.withLock { session.stopRecording() } },
+            drain = { poller.closeAndDrain() },
+            awaitRecorder = { session.recording.first { !it.isActive() }; Unit },
+            persist = { try { snapshot() } catch (_: CameraReconciliationPendingException) { /* retry on reactivation */ }; Unit },
+            release = { synchronized(ownerLock) { if (owner === this@RemoteCameraController) { session.setRemoteExclusive(false); owner = null } } },
+        )
     }
 
     companion object {
         private val ownerLock = Any()
         private var owner: RemoteCameraController? = null
+        fun <T> withIdentityReset(action: () -> T): T = synchronized(ownerLock) {
+            check(owner == null) { "Die vorherige Kamera wird noch beendet." }
+            action()
+        }
         fun open(journal: RemoteCameraJournal, session: LiveSession): RemoteCameraController = synchronized(ownerLock) {
             val current = owner
             if (current != null) {
@@ -129,10 +133,15 @@ internal class RemoteCameraController private constructor(private val journal: R
                 throw error
             }
         }
+        // Do not let unrelated unverified historical media block STOP delivery for an
+        // active recording. Reconciliation is resumed once the recorder is terminal.
+        if (cameraReportBeforeReconciliation(phase)) {
+            val active = withContext(Dispatchers.IO) { journal.snapshot() }.captures.firstOrNull { it.recordingId == id }
+            return@withLock CameraReport(phase, id, active?.projectId)
+        }
         if (!withContext(Dispatchers.IO) { journal.reconcilePending() }) throw CameraReconciliationPendingException()
         val current = withContext(Dispatchers.IO) { journal.snapshot() }
         val matched = current.captures.firstOrNull { it.recordingId == id }
-        if (phase in setOf("preparing", "recording", "finalizing")) return@withLock CameraReport(phase, id, matched?.projectId)
         val pending = current.captures.lastOrNull { it.phase in setOf("ready", "partial", "error") && it.reportedPhase != it.phase }
         if (pending != null) {
             if (pending.phase in setOf("ready", "partial")) check(pending.sizeBytes != null && pending.sha256 != null) { "Aufnahmebeleg fehlt" }
