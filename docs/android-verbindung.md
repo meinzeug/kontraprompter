@@ -150,7 +150,15 @@ angeschlossenen Wiederverbindungszustand. Er bindet eine frische Challenge und
 Generation an jeden Versuch, verlangt eine aktuelle authentifizierte
 Serverauskunft und einen bestätigten Peer-Pin und sperrt bei Widerruf oder
 Identitätsänderung. Netzwerkverlust und Stop verwerfen verspätete Ergebnisse.
-Fünf isolierte JVM-Tests bestanden; HTTPS-Serverclient, persistenter Widerruf,
+Eine Signaturfreigabe prüft zusätzlich, dass der Journaleintrag hinsichtlich
+Paar, Peer, Pin, Rolle, Trust und Revision genau zu diesem Gate gehört; ein
+anderes Paar mit derselben Revision darf das Gate nicht wiederverwenden. Der
+JVM-Test nutzt dafür einen temporären Softwareschlüssel, keinen AndroidKeyStore.
+Journalwiderruf, ausstehende Signierung, Serverfreigabe und tatsächliche
+Netzwerkzustellung sind damit noch nicht atomar miteinander verbunden. Vor
+Aktivierung müssen diese Übergänge sowie Laufzeit-/Serverneustart und
+widerrufene aktive Verbindungen gemeinsam abgesichert und getestet werden.
+Die isolierten Gate-/Proof- und Softwareschlüsseltests bestanden; HTTPS-Serverclient, persistenter Widerruf,
 Backoff, aktive Sitzungsanbindung und realer Neustarttest fehlen weiterhin.
 
 ## Ersteinrichtung ohne Testrelay: Hardwarebefund

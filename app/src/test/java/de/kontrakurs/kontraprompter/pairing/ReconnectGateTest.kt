@@ -68,4 +68,29 @@ class ReconnectGateTest {
         assertEquals(ReconnectPhase.RECOVERY_REQUIRED, g.snapshot().phase)
     }
 
+    @Test fun aGateNeverAuthorizesAnotherPairRolePinOrRevision() {
+        val g = gate(); val attempt = g.begin(true)!!
+        val otherPair = peer.copy(pairId = "44444444-4444-4444-8444-444444444444")
+        val variants = listOf(otherPair, peer.copy(peerDeviceId = "55555555-5555-4555-8555-555555555555"),
+            peer.copy(peerSpkiSha256 = "d".repeat(64)), peer.copy(localRole = RelayRole.PROMPTER),
+            peer.copy(serverRevision = 8), peer.copy(trust = PeerTrustState.REVOKED))
+        assertTrue(g.isCheckingFor(attempt, peer))
+        variants.forEach { assertFalse(g.isCheckingFor(attempt, it)) }
+        assertTrue(approve(g, attempt)); assertTrue(g.tlsConfirmed(attempt, peer.peerSpkiSha256))
+        assertTrue(g.isReadyFor(attempt, peer))
+        variants.forEach { assertFalse(g.isReadyFor(attempt, it)) }
+        assertFalse(g.isReadyFor(attempt.copy(challenge = "0".repeat(64)), peer))
+    }
+
+    @Test fun backwardClockAtPersistenceOrHandshakeFailsClosed() {
+        val first = gate(); val a = first.begin(true)!!
+        assertTrue(first.serverStatus(a, a.challenge, peer.pairId, peer.peerDeviceId, peer.peerSpkiSha256, 7, false, 10000))
+        clock = 999
+        assertFalse(first.journalPersisted(a, peer)); assertEquals(ReconnectPhase.RETRY, first.snapshot().phase)
+        clock = 1000
+        val second = gate(); val b = second.begin(true)!!; assertTrue(approve(second, b))
+        clock = 999
+        assertFalse(second.tlsConfirmed(b, peer.peerSpkiSha256)); assertEquals(ReconnectPhase.RETRY, second.snapshot().phase)
+    }
+
 }

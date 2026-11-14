@@ -32,21 +32,21 @@ internal class RelayDeviceIdentity private constructor(val id: String, publicKey
         sign(relaySessionProofMessage(owner, sessionHash, pairId, role, id, roomId, tokenHash, challengeId, nonce))
     /** Sign only a challenge matching this confirmed local identity and pair. */
     fun signReconnect(gate: ReconnectGate, journal: PeerJournal, attempt: ReconnectAttempt, owner: String, deviceId: String, pairId: String, role: RelayRole, attemptId: String, echoedClientChallenge: String, serverNonce: String, revision: Long): ByteArray {
-        check(gate.isChecking(attempt)) { "Verbindungsversuch ist nicht mehr aktuell." }
         validatePeerJournal(journal)
         val ownPin = MessageDigest.getInstance("SHA-256").digest(publicKey).joinToString("") { "%02x".format(it.toInt() and 255) }
         val peer = locallyConfirmedPeer(journal, pairId) ?: error("Telefonpaarung ist nicht bestätigt.")
+        check(gate.isCheckingFor(attempt, peer)) { "Verbindungsversuch gehört nicht zu dieser Telefonpaarung." }
         require(journal.ownerSha256 == owner && journal.localDeviceId == id && deviceId == id && journal.localSpkiSha256 == ownPin)
         require(peer.localRole == role && revision >= peer.serverRevision && attempt.challenge == echoedClientChallenge)
         val proof = sign(deviceReconnectProofMessage(owner, deviceId, pairId, role, attemptId, echoedClientChallenge, serverNonce, revision))
-        check(gate.isChecking(attempt)) { "Verbindungsversuch ist nicht mehr aktuell." }
+        check(gate.isCheckingFor(attempt, peer)) { "Verbindungsversuch gehört nicht zu dieser Telefonpaarung." }
         return proof
     }
     /** The caller sends exactly this body; credentials remain in memory and are not logged. */
     fun signDeviceRequest(gate: ReconnectGate, journal: PeerJournal, attempt: ReconnectAttempt, pairId: String, credential: String, method: String, path: String, body: ByteArray): SignedDeviceRequest {
-        check(gate.isReady(attempt)) { "Gerätesitzung ist nicht mehr aktuell." }
         validatePeerJournal(journal)
         val peer = locallyConfirmedPeer(journal, pairId) ?: error("Telefonpaarung ist nicht bestätigt.")
+        check(gate.isReadyFor(attempt, peer)) { "Gerätesitzung gehört nicht zu dieser Telefonpaarung." }
         val ownPin = MessageDigest.getInstance("SHA-256").digest(publicKey).joinToString("") { "%02x".format(it.toInt() and 255) }
         require(journal.localDeviceId == id && journal.localSpkiSha256 == ownPin && peer.serverRevision == gate.snapshot().serverRevision)
         require(body.size <= 16_384 && credential.matches(Regex("[A-Za-z0-9_-]{43}")))
@@ -59,7 +59,7 @@ internal class RelayDeviceIdentity private constructor(val id: String, publicKey
         val bodyCopy = body.copyOf()
         val nonce = ByteArray(32).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it.toInt() and 255) }
         val signature = sign(deviceRequestProofMessage(journal.ownerSha256, id, pairId, peer.localRole, sessionHash, nonce, method, path, digest(bodyCopy)))
-        check(gate.isReady(attempt)) { "Gerätesitzung ist nicht mehr aktuell." }
+        check(gate.isReadyFor(attempt, peer)) { "Gerätesitzung gehört nicht zu dieser Telefonpaarung." }
         return SignedDeviceRequest(method, path, bodyCopy, nonce, signature)
     }
     private fun sign(bytes: ByteArray): ByteArray = Signature.getInstance("SHA256withECDSA").run { initSign(key); update(bytes); sign() }

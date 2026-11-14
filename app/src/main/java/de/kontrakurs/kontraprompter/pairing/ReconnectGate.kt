@@ -33,6 +33,10 @@ internal class ReconnectGate(private val peer: PeerBinding, private val nowMs: (
     @Synchronized fun isChecking(attempt: ReconnectAttempt): Boolean =
         phase == ReconnectPhase.CHECKING_SERVER && attempt.generation == generation && attempt.challenge == challenge
 
+    /** A live attempt for one trusted pair never authorizes a different journal entry. */
+    @Synchronized fun isCheckingFor(attempt: ReconnectAttempt, binding: PeerBinding): Boolean =
+        isChecking(attempt) && binding == peer.copy(serverRevision = lastRevision)
+
     /** Caller applies bounded backoff before retrying; no background loop starts here. */
     @Synchronized fun begin(networkAvailable: Boolean): ReconnectAttempt? {
         if (terminal || phase in setOf(ReconnectPhase.READY, ReconnectPhase.CHECKING_SERVER, ReconnectPhase.PERSISTING_STATUS, ReconnectPhase.HANDSHAKING)) return null
@@ -69,7 +73,8 @@ internal class ReconnectGate(private val peer: PeerBinding, private val nowMs: (
     /** Pass the binding re-read after an atomic PeerJournalStore update. */
     @Synchronized fun journalPersisted(attempt: ReconnectAttempt, stored: PeerBinding): Boolean {
         if (phase != ReconnectPhase.PERSISTING_STATUS || attempt.generation != generation || attempt.challenge != challenge) return false
-        if (nowMs() >= leaseUntil) { phase = ReconnectPhase.RETRY; return false }
+        val now = nowMs()
+        if (now < attemptStartedMs || now >= leaseUntil) { phase = ReconnectPhase.RETRY; return false }
         if (stored != peer.copy(serverRevision = lastRevision)) {
             phase = ReconnectPhase.RECOVERY_REQUIRED; terminal = true; return false
         }
@@ -80,19 +85,23 @@ internal class ReconnectGate(private val peer: PeerBinding, private val nowMs: (
     /** Pinned mutual TLS must already have completed on this exact attempt. */
     @Synchronized fun tlsConfirmed(attempt: ReconnectAttempt, observedPeerPin: String): Boolean {
         if (phase != ReconnectPhase.HANDSHAKING || attempt.generation != generation || attempt.challenge != challenge) return false
-        if (nowMs() >= leaseUntil) { phase = ReconnectPhase.RETRY; return false }
+        val now = nowMs()
+        if (now < attemptStartedMs || now >= leaseUntil) { phase = ReconnectPhase.RETRY; return false }
         val same = MessageDigest.isEqual(peer.peerSpkiSha256.toByteArray(Charsets.US_ASCII), observedPeerPin.toByteArray(Charsets.US_ASCII))
         if (!same) { phase = ReconnectPhase.RECOVERY_REQUIRED; terminal = true; return false }
-        challenge = null; phase = ReconnectPhase.READY; return true
+        phase = ReconnectPhase.READY; return true
     }
 
     /** A caller must also close the live transport when its lease expires. */
     @Synchronized fun isReady(attempt: ReconnectAttempt): Boolean {
-        if (phase != ReconnectPhase.READY || attempt.generation != generation) return false
+        if (phase != ReconnectPhase.READY || attempt.generation != generation || attempt.challenge != challenge) return false
         val now = nowMs()
         if (now < attemptStartedMs || now >= leaseUntil) { phase = ReconnectPhase.RETRY; return false }
         return true
     }
+
+    @Synchronized fun isReadyFor(attempt: ReconnectAttempt, binding: PeerBinding): Boolean =
+        isReady(attempt) && binding == peer.copy(serverRevision = lastRevision)
 
     /** Loss or stop fences any outstanding server/TLS callbacks. */
     @Synchronized fun disconnected(attemptGeneration: Long, networkAvailable: Boolean) {
