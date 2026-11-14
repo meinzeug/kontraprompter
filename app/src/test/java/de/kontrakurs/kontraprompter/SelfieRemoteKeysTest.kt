@@ -14,19 +14,20 @@ class SelfieRemoteKeysTest {
         assertFalse(check(null)); assertFalse(check("different")); assertTrue(check("other-remote"))
         assertFalse(isSelfieTrigger(false, false, 10, 20, "Other", "other-remote", "other-remote", 25))
     }
-    @Test fun `one press toggles only on first down and consumes release and repeat`() {
-        assertEquals(ShutterKeyDecision.TRIGGER, shutterKeyDecision(true, 0, 0))
-        assertEquals(ShutterKeyDecision.CONSUME, shutterKeyDecision(true, 0, 1))
-        assertEquals(ShutterKeyDecision.CONSUME, shutterKeyDecision(true, 1, 0))
-        assertEquals(ShutterKeyDecision.PASS, shutterKeyDecision(false, 0, 0))
-    }
-    @Test fun `near simultaneous codes from one device toggle only once`() {
-        val debounce = ShutterDebounce()
-        assertTrue(debounce.accept("p007", 1000))
-        assertFalse(debounce.accept("p007", 1010))
-        assertTrue(debounce.accept("p007", 1250))
-        assertFalse(debounce.accept("p007", 1240))
-        assertTrue(debounce.accept("other", 1260))
+    @Test fun `only a complete short uncancelled press is admitted`() {
+        val keys=ShutterKeyTracker()
+        fun event(action:Int,repeat:Int,time:Long,canceled:Boolean=false)=keys.event(true,"p007",25,action,repeat,time,canceled)
+        assertEquals(ShutterKeyDecision.PASS,keys.event(false,"internal",25,0,0,100))
+        assertEquals(ShutterKeyDecision.CONSUME,event(1,0,100))
+        assertEquals(ShutterKeyDecision.CONSUME,event(0,0,200))
+        assertEquals(ShutterKeyDecision.CONSUME,event(0,1,250))
+        assertEquals(ShutterKeyDecision.SHORT_PRESS,event(1,0,300))
+        assertEquals(ShutterKeyDecision.CONSUME,event(0,0,400))
+        assertEquals(ShutterKeyDecision.CONSUME,event(1,0,901))
+        assertEquals(ShutterKeyDecision.CONSUME,event(0,0,1000))
+        assertEquals(ShutterKeyDecision.CONSUME,event(1,0,1050,true))
+        assertEquals(ShutterKeyDecision.CONSUME,event(0,0,1100));keys.clear()
+        assertEquals(ShutterKeyDecision.CONSUME,event(1,0,1150))
     }
     @Test fun `external dedicated camera and media keys are supported`() {
         for (key in listOf(27, 80, 85, 126, 127, 130)) {
@@ -34,5 +35,79 @@ class SelfieRemoteKeysTest {
             assertFalse(isSelfieTrigger(false, false, 7, 8, "Internal", "internal", null, key))
         }
         assertFalse(isSelfieTrigger(true, false, 7, 8, "External", "external", null, 29))
+    }
+
+    @Test fun `keyboard-like shutter keys require explicit external selection`() {
+        for (key in listOf(23,62,66,160)) {
+            assertFalse(isSelfieTrigger(true,false,7,8,"External","external",null,key))
+            assertFalse(isSelfieTrigger(true,false,7,8,"External","external","other",key))
+            assertTrue(isSelfieTrigger(true,false,7,8,"External","external","external",key))
+            assertFalse(isSelfieTrigger(false,false,7,8,"Built in","external","external",key))
+            assertFalse(isSelfieTrigger(true,true,7,8,"Virtual","external","external",key))
+        }
+    }
+
+    private fun context(phase:String="recording",link:Any=Any(),id:Int=7,descriptor:String="p007",recording:String?="r1") =
+        ShutterContext(phase,recording,"project",ShutterLink(link),id,descriptor)
+
+    @Test fun `single waits for full window and double never emits a single`() {
+        val machine=ShutterClickMachine();val context=context()
+        val wait=machine.press("p007",25,1000,context) as ShutterPress.Wait
+        assertNull(machine.expire("p007",wait.token,1399))
+        assertEquals(ShutterPress.Double(context),machine.press("p007",25,1120,context))
+        assertNull(machine.expire("p007",wait.token,1500))
+        assertEquals(ShutterPress.Ignored,machine.press("p007",25,1180,context))
+        assertNull(machine.expire("p007",wait.token,2000))
+    }
+
+    @Test fun `independent devices and events after the window remain independent`() {
+        val machine=ShutterClickMachine();val a=context();val b=context(id=8,descriptor="other")
+        val first=machine.press("p007",25,1000,a) as ShutterPress.Wait
+        val second=machine.press("other",27,1100,b) as ShutterPress.Wait
+        assertEquals(a,machine.expire("p007",first.token,1400))
+        assertEquals(b,machine.expire("other",second.token,1500))
+        val previous=machine.press("p007",25,2000,a) as ShutterPress.Wait
+        val late=machine.press("p007",25,2401,a) as ShutterPress.Wait
+        assertEquals(a,late.overdue);assertNull(machine.expire("p007",previous.token,2500))
+        assertEquals(a,machine.expire("p007",late.token,2801))
+    }
+
+    @Test fun `bounce and alternate codes do not falsely create a double`() {
+        val machine=ShutterClickMachine();val context=context()
+        val wait=machine.press("p007",24,1000,context) as ShutterPress.Wait
+        assertEquals(ShutterPress.Ignored,machine.press("p007",24,1050,context))
+        assertEquals(ShutterPress.Ignored,machine.press("p007",25,1120,context))
+        assertEquals(context,machine.expire("p007",wait.token,1400))
+        assertEquals(ShutterPress.Ignored,machine.press("p007",24,-1,context))
+    }
+
+    @Test fun `connection, device, and recording changes invalidate pending clicks`() {
+        val oldLink=Any();val context=context(link=oldLink)
+        for (changed in listOf(context.copy(link=ShutterLink(Any())),context.copy(deviceId=9),context.copy(recordingId="r2"),context.copy(phase="paused"))) {
+            val machine=ShutterClickMachine();val pending=machine.press("p007",25,1000,context) as ShutterPress.Wait
+            assertEquals(ShutterPress.Changed,machine.press("p007",25,1120,changed))
+            assertNull(machine.expire("p007",pending.token,1400))
+        }
+        val machine=ShutterClickMachine();val pending=machine.press("p007",25,1000,context) as ShutterPress.Wait
+        machine.clear();assertNull(machine.expire("p007",pending.token,1400))
+        assertTrue(shutterContextCurrent(context,"recording","r1",false,true,true))
+        assertFalse(shutterContextCurrent(context,"recording","r1",false,false,true))
+        assertFalse(shutterContextCurrent(context,"recording","r1",false,true,false))
+        assertFalse(shutterContextCurrent(context,"recording","r1",true,true,true))
+        assertFalse(shutterContextCurrent(context,"paused","r1",false,true,true))
+        assertFalse(shutterContextCurrent(context,"recording","r2",false,true,true))
+    }
+
+    @Test fun `single starts only before recording and otherwise only scrolls`() {
+        for (phase in listOf("idle","ready","partial","failed")) {
+            assertEquals(ShutterAction.START,shutterAction(context(phase),ShutterGesture.SINGLE))
+            assertEquals(ShutterAction.NONE,shutterAction(context(phase),ShutterGesture.DOUBLE))
+        }
+        for (phase in listOf("recording","paused")) {
+            assertEquals(ShutterAction.SCROLL,shutterAction(context(phase),ShutterGesture.SINGLE))
+            assertEquals(ShutterAction.CAPTURE_TOGGLE,shutterAction(context(phase),ShutterGesture.DOUBLE))
+        }
+        for (phase in listOf("unknown","preparing","finalizing")) for (gesture in ShutterGesture.entries)
+            assertEquals(ShutterAction.NONE,shutterAction(context(phase),gesture))
     }
 }
