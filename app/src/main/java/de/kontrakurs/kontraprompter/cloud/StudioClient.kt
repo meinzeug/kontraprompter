@@ -122,6 +122,9 @@ class StudioClient {
                 if (recording.partial) throw UploadException("partial", "Unvollständige Teilvideos können derzeit nur lokal exportiert werden.")
                 val session = cookie.get() ?: throw UploadException("auth", "Bitte erneut bei Videomaker anmelden.")
                 if (requiredSession != null && requiredSession.cookie != session) throw UploadException("auth", "Die Studio-Sitzung hat sich geändert. Bitte erneut anmelden.")
+                fun ensureSession() {
+                    if (cookie.get() != session) throw UploadException("auth", "Studio-Sitzung geändert; Serverbeleg prüfen. Die Aufnahme bleibt lokal.")
+                }
                 if (recording.bytes !in 1..(1024L * 1024 * 1024) || !recording.file.isFile || recording.file.length() != recording.bytes)
                     throw UploadException("file_changed", "Lokale Aufnahme ist nicht vollständig vorhanden. Das Original bleibt lokal.")
                 check(entry.recordingId == recording.id && entry.size == recording.bytes && entry.sha256 == recording.sha256)
@@ -133,7 +136,7 @@ class StudioClient {
                     while (true) { if (!continuation.isActive) throw IOException("Upload abgebrochen"); val count = source.read(block); if (count < 0) break; before.update(block, 0, count) }
                 }
                 if (hex(before.digest()) != recording.sha256) throw UploadException("file_changed", "Lokale Aufnahme wurde verändert und wird nicht hochgeladen.")
-                if (requiredSession != null && cookie.get() != session) throw UploadException("auth", "Die Studio-Sitzung hat sich geändert. Bitte erneut anmelden.")
+                ensureSession()
                 val connection = open("/api/projects/${entry.projectId}/recordings", "POST").also { active.set(it) }
                 val lastProgress = AtomicLong(android.os.SystemClock.elapsedRealtime())
                 val waitingForResponse = AtomicBoolean(false)
@@ -163,10 +166,12 @@ class StudioClient {
                             val block = ByteArray(256 * 1024)
                             while (true) {
                                 if (!continuation.isActive) throw IOException("Upload abgebrochen")
+                                ensureSession()
                                 val count = source.read(block); if (count < 0) break
                                 sent += count
                                 if (sent > entry.size) throw UploadException("file_changed", "Lokale Aufnahme wurde während des Uploads verändert.")
                                 sentHash.update(block, 0, count); output.write(block, 0, count)
+                                ensureSession()
                                 lastProgress.set(android.os.SystemClock.elapsedRealtime())
                                 if (!continuation.isActive) throw IOException("Upload abgebrochen")
                                 progress(sent, entry.size)
@@ -177,6 +182,7 @@ class StudioClient {
                     lastProgress.set(android.os.SystemClock.elapsedRealtime())
                     waitingForResponse.set(true)
                     val code = connection.responseCode
+                    ensureSession()
                     if (code !in 200..299) throw uploadFailure(code, session, connection, entry.cameraRecordingId != null)
                     val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
                         val result = StringBuilder(); val block = CharArray(2048)
