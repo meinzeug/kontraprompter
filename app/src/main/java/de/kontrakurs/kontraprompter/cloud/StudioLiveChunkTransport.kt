@@ -3,6 +3,9 @@ package de.kontrakurs.kontraprompter.cloud
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Experimental server adapter; not wired to the app and never enabled in production. */
 internal class StudioLiveChunkTransport(
@@ -14,7 +17,14 @@ internal class StudioLiveChunkTransport(
     private fun request(binding: LiveChunkBinding, method: String, query: String = "", headers: Map<String, String> = emptyMap(), body: ByteArray? = null): JSONObject {
         check(binding.sessionHash == sessionBinding && sessionMatches()) { "Studio session changed" }
         val connection = open("/api/projects/${binding.projectId}/live-recordings/${binding.uploadId}$query", method)
+        val timedOut = AtomicBoolean(false)
+        val watchdog = Executors.newSingleThreadScheduledExecutor { runnable -> Thread(runnable, "KontraLiveUploadWatchdog").apply { isDaemon = true } }
+        fun checkSession() { check(!timedOut.get() && sessionMatches()) { "Studio session changed or live upload timed out" } }
         try {
+            watchdog.schedule({
+                timedOut.set(true)
+                Thread({ runCatching { connection.disconnect() } }, "KontraLiveUploadCancel").apply { isDaemon = true }.start()
+            }, 60, TimeUnit.SECONDS)
             connection.setRequestProperty("Cookie", cookie)
             connection.setRequestProperty("Origin", "https://videomaker.dorfspy.de")
             connection.setRequestProperty("X-Recording-Id", binding.recordingId)
@@ -24,19 +34,27 @@ internal class StudioLiveChunkTransport(
                 check(body.size in 1..LiveChunkEngine.CHUNK)
                 connection.setRequestProperty("Content-Type", "application/octet-stream")
                 connection.doOutput = true; connection.setFixedLengthStreamingMode(body.size)
-                connection.outputStream.use { it.write(body) }
+                connection.outputStream.use { output ->
+                    var offset = 0
+                    while (offset < body.size) {
+                        checkSession()
+                        val length = minOf(64 * 1024, body.size - offset)
+                        output.write(body, offset, length); offset += length
+                        checkSession()
+                    }
+                }
             }
             val code = connection.responseCode
-            check(sessionMatches()) { "Studio session changed; server result uncertain" }
+            checkSession()
             if (code !in 200..299) throw IOException("Live upload response HTTP $code; original remains local")
             val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
                 val output = StringBuilder(); val chars = CharArray(1024)
                 while (true) { val n = input.read(chars); if (n < 0) break; check(output.length + n <= 16_384); output.append(chars, 0, n) }
                 output.toString()
             }
-            check(sessionMatches()) { "Studio session changed; server result uncertain" }
+            checkSession()
             return JSONObject(text)
-        } finally { connection.disconnect() }
+        } finally { watchdog.shutdownNow(); connection.disconnect() }
     }
     override fun begin(binding: LiveChunkBinding): Int = request(binding, "POST", headers = mapOf("X-Live-Operation" to "begin")).getInt("chunkBytes")
     override fun status(binding: LiveChunkBinding, after: Int?): LivePage {
