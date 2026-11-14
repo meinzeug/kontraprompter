@@ -11,6 +11,10 @@ import java.io.IOException
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import de.kontrakurs.kontraprompter.video.SavedRecording
@@ -18,10 +22,10 @@ import de.kontrakurs.kontraprompter.video.SavedRecording
 /** HTTPS-only, in-memory session. No password or session cookie is persisted. */
 class StudioClient {
     companion object { private const val BASE = "https://videomaker.dorfspy.de" }
-    @Volatile private var cookie: String? = null
+    private val cookie = SessionCookie()
 
     suspend fun login(password: String): Unit = withContext(Dispatchers.IO) {
-        cookie = null
+        cookie.set(null)
         val connection = open("/api/login", "POST")
         try {
             connection.doOutput = true
@@ -32,15 +36,16 @@ class StudioClient {
             val session = connection.headerFields.entries.filter { it.key.equals("Set-Cookie", true) }
                 .flatMap { it.value }.map { it.substringBefore(';') }.firstOrNull { it.startsWith("kontrakurs_session=") }
                 ?: throw IllegalStateException("Der Server hat keine Sitzung eingerichtet.")
-            cookie = session
+            cookie.set(session)
         } finally { connection.disconnect() }
     }
 
     suspend fun projects(): List<StudioProject> = withContext(Dispatchers.IO) {
         val connection = open("/api/projects", "GET")
         try {
-            connection.setRequestProperty("Cookie", cookie ?: throw IllegalStateException("Bitte erneut anmelden."))
-            if (connection.responseCode == 401) { cookie = null; throw IllegalStateException("Sitzung abgelaufen. Bitte erneut anmelden.") }
+            val session = cookie.get() ?: throw IllegalStateException("Bitte erneut anmelden.")
+            connection.setRequestProperty("Cookie", session)
+            if (connection.responseCode == 401) { cookie.invalidate(session); throw IllegalStateException("Sitzung abgelaufen. Bitte erneut anmelden.") }
             if (connection.responseCode != 200) throw IllegalStateException("Skripte konnten nicht geladen werden.")
             val array = JSONArray(connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
             (0 until array.length()).map { i -> array.getJSONObject(i).let { p -> StudioProject(p.getString("id"), p.getString("title"), p.getJSONObject("content").getString("script")) } }
@@ -48,12 +53,14 @@ class StudioClient {
     }
 
     /** Streams a local file without deleting it; only a matching durable receipt is success. */
-    internal suspend fun uploadRecording(recording: SavedRecording, entry: UploadEntry, progress: (Long, Long) -> Unit, workerFinished: () -> Unit): Unit = suspendCancellableCoroutine { continuation ->
+    internal suspend fun uploadRecording(recording: SavedRecording, entry: UploadEntry, progress: (Long, Long) -> Unit, workerStarted: () -> Unit, workerFinished: () -> Unit): Unit = suspendCancellableCoroutine { continuation ->
         val active = AtomicReference<HttpURLConnection?>(null)
-        continuation.invokeOnCancellation { active.get()?.disconnect() }
-        Thread({
+        val delivered = AtomicBoolean(false)
+        continuation.invokeOnCancellation { delivered.set(true); active.get()?.let { connection -> Thread({ runCatching { connection.disconnect() } }, "KontraUploadCancel").start() } }
+        val worker = Thread({
             try {
-                val session = cookie ?: throw UploadException("auth", "Bitte erneut bei Videomaker anmelden.")
+                if (recording.partial) throw UploadException("partial", "Unvollständige Teilvideos können derzeit nur lokal exportiert werden.")
+                val session = cookie.get() ?: throw UploadException("auth", "Bitte erneut bei Videomaker anmelden.")
                 check(recording.bytes in 1..(1024L * 1024 * 1024) && recording.file.isFile && recording.file.length() == recording.bytes) { "Lokale Aufnahme ist nicht vollständig vorhanden." }
                 check(entry.recordingId == recording.id && entry.size == recording.bytes && entry.sha256 == recording.sha256)
                 check(UUID.fromString(entry.projectId).toString() == entry.projectId && UUID.fromString(entry.uploadId).toString() == entry.uploadId)
@@ -64,8 +71,18 @@ class StudioClient {
                 }
                 check(hex(before.digest()) == recording.sha256) { "Lokale Aufnahme wurde verändert und wird nicht hochgeladen." }
                 val connection = open("/api/projects/${entry.projectId}/recordings", "POST").also { active.set(it) }
+                val lastProgress = AtomicLong(android.os.SystemClock.elapsedRealtime())
+                val waitingForResponse = AtomicBoolean(false)
+                val watchdog = Executors.newSingleThreadScheduledExecutor { action -> Thread(action, "KontraUploadWatchdog") }
                 try {
                     if (!continuation.isActive) throw IOException("Upload abgebrochen")
+                    watchdog.scheduleAtFixedRate({
+                        val limit = if (waitingForResponse.get()) 120_000L else 60_000L
+                        if (android.os.SystemClock.elapsedRealtime() - lastProgress.get() > limit && delivered.compareAndSet(false, true)) {
+                            if (continuation.isActive) continuation.resumeWithException(UploadException("uncertain", "Upload reagiert nicht. Die lokale Aufnahme bleibt erhalten; ein vorheriger Upload wird noch beendet."))
+                            Thread({ runCatching { connection.disconnect() } }, "KontraUploadTimeout").start()
+                        }
+                    }, 5, 5, TimeUnit.SECONDS)
                     connection.readTimeout = 120_000
                     connection.setRequestProperty("Cookie", session)
                     connection.setRequestProperty("Origin", BASE)
@@ -83,38 +100,58 @@ class StudioClient {
                                 if (!continuation.isActive) throw IOException("Upload abgebrochen")
                                 val count = source.read(block); if (count < 0) break
                                 sent += count; check(sent <= entry.size) { "Lokale Aufnahme wurde verändert." }
-                                sentHash.update(block, 0, count); output.write(block, 0, count); progress(sent, entry.size)
+                                sentHash.update(block, 0, count); output.write(block, 0, count)
+                                lastProgress.set(android.os.SystemClock.elapsedRealtime())
+                                if (!continuation.isActive) throw IOException("Upload abgebrochen")
+                                progress(sent, entry.size)
                             }
                         }
                     }
                     check(sent == entry.size && hex(sentHash.digest()) == entry.sha256) { "Lokale Aufnahme wurde während des Uploads verändert." }
+                    lastProgress.set(android.os.SystemClock.elapsedRealtime())
+                    waitingForResponse.set(true)
                     val code = connection.responseCode
-                    if (code == 401 || code == 403) { cookie = null; throw UploadException("auth", "Sitzung abgelaufen. Bitte erneut anmelden.") }
-                    if (code == 404) throw UploadException("project_missing", "Skript nicht gefunden oder Upload-Endpunkt nicht verfügbar. Die Aufnahme bleibt lokal.")
-                    if (code == 409) throw UploadException("conflict", "Upload-ID oder gespeicherte Datei stimmt nicht überein. Die Aufnahme bleibt lokal.")
-                    if (code !in 200..299) throw UploadException("uncertain", "Upload nicht bestätigt (HTTP $code). Die Aufnahme bleibt lokal.")
+                    if (code !in 200..299) throw uploadFailure(code, session)
                     val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
                         val result = StringBuilder(); val block = CharArray(2048)
                         while (true) { val count = input.read(block); if (count < 0) break; check(result.length + count <= 16_384) { "Serverbestätigung ist ungültig." }; result.append(block, 0, count) }
                         result.toString()
                     }
                     val response = JSONObject(text)
-                    check(UUID.fromString(response.getString("id")).toString() == entry.uploadId &&
-                        UUID.fromString(response.getString("projectId")).toString() == entry.projectId &&
-                        response.getLong("sizeBytes") == entry.size && response.getString("sha256") == entry.sha256) { "Serverbestätigung stimmt nicht mit der Aufnahme überein." }
-                    if (continuation.isActive) continuation.resume(Unit)
-                } finally { active.compareAndSet(connection, null); connection.disconnect() }
-            } catch (error: Exception) { if (continuation.isActive) continuation.resumeWithException(error) }
+                    val rawSize = response.get("sizeBytes")
+                    check(rawSize is Int || rawSize is Long) { "Serverbestätigung ist ungültig." }
+                    val receipt = UploadReceipt(response.getString("id"), response.getString("projectId"), (rawSize as Number).toLong(), response.getString("sha256"))
+                    check(receiptMatches(entry, receipt)) { "Serverbestätigung stimmt nicht mit der Aufnahme überein." }
+                    if (delivered.compareAndSet(false, true) && continuation.isActive) continuation.resume(Unit)
+                } catch (error: IOException) {
+                    if (error is UploadException) throw error
+                    val status = runCatching { connection.responseCode }.getOrNull()
+                    if (status != null && status !in 200..299) throw uploadFailure(status, session)
+                    throw error
+                } finally { watchdog.shutdownNow(); active.compareAndSet(connection, null); connection.disconnect() }
+            } catch (error: Exception) { if (delivered.compareAndSet(false, true) && continuation.isActive) continuation.resumeWithException(error) }
             finally { workerFinished() }
-        }, "KontraStudioUpload").start()
+        }, "KontraStudioUpload")
+        workerStarted()
+        try { worker.start() } catch (error: Exception) { workerFinished(); if (delivered.compareAndSet(false, true) && continuation.isActive) continuation.resumeWithException(error) }
     }
 
     private fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
+    private fun uploadFailure(status: Int, session: String): UploadException = when (status) {
+        401, 403 -> { cookie.invalidate(session); UploadException("auth", "Sitzung abgelaufen. Bitte erneut anmelden.") }
+        404 -> UploadException("project_missing", "Skript nicht gefunden oder Upload-Endpunkt nicht verfügbar. Die Aufnahme bleibt lokal.")
+        409 -> UploadException("conflict", "Upload-ID oder gespeicherte Datei stimmt nicht überein. Die Aufnahme bleibt lokal.")
+        413 -> UploadException("size", "Die Aufnahme überschreitet das Serverlimit. Die Aufnahme bleibt lokal.")
+        429 -> UploadException("busy", "Der Server bearbeitet bereits andere Uploads. Bitte später erneut versuchen.")
+        507 -> UploadException("storage", "Auf dem Server ist nicht genug Speicher frei. Die Aufnahme bleibt lokal.")
+        else -> UploadException("uncertain", "Upload nicht bestätigt (HTTP $status). Die Aufnahme bleibt lokal.")
+    }
+
     suspend fun pollDevice(id: String, name: String, status: String, acknowledged: List<String>): List<StudioCommand> = withContext(Dispatchers.IO) {
         val connection = open("/api/devices/poll", "POST")
         try {
-            connection.setRequestProperty("Cookie", cookie ?: throw IllegalStateException("Bitte erneut anmelden."))
+            connection.setRequestProperty("Cookie", cookie.get() ?: throw IllegalStateException("Bitte erneut anmelden."))
             connection.setRequestProperty("Origin", BASE)
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             connection.doOutput = true

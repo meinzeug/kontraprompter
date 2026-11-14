@@ -2,14 +2,21 @@
 
 ## Automatisiert
 
-`./gradlew assembleDebug testDebugUnitTest`: überprüft Build, Scroll-/Transformationsmodell, lokalen authentifizierten Kanalaustausch einschließlich ungültigem Sitzungscode und wiederholter Nachricht sowie Aufnahmezeitbasis und Ressourcen-/Lifecycle-Sperren. Kein Ersatz für Darstellung, Storage und echte Hardware.
+`./gradlew assembleDebug testDebugUnitTest`: überprüft Build, Scroll-/Transformationsmodell, lokalen authentifizierten Kanalaustausch einschließlich ungültigem Sitzungscode und wiederholter Nachricht, Aufnahmezeitbasis und Ressourcen-/Lifecycle-Sperren sowie Upload-ID, Belegvergleich, Statuszuordnung und Uploadsperre. Kein Ersatz für Darstellung, Storage und echte Hardware.
+
+## Cloud-Upload in isolierter Testumgebung (14.11.2026)
+
+- Ein separates Android-Testpaket mit eigener Test-CA, eigenem HTTPS-Testserver und synthetischem Skript lud auf dem Xiaomi ein synthetisches MP4 hoch. Die Serverdatei stimmte in Größe und SHA-256 mit dem Original überein; Wiedergabe und Download wurden im Browser geprüft.
+- In demselben isolierten Aufbau erstellte das Samsung bei aktiver Vorschau eine 23,68 Sekunden lange Aufnahme mit Kamera und Mikrofon und lud sie über die App zum ausgewählten Testskript hoch. H.264 und AAC ließen sich vollständig dekodieren; die Datei spielte im Browser an und der Download war bytegleich zum lokalen Original. Hörqualität und Lippensynchronität wurden dabei nicht bewertet.
+- Auf dem Xiaomi wurden eine vom Server zurückgehaltene Bestätigung und anschließend eine Activity-Neuerstellung sowie separat das Verlassen der Uploadseite getestet. Beide Vorgänge hinterließen den lokalen Testfilm und einen unbestätigten Journalzustand; nach erneutem Versuch mit derselben ID zeigte die App einen geprüften Erfolg und die Testdatenbank enthielt genau einen Eintrag. Eine einfache Gerätedrehung erzeugte aufgrund der Manifestkonfiguration keine neue Activity.
+- Weitere isolierte Transporttests prüften unter anderem verlorene Antwort, veränderten Beleg, abgelaufene Anmeldung, gelöschtes Skript, Abbruch und einen nicht lesenden TLS-Peer. Testpakete und die zugehörigen Testdateien wurden nach den Versuchen entfernt. Das belegt weder einen produktiven Upload noch langfristigen Hintergrundbetrieb.
 
 ## Stand des Tests auf zwei Android-Geräten (13.11.2026)
 
 - Samsung Galaxy A52 5G (SM-A526B, Android 14) als Kamera und Xiaomi 2409BRN2CY (Android 14) als Anzeige, beide im selben WLAN: Discovery, gegenseitige Bestätigung und Aufbau der Videoverbindung erfolgreich.
 - Ein Testskript wurde auf dem Xiaomi über dem empfangenen Kamerabild angezeigt und nach Countdown automatisch gescrollt. Bei bevorzugtem H.264 war das Empfangsbild stark blockartig gestört, während die lokale Kamera-Vorschau klar war. Nach Umstellung der Codec-Priorität auf VP8 war das Bild im kurzen Vergleich klar. Die Ursache der H.264-Störung ist noch ungeklärt; die Statusmeldung zur Verbindung allein belegt keine ausreichende Bildqualität.
 - Die Signalisierungs-RTT lag bei dieser Stichprobe ungefähr zwischen 50 und 130 ms; daraus lässt sich die Bildlatenz nicht ableiten. Ein längerer Stabilitätstest und die Ursachenanalyse der Bildstörung stehen aus.
-- Studio-Anmeldung und Skriptliste über HTTPS auf dem Xiaomi getestet. Bei aktivierter Web-Fernsteuerung wurde ein Studio-Skript über die Live-Schnittstelle auf das Gerät geladen; Start und Pause wurden am Gerät beobachtet. Der Status meldete anschließend „Pausiert“. Kamera-Fernsteuerung, Aufnahme und Cloud-Upload bleiben offen.
+- Studio-Anmeldung und Skriptliste über HTTPS auf dem Xiaomi getestet. Bei aktivierter Web-Fernsteuerung wurde ein Studio-Skript über die Live-Schnittstelle auf das Gerät geladen; Start und Pause wurden am Gerät beobachtet. Der Status meldete anschließend „Pausiert“. Kamera-Fernsteuerung bleibt offen.
 - Die optische QR-Kopplung wurde auf Samsung und Xiaomi nach einem WLAN-Neustart des Xiaomi erfolgreich geprüft: Scan, gegenseitige Bestätigung und Videoverbindung.
 - Nach der Gestaltungsüberarbeitung wurden beide Startansichten auf den realen Geräten geprüft und die Verbindung erneut manuell gekoppelt. Während des laufenden Videobilds funktionierten Studio-Skriptladen, Start, Pause und Anfang; die Hinweise für Studio und Kamera sowie die Android-Zurück-Navigation wurden geprüft. In einer kurzen Stichprobe meldeten die Renderer etwa 16–17 Bilder pro Sekunde. Ein längerer Stabilitäts- oder Latenztest ist dies nicht.
 - Die integrierte App nahm auf dem Samsung bei paralleler WebRTC-Verbindung 66,2 Sekunden mit Mikrofon auf. Während des kontrollierten WLAN-Ausfalls am Xiaomi lief die Aufnahme auf dem Samsung mit etwa 15 Bildern pro Sekunde weiter. Die finalisierte MP4 enthielt 992 H.264-Bilder und 3.102 AAC-Pakete; beide Spuren wurden vollständig dekodiert, PTS und DTS waren pro Spur streng aufsteigend.
@@ -29,4 +36,4 @@
 6. Encoder-/Use-Case-Grenzen und Qualitätsreduktion bzw. ehrliche Betriebsmodi prüfen.
 7. Verweigerte Berechtigungen, Rotation, Standby, Hintergrundbetrieb, knappes Speicherangebot, Mikrofon-/Kamerabelegung, Akku und Temperatur prüfen.
 
-Die oben nicht ausdrücklich als durchgeführt genannten Tests sind weiterhin **offen**. Vorschau, lokale Kopplung und lokale Aufnahme sind experimentell implementiert; automatischer Reconnect, Cloud-Upload, Aufnahmefernsteuerung und Hotspot fehlen noch.
+Die oben nicht ausdrücklich als durchgeführt genannten Tests sind weiterhin **offen**. Vorschau, lokale Kopplung, lokale Aufnahme und manueller Cloud-Upload sind experimentell implementiert; automatischer Reconnect, Aufnahmefernsteuerung und Hotspot fehlen noch.

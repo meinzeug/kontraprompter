@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.viewmodel.compose.viewModel
+import de.kontrakurs.kontraprompter.cloud.CloudUploadViewModel
 import de.kontrakurs.kontraprompter.network.LanState
 import de.kontrakurs.kontraprompter.cloud.StudioClient
 import de.kontrakurs.kontraprompter.video.LiveSession
@@ -77,7 +79,8 @@ private fun KontraApp(activity: ComponentActivity) {
     val selected = scripts.find { it.id == selectedId } ?: scripts.first()
     var page by rememberSaveable { mutableStateOf("roles") }
     var session by remember { mutableStateOf<LiveSession?>(null) }
-    val studioClient = remember { StudioClient() }
+    val cloud: CloudUploadViewModel = viewModel()
+    val studioClient = cloud.client
     var remoteEnabled by remember { mutableStateOf(false) }
     var remoteStatus by remember { mutableStateOf("Aus") }
     var playbackStatus by remember { mutableStateOf("Pausiert") }
@@ -89,6 +92,8 @@ private fun KontraApp(activity: ComponentActivity) {
     val emptyRecording = remember { kotlinx.coroutines.flow.MutableStateFlow<de.kontrakurs.kontraprompter.video.LocalRecording>(de.kontrakurs.kontraprompter.video.LocalRecording.Idle) }
     val recording by (session?.recording ?: emptyRecording).collectAsState()
     var recordings by remember { mutableStateOf<List<SavedRecording>>(emptyList()) }
+    var uploadRecordingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var recordingsLoaded by remember { mutableStateOf(false) }
     var pendingExportId by rememberSaveable { mutableStateOf<String?>(null) }
     val exportScope = rememberCoroutineScope()
     val exportDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { uri ->
@@ -113,8 +118,11 @@ private fun KontraApp(activity: ComponentActivity) {
         }
     }
     LaunchedEffect(page) {
-        if (page == "upload") page = "recordings"
-        else if (page == "recordings") recordings = withContext(Dispatchers.IO) { savedRecordings(activity) }
+        if (page == "recordings" || page == "upload") {
+            recordingsLoaded = false
+            recordings = withContext(Dispatchers.IO) { savedRecordings(activity) }
+            recordingsLoaded = true
+        }
     }
     var cameraPermissionError by remember { mutableStateOf(false) }
     var cameraBusyError by remember { mutableStateOf(false) }
@@ -124,6 +132,7 @@ private fun KontraApp(activity: ComponentActivity) {
             "scripts" -> page = "roles"
             "studio", "editor" -> page = "scripts"
             "recordings" -> page = "roles"
+            "upload" -> page = "recordings"
             "settings", "calibration", "prompter" -> page = "editor"
             else -> page = "roles"
         }
@@ -275,7 +284,15 @@ private fun KontraApp(activity: ComponentActivity) {
                         if (item.partial) Text("Unvollständiges Teilvideo nach einem Fehler", color = Color(0xffffcd8a))
                         else recordingStopDescription(item.reason)?.let { Text(it, color = Color(0xffffcd8a)) }
                         MainAction("Video exportieren") { pendingExportId = item.id; exportDocument.launch("KontraPrompter-${item.id.take(8)}.mp4") }
+                        if (!item.partial) Action("In Videomaker hochladen") { uploadRecordingId = item.id; recordingsLoaded = false; page = "upload" }
                     }
+                }
+            }
+            "upload" -> {
+                val item = recordings.firstOrNull { it.id == uploadRecordingId }
+                if (item != null && recordingsLoaded) CloudUploadScreen(item, studioClient, cloud.coordinator, onBack = { page = "recordings" })
+                else Page("Aufnahme laden", "CLOUD-UPLOAD", onBack = { page = "recordings" }) {
+                    Text(if (recordingsLoaded) "Diese lokale Aufnahme ist nicht mehr verfügbar." else "Aufnahme wird geladen …", color = SoftText)
                 }
             }
             "studio" -> StudioScreen(studioClient, remoteEnabled, remoteStatus, onRemote = { remoteEnabled = it; remoteStatus = if (it) "Verbinde …" else "Aus" }, onSelect = { project ->
