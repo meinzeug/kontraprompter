@@ -81,11 +81,12 @@ class MainActivity : ComponentActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val handler = shutterHandler
         val device = event.device
+        if (device?.name == "KontraPrompter Synthetic HID Test") android.util.Log.w("KpHidTrace", "action=${event.action} key=${event.keyCode} repeat=${event.repeatCount} id=${event.deviceId} ext=${device.isExternal} virtual=${device.isVirtual} selected=${device.descriptor == selectedVolumeRemote} handler=${handler != null}")
         if (handler != null && device != null && Build.VERSION.SDK_INT >= 29 &&
             isSelfieTrigger(device.isExternal, device.isVirtual, device.vendorId, device.productId,
                 device.name, device.descriptor, selectedVolumeRemote, event.keyCode)) {
             when (shutterKeys.event(true, device.descriptor, event.keyCode, event.action, event.repeatCount, event.eventTime, event.isCanceled)) {
-                ShutterKeyDecision.SHORT_PRESS -> { handler(device, event.keyCode, event.eventTime); return true }
+                ShutterKeyDecision.SHORT_PRESS -> { android.util.Log.w("KpHidTrace", "short press recognized"); handler(device, event.keyCode, event.eventTime); return true }
                 ShutterKeyDecision.CONSUME -> return true
                 ShutterKeyDecision.PASS -> Unit
             }
@@ -133,6 +134,7 @@ private fun KontraApp(activity: MainActivity) {
     var inputRefresh by remember { mutableIntStateOf(0) }
     DisposableEffect(activity, page, session, lanState.ready, selectedVolumeRemote, selected.studioProjectId) {
         val activeSession = session?.takeIf { !it.host && page == "prompter" && lanState.ready }
+        android.util.Log.w("KpHidTrace", "effect page=$page session=${session != null} host=${session?.host} ready=${lanState.ready} active=${activeSession != null}")
         val clicks = ShutterClickMachine()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val inputs = activity.getSystemService(Context.INPUT_SERVICE) as InputManager
@@ -148,6 +150,7 @@ private fun KontraApp(activity: MainActivity) {
                 val now = current.pairedCapture.state.value
                 val input = InputDevice.getDevice(context.deviceId)
                 val deviceCurrent = input != null && input.isExternal && !input.isVirtual && input.descriptor == context.descriptor
+                android.util.Log.w("KpHidTrace", "dispatch gesture=$gesture phase=${now.phase} pending=${now.pending} deviceCurrent=$deviceCurrent linkCurrent=${current.lan.isApprovedConnection(context.link.state)} action=${shutterAction(context, gesture)}")
                 if (!shutterContextCurrent(context, now.phase, now.recordingId, now.pending, current.lan.isApprovedConnection(context.link.state), deviceCurrent)) {
                     current.pairedCapture.triggerUnavailable(); return
                 }
@@ -177,16 +180,20 @@ private fun KontraApp(activity: MainActivity) {
             { device, code, time ->
                 val state = current.pairedCapture.state.value
                 val marker = current.lan.approvedConnectionMarker()
+                android.util.Log.w("KpHidTrace", "press phase=${state.phase} pending=${state.pending} marker=${marker != null}")
                 if (state.pending || marker == null || (state.phase in setOf("recording", "paused") && state.recordingId == null)) {
                     clicks.clear(); current.pairedCapture.triggerUnavailable()
                 } else {
                     val context = ShutterContext(state.phase, state.recordingId, selected.studioProjectId, ShutterLink(marker), device.id, device.descriptor)
                     when (val result = clicks.press(device.descriptor, code, time, context)) {
                         is ShutterPress.Wait -> {
+                            android.util.Log.w("KpHidTrace", "single window started")
                             result.overdue?.let { dispatch(ShutterGesture.SINGLE, it) }
                             scope.launch {
                                 delay(400)
-                                clicks.expire(device.descriptor, result.token, android.os.SystemClock.uptimeMillis())?.let { dispatch(ShutterGesture.SINGLE, it) }
+                                val expired = clicks.expire(device.descriptor, result.token, android.os.SystemClock.uptimeMillis())
+                                android.util.Log.w("KpHidTrace", "single window expired=${expired != null}")
+                                expired?.let { dispatch(ShutterGesture.SINGLE, it) }
                             }
                         }
                         is ShutterPress.Double -> dispatch(ShutterGesture.DOUBLE, result.context)
