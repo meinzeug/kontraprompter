@@ -140,3 +140,13 @@ WLAN-Verbindungsaufbau wurden Xiaomi und Samsung wieder gekoppelt; Samsung
 zeigte das Livebild und das Skript an. Der Test demonstriert keine erfolgreiche
 HD-Aufnahme. Die aktuelle veröffentlichte Version nahm zuvor im Geräteversuch
 mit 480 × 640 Pixeln auf.
+
+Mit der wiederhergestellten Release-APK wurde eine weitere Kontrollaufnahme am
+Samsung gestartet, pausiert, fortgesetzt und gestoppt. Das Xiaomi meldete die
+lokale Speicherung. Nach erneuter Anmeldung der Kamera meldete die App den
+erfolgreichen Upload zum Skript. Die zugehörige Serverdatei war 6.164.796 Bytes
+groß, 25,56 Sekunden lang und enthielt H.264-Video mit 480 × 640 Pixeln sowie
+AAC-Ton mit 48 kHz. Ihre SHA-256-Summe war
+`267c309d2aa7364b2dd99f1331160dcc962714a0e28723e30ffb8c6feb0c2ec7`.
+Für diese zusätzliche Aufnahme wurde kein erneuter Originalexport verglichen;
+der bytegleiche Originalvergleich ist oben für die vorherige Aufnahme belegt.
