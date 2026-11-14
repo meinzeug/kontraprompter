@@ -161,6 +161,16 @@ widerrufene aktive Verbindungen gemeinsam abgesichert und getestet werden.
 Die isolierten Gate-/Proof- und Softwareschlüsseltests bestanden; HTTPS-Serverclient, persistenter Widerruf,
 Backoff, aktive Sitzungsanbindung und realer Neustarttest fehlen weiterhin.
 
+Eine reine JVM-Test-Fixture verbindet Gate, Journalregeln und Journalcodec mit
+synthetischen Server- und TLS-Ereignissen (`bash scripts/test-reconnect-fixture.sh`).
+Sie prüft Neustart aus serialisiertem Journal, frische Prüfungen, Netzverlust,
+verspätete Antworten, Fehlversuche beim Speichern und lokale Widerrufe. Ihre
+Kontrollschnittstelle enthält keinen Recorderzugriff. Sie ist ausschließlich im
+Testquelltext definiert und weder eine App- noch eine Netzwerkimplementierung.
+Die Speicher-Fixture ersetzt insbesondere nicht den Android-AtomicFile- und
+Keystore-Test. Bei laufenden echten Verbindungen sind Widerruf, Auslieferung,
+Transport-Schließen und Server-Fencing noch nicht atomar abgesichert.
+
 ## Ersteinrichtung ohne Testrelay: Hardwarebefund
 
 Der reguläre Kandidat `45a65d4` (APK-SHA-256
