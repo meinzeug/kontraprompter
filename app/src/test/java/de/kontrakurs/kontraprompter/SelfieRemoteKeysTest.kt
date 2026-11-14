@@ -4,6 +4,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SelfieRemoteKeysTest {
+    @Test fun `keyboard shutter requires explicit readiness while P007 volume remains available`() {
+        for (key in listOf(23, 62, 66, 160)) {
+            assertFalse(keyboardShutterAdmitted(key, false))
+            assertTrue(keyboardShutterAdmitted(key, true))
+        }
+        assertTrue(keyboardShutterAdmitted(24, false))
+        assertTrue(keyboardShutterAdmitted(25, false))
+    }
     @Test fun `only changes to the originating device cancel its pending keys and clicks`() {
         val keys = ShutterKeyTracker()
         assertEquals(ShutterKeyDecision.CONSUME, keys.event(true, "same", 66, 0, 0, 1000, deviceId = 7))
@@ -51,9 +59,10 @@ class SelfieRemoteKeysTest {
         assertEquals(ShutterKeyDecision.CONSUME,event(0,0,1100));keys.clear()
         assertEquals(ShutterKeyDecision.CONSUME,event(1,0,1150))
     }
-    @Test fun `external dedicated camera and media keys are supported`() {
+    @Test fun `dedicated camera and media keys require explicit selection`() {
         for (key in listOf(27, 80, 85, 126, 127, 130)) {
-            assertTrue(isSelfieTrigger(true, false, 7, 8, "External", "external", null, key))
+            assertFalse(isSelfieTrigger(true, false, 7, 8, "External", "external", null, key))
+            assertTrue(isSelfieTrigger(true, false, 7, 8, "External", "external", "external", key))
             assertFalse(isSelfieTrigger(false, false, 7, 8, "Internal", "internal", null, key))
         }
         assertFalse(isSelfieTrigger(true, false, 7, 8, "External", "external", null, 29))
