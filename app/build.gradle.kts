@@ -14,7 +14,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     // CI artifacts are signed locally with the existing device-update key.
     if (providers.gradleProperty("ciUnsigned").orNull == "true") {
         buildTypes.getByName("debug").signingConfig = null

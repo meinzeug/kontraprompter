@@ -1,5 +1,7 @@
 package de.kontrakurs.kontraprompter.video
 
+import de.kontrakurs.kontraprompter.BuildConfig
+
 import de.kontrakurs.kontraprompter.network.LanSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -79,10 +81,17 @@ internal class PairedCapture(
         requestBound(action, projectId, ShutterBinding(phase, recordingId, connection))
 
     private fun requestBound(action: String, projectId: String?, binding: ShutterBinding?): Boolean = synchronized(lock) {
+        if (binding != null && BuildConfig.DEBUG) android.util.Log.d("KpHidTrace", "admit action=$action host=$host ready=${lan.state.value.ready} pending=${pendingId != null}")
         if (host || !lan.state.value.ready || pendingId != null) return false
         val snapshot = _state.value
-        if (binding != null && !shutterRequestMatches(binding.phase, binding.recordingId, snapshot.phase, snapshot.recordingId, snapshot.pending, lan.isApprovedConnection(binding.connection))) return false
-        if (!pairedActionAllowed(action, snapshot.phase, pending = false)) return false
+        if (binding != null) {
+            val matches = shutterRequestMatches(binding.phase, binding.recordingId, snapshot.phase, snapshot.recordingId, snapshot.pending, lan.isApprovedConnection(binding.connection))
+            if (BuildConfig.DEBUG) android.util.Log.d("KpHidTrace", "admit phase=${snapshot.phase} sameTake=${binding.recordingId == snapshot.recordingId} bindingMatches=$matches")
+            if (!matches) return false
+        }
+        val allowed = pairedActionAllowed(action, snapshot.phase, pending = false)
+        if (binding != null && BuildConfig.DEBUG) android.util.Log.d("KpHidTrace", "admit actionAllowed=$allowed")
+        if (!allowed) return false
         if (action == "switch_camera" && (!snapshot.cameraCanSwitch || snapshot.cameraSwitching || snapshot.cameraFront == null)) return false
         val requestId = UUID.randomUUID().toString()
         val recordingId = if (action == "start" || action == "switch_camera") UUID.randomUUID().toString() else snapshot.recordingId ?: return false
@@ -92,6 +101,7 @@ internal class PairedCapture(
         _state.value = snapshot.copy(pending = true, message = null)
         val sent = if (binding == null) lan.send("capture_command", message)
             else lan.sendOnApprovedConnection(binding.connection, "capture_command", message)
+        if (binding != null && BuildConfig.DEBUG) android.util.Log.d("KpHidTrace", "admit commandSent=$sent")
         if (!sent) {
             pendingId = null; pendingAction = null; _state.value = snapshot.copy(message = "Kameraverbindung nicht verfügbar."); return false
         }
