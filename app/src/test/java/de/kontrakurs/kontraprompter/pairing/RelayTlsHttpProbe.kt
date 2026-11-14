@@ -11,6 +11,10 @@ import java.net.Socket
 import java.net.URI
 import java.security.KeyStore
 import java.security.MessageDigest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 /** Synthetic loopback fixture only. Credentials and keys are created by the test runner. */
@@ -40,9 +44,41 @@ private class FixtureEndpoint(private val url: String, private val role: String,
     override fun close() = Unit
 }
 
+private fun testAdapterSequence() {
+    val listener = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+    val peer = Socket("127.0.0.1", listener.localPort).apply { soTimeout = 2000 }
+    val bridgeSocket = listener.accept()
+    val frames = LinkedBlockingQueue<RelayByteEndpoint.Frame>()
+    val acknowledgements = LinkedBlockingQueue<Long>()
+    val errors = AtomicInteger(); val failed = CountDownLatch(1)
+    val endpoint = object : RelayByteEndpoint {
+        override fun send(sequence: Long, bytes: ByteArray) = Unit
+        override fun receive() = frames.poll(100, TimeUnit.MILLISECONDS)
+        override fun acknowledge(sequence: Long) { acknowledgements.put(sequence) }
+        override fun close() = Unit
+    }
+    val bridge = RelayByteBridge(bridgeSocket, endpoint) { errors.incrementAndGet(); failed.countDown() }
+    try {
+        bridge.start()
+        check(runCatching { bridge.start() }.isFailure)
+        frames.put(RelayByteEndpoint.Frame(1, byteArrayOf(10, 11)))
+        check(acknowledgements.poll(2, TimeUnit.SECONDS) == 1L)
+        frames.put(RelayByteEndpoint.Frame(1, byteArrayOf(10, 11)))
+        check(acknowledgements.poll(2, TimeUnit.SECONDS) == 1L)
+        frames.put(RelayByteEndpoint.Frame(2, byteArrayOf(12)))
+        check(acknowledgements.poll(2, TimeUnit.SECONDS) == 2L)
+        val result = ByteArray(3); DataInputStream(peer.inputStream).readFully(result)
+        check(result.contentEquals(byteArrayOf(10, 11, 12)))
+        frames.put(RelayByteEndpoint.Frame(4, byteArrayOf(13)))
+        check(failed.await(2, TimeUnit.SECONDS))
+        check(errors.get() == 1)
+    } finally { bridge.close(); peer.close(); listener.close() }
+}
+
 /** Run by the Videomaker fixture server; both peers use pre-existing, synthetic pins. */
 fun main(args: Array<String>) {
     require(args.size == 6)
+    testAdapterSequence()
     val (url, cameraKey, clientKey, cameraPath, clientPath) = args
     val wrongPin = args[5]
     require(wrongPin in setOf("none", "server", "client"))
