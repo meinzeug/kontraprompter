@@ -17,6 +17,13 @@ internal sealed interface CloudUploadState {
     data class Failed(val recordingId: String, val projectId: String, val kind: String, val message: String) : CloudUploadState
 }
 
+/** Local byte changes are terminal until an explicit retry, not a transient network error. */
+internal fun failedUploadPhase(kind: String): String = when (kind) {
+    "project_missing" -> "project_missing"
+    "conflict", "manifest_mismatch", "manifest_partial", "file_changed" -> "conflict"
+    else -> "uncertain"
+}
+
 /** One local upload at a time; the worker owns its slot until its socket is closed. */
 internal class CloudUploadCoordinator(context: Context, private val client: StudioClient) {
     companion object { private val gate = UploadOperationGate() }
@@ -52,7 +59,7 @@ internal class CloudUploadCoordinator(context: Context, private val client: Stud
         } catch (error: Exception) {
             gate.stopProgress(ticket)
             val kind = (error as? UploadException)?.kind ?: "uncertain"
-            val phase = when (kind) { "project_missing" -> "project_missing"; "conflict", "manifest_mismatch", "manifest_partial" -> "conflict"; else -> "uncertain" }
+            val phase = failedUploadPhase(kind)
             entry?.let { withContext(Dispatchers.IO) { runCatching { UploadJournal.write(app, it.copy(phase = phase)) } } }
             CloudUploadState.Failed(recording.id, projectId, kind, error.message?.take(220) ?: "Upload nicht bestätigt; die lokale Aufnahme bleibt erhalten.").also { _state.value = it }
         } finally { gate.operationFinished(ticket) }
