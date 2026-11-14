@@ -87,11 +87,8 @@ class MainActivity : ComponentActivity() {
         val trigger = device != null && Build.VERSION.SDK_INT >= 29 &&
             isSelfieTrigger(device.isExternal, device.isVirtual, device.vendorId, device.productId,
                 device.name, device.descriptor, selectedVolumeRemote, event.keyCode)
-        if (event.action == KeyEvent.ACTION_DOWN && !trigger && event.keyCode in setOf(
-                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
-                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_TAB,
-                KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_PAGE_DOWN,
-            )) shutterFocusAnchor?.yieldToKeyboard()
+        if (event.action == KeyEvent.ACTION_DOWN && !trigger && event.isFromSource(InputDevice.SOURCE_KEYBOARD))
+            shutterFocusAnchor?.yieldToKeyboard()
         if (handler != null && device != null && Build.VERSION.SDK_INT >= 29 &&
             trigger) {
             when (shutterKeys.event(true, device.descriptor, event.keyCode, event.action, event.repeatCount, event.eventTime, event.isCanceled, device.id)) {
@@ -105,8 +102,14 @@ class MainActivity : ComponentActivity() {
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         val handled = super.dispatchTouchEvent(event)
-        if (event.actionMasked == MotionEvent.ACTION_UP) shutterFocusAnchor?.ensureFocus()
+        if (event.actionMasked == MotionEvent.ACTION_UP) shutterFocusAnchor?.afterTouch()
         return handled
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) shutterFocusAnchor?.ensureFocus()
+        else window.decorView.post { if (hasWindowFocus()) shutterFocusAnchor?.ensureFocus() }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -153,9 +156,9 @@ private fun KontraApp(activity: MainActivity) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val inputs = activity.getSystemService(Context.INPUT_SERVICE) as InputManager
         val inputListener = object : InputManager.InputDeviceListener {
-            override fun onInputDeviceAdded(deviceId: Int) = Unit
-            override fun onInputDeviceRemoved(deviceId: Int) { clicks.clearDevice(deviceId); activity.clearShutterKeysForDevice(deviceId) }
-            override fun onInputDeviceChanged(deviceId: Int) { clicks.clearDevice(deviceId); activity.clearShutterKeysForDevice(deviceId) }
+            override fun onInputDeviceAdded(deviceId: Int) { activity.shutterFocusAnchor?.ensureFocus() }
+            override fun onInputDeviceRemoved(deviceId: Int) { clicks.clearDevice(deviceId); activity.clearShutterKeysForDevice(deviceId); activity.shutterFocusAnchor?.ensureFocus() }
+            override fun onInputDeviceChanged(deviceId: Int) { clicks.clearDevice(deviceId); activity.clearShutterKeysForDevice(deviceId); activity.shutterFocusAnchor?.ensureFocus() }
         }
         val listening = activeSession != null && runCatching { inputs.registerInputDeviceListener(inputListener, Handler(Looper.getMainLooper())); true }.getOrDefault(false)
         val focusAnchor = selectedVolumeRemote?.takeIf { listening }?.let { ShutterFocusAnchor(activity, it) }

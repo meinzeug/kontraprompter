@@ -51,9 +51,11 @@ class SelfieRemoteKeysTest {
         assertEquals(ShutterKeyDecision.CONSUME,event(0,0,1100));keys.clear()
         assertEquals(ShutterKeyDecision.CONSUME,event(1,0,1150))
     }
-    @Test fun `external dedicated camera and media keys are supported`() {
+    @Test fun `dedicated camera and media keys require explicit selection`() {
         for (key in listOf(27, 80, 85, 126, 127, 130)) {
-            assertTrue(isSelfieTrigger(true, false, 7, 8, "External", "external", null, key))
+            assertFalse(isSelfieTrigger(true, false, 7, 8, "External", "external", null, key))
+            assertFalse(isSelfieTrigger(true, false, 7, 8, "External", "external", "other", key))
+            assertTrue(isSelfieTrigger(true, false, 7, 8, "External", "external", "external", key))
             assertFalse(isSelfieTrigger(false, false, 7, 8, "Internal", "internal", null, key))
         }
         assertFalse(isSelfieTrigger(true, false, 7, 8, "External", "external", null, 29))

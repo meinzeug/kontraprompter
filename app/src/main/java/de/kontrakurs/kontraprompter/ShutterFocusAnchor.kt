@@ -6,23 +6,26 @@ import android.view.InputDevice
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityManager
+import android.view.inputmethod.InputMethodManager
 
 /** Scoped to a paired prompter with a deliberately selected external remote. */
 internal class ShutterFocusAnchor(private val activity: Activity, private val descriptor: String) : AutoCloseable {
     private val root = activity.window.decorView as ViewGroup
     private val accessibility = activity.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+    private val inputMethod = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
     private var anchor: View? = null
     private var closed = false
     private var keyboardNavigation = false
     private val accessibilityListener = AccessibilityManager.AccessibilityStateChangeListener { enabled ->
-        if (enabled) removeAnchor()
+        if (enabled) removeAnchor() else ensureFocus()
     }
 
     init { accessibility.addAccessibilityStateChangeListener(accessibilityListener) }
 
     /** Never displace a currently focused view or run while accessibility is enabled. */
     fun ensureFocus() {
-        if (closed || keyboardNavigation || accessibility.isEnabled || !activity.hasWindowFocus() || !selectedRemoteConnected()) {
+        if (closed || keyboardNavigation || accessibility.isEnabled || inputMethod.isActive || inputMethod.isAcceptingText ||
+            !activity.hasWindowFocus() || !selectedRemoteConnected()) {
             removeAnchor()
             return
         }
@@ -40,6 +43,9 @@ internal class ShutterFocusAnchor(private val activity: Activity, private val de
 
     /** A normal navigation key immediately yields focus to ordinary keyboard navigation. */
     fun yieldToKeyboard() { keyboardNavigation = true; removeAnchor() }
+
+    /** A new touch explicitly returns to touch operation, without replacing an existing focus. */
+    fun afterTouch() { keyboardNavigation = false; ensureFocus() }
 
     private fun selectedRemoteConnected(): Boolean = InputDevice.getDeviceIds().any { id ->
         InputDevice.getDevice(id)?.let { it.isExternal && !it.isVirtual && it.descriptor == descriptor } == true

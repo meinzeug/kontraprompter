@@ -6,8 +6,8 @@ internal fun isSelfieTrigger(
     descriptor: String, selectedDescriptor: String?, keyCode: Int,
 ): Boolean {
     if (!external || virtual || descriptor.isBlank()) return false
-    // Android KeyEvent constants; dedicated camera/focus/media trigger keys from external devices.
-    if (keyCode in setOf(27, 80, 85, 126, 127, 130)) return true
+    // Dedicated camera/focus/media keys also require a deliberately selected external device.
+    if (keyCode in setOf(27, 80, 85, 126, 127, 130)) return !selectedDescriptor.isNullOrBlank() && descriptor == selectedDescriptor
     // Keyboard-like buttons are accepted only from an explicitly selected external device.
     if (keyCode in setOf(23, 62, 66, 160)) return !selectedDescriptor.isNullOrBlank() && descriptor == selectedDescriptor
     if (keyCode !in setOf(24, 25)) return false
