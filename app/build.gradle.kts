@@ -15,6 +15,10 @@ android {
         versionName = "0.1.0"
     }
     buildFeatures { compose = true }
+    // CI artifacts are signed locally with the existing device-update key.
+    if (providers.gradleProperty("ciUnsigned").orNull == "true") {
+        buildTypes.getByName("debug").signingConfig = null
+    }
     packaging { jniLibs { useLegacyPackaging = true } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
