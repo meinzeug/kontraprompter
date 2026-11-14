@@ -26,7 +26,9 @@ class AuthenticatedChannelTest {
                 }
                 Socket("127.0.0.1", listener.localPort).use { socket ->
                     socket.soTimeout = 3000
-                    AuthenticatedChannel.client(socket, token, "Anzeige").use { channel ->
+                    // The camera displays uppercase groups; the user enters that exact format.
+                    val displayedCode = token.chunked(4).joinToString(" ").uppercase()
+                    AuthenticatedChannel.client(socket, displayedCode, "Anzeige").use { channel ->
                         assertEquals("Kamera", channel.remoteName)
                         channel.send("offer", "test-sdp")
                         assertEquals("answer" to "antwort", channel.receive())

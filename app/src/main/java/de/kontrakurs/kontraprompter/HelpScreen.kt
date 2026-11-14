@@ -31,7 +31,7 @@ internal fun HelpScreen(onBack: () -> Unit) {
         AppPanel {
             Text("Schnellstart", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             HelpParagraph("1. Beide Handys mit demselben WLAN verbinden und KontraPrompter öffnen.")
-            HelpParagraph("2. Auf dem Xiaomi „Kamera“, auf dem Samsung „Teleprompter“ wählen. Den QR-Code der Kamera mit dem Samsung scannen und auf beiden Geräten bestätigen.")
+            HelpParagraph("2. Auf dem Xiaomi „Kamera“, auf dem Samsung „Teleprompter“ wählen. Die Kamera auf dem Samsung suchen oder Adresse und Port eingeben, danach den Sitzungscode übertragen und auf beiden Geräten bestätigen.")
             HelpParagraph("3. Handys am T3 befestigen, Skript öffnen und Spiegelung am Glas prüfen. Eine kurze Probe mit Bild und Ton aufnehmen.")
         }
         HelpSection("Desview T3 aufbauen") {
@@ -40,9 +40,9 @@ internal fun HelpScreen(onBack: () -> Unit) {
             HelpParagraph("Auf dem Samsung im Skript „Spiegelung kalibrieren“ öffnen. Bei Bedarf Text horizontal oder vertikal spiegeln oder drehen, bis er im Glas richtig lesbar ist. Die Video-Spiegelung ist getrennt einstellbar.")
         }
         HelpSection("Kamera verbinden") {
-            HelpParagraph("Auf dem Xiaomi „Kamera“ öffnen und die Kameraerlaubnis erteilen. Der QR-Code enthält einen kurzlebigen Sitzungscode: Behandle ihn wie ein Passwort.")
-            HelpParagraph("Auf dem Samsung unter „Teleprompter“ → „Kamera verbinden“ den QR-Scanner starten und den Code auf dem Xiaomi scannen. Die angezeigte Gegenstelle auf beiden Geräten bestätigen. Danach „Zu Skripten und Prompter“ wählen.")
-            HelpParagraph("Falls der Scan nicht klappt, lassen sich Kameraadresse, Port und Sitzungscode auch von Hand eingeben. Beide Geräte müssen sich im lokalen Netz direkt erreichen können; ein gemeinsames WLAN allein reicht nicht immer aus.")
+            HelpParagraph("Auf dem Xiaomi „Kamera“ öffnen und die Kameraerlaubnis erteilen. Der angezeigte Sitzungscode ist höchstens fünf Minuten gültig und wie ein Passwort zu behandeln.")
+            HelpParagraph("Auf dem Samsung unter „Teleprompter“ → „Kamera verbinden“ die gefundene Kamera auswählen. Die Suche übernimmt Adresse und Port; anschließend den Sitzungscode vom Xiaomi eingeben und „Verbinden“ wählen.")
+            HelpParagraph("Wird die Kamera nicht gefunden, Adresse und Port vom Xiaomi ebenfalls eingeben. Die angezeigte Gegenstelle auf beiden Geräten bestätigen und „Zu Skripten und Prompter“ wählen. Beide Geräte müssen sich im lokalen Netz direkt erreichen können; ein gemeinsames WLAN allein reicht nicht immer aus.")
         }
         HelpSection("Skript und Studio") {
             HelpParagraph("Auf dem Samsung unter „Skripte aus Videomaker öffnen“ anmelden und ein Skript auswählen. Eine Kopie wird auf dem Gerät geöffnet; lokale Änderungen werden nicht ins Studio zurückgeschrieben.")

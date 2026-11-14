@@ -6,20 +6,18 @@ Diese Anleitung beschreibt den vorgesehenen Aufbau mit **Xiaomi als Kamera** und
 
 - Beide Smartphones laden und dieselbe aktuelle KontraPrompter-Version installieren. Das Studio-Dashboard stellt die App zum Download bereit.
 - Beide Geräte im selben lokalen WLAN anmelden. Sie müssen sich dort direkt erreichen können. Manche Gäste-WLANs und Router mit Client-Isolation verhindern das, obwohl beide Geräte Internetzugang haben.
-- Auf dem Xiaomi Kamera- und Mikrofonfreigabe für KontraPrompter prüfen. Auf dem Samsung die Kamera für den QR-Scanner freigeben. USB-Debugging ist für den normalen Betrieb nicht nötig.
+- Auf dem Xiaomi Kamera- und Mikrofonfreigabe für KontraPrompter prüfen. USB-Debugging ist für den normalen Betrieb nicht nötig.
 - Für Studio-Skripte und Cloud-Upload ist Internet sowie eine Videomaker-Anmeldung nötig. Die lokale Kameraverbindung nutzt zurzeit keinen Server-Fallback.
 - T3 und Stativ entsprechend der beiliegenden Anleitung aufbauen. Die Herstellerseite nennt die mitgelieferte Smartphone-Halterung und die Möglichkeit für Hoch- und Querformat; je nach Ausführung können Zubehör und Klemmen abweichen. [Desview T3](https://desview.com/collections/teleprompter/products/desview-t3-teleprompter-for-smartphone-tablet-dslr-camera-with-remote-control-lens-adapter)
 
 ## Beide Telefone verbinden
 
-Es ist einfacher, den QR-Code vor dem endgültigen Einspannen zu scannen.
+Die Verbindung lässt sich vor dem endgültigen Einspannen beider Telefone einfacher einrichten.
 
 1. Auf dem **Xiaomi** KontraPrompter öffnen. Wenn die Rückkamera verwendet werden soll, „Frontkamera verwenden“ vor dem Start ausschalten und „Kamera“ wählen. Die Kameraerlaubnis erteilen.
-2. Auf dem **Samsung** „Teleprompter“ und anschließend „Kamera verbinden“ wählen. Den QR-Scanner öffnen und auf den angezeigten Code des Xiaomi richten. Für den Scanner die Kameraerlaubnis auf dem Samsung erteilen.
+2. Auf dem **Samsung** „Teleprompter“ und anschließend „Kamera verbinden“ wählen. Das gefundene Kameragerät auswählen und den auf dem Xiaomi angezeigten Sitzungscode eingeben. Falls die Kamera nicht gefunden wird, zusätzlich ihre angezeigte IP-Adresse und den Port eingeben.
 3. Die angezeigte Gegenstelle auf beiden Geräten prüfen und bestätigen. Auf dem Samsung „Zu Skripten und Prompter“ wählen. Ist der Code abgelaufen, die Verbindung neu beginnen.
-4. Wenn der QR-Scan nicht funktioniert, können auf dem Samsung die auf dem Xiaomi angezeigte lokale IP-Adresse, der Port und der Sitzungscode von Hand eingegeben werden.
-
-Der QR-Code enthält einen kurzlebigen Zugangscode. Er ist für die Verbindung bestimmt und sollte nicht veröffentlicht werden. Der derzeitige lokale Steuerkanal ist authentifiziert, aber nicht verschlüsselt; verwende dafür ein vertrauenswürdiges lokales Netzwerk.
+Der Sitzungscode ist kurzlebig, für die Verbindung bestimmt und sollte nicht veröffentlicht werden. Der derzeitige lokale Steuerkanal ist authentifiziert, aber nicht verschlüsselt; verwende dafür ein vertrauenswürdiges lokales Netzwerk.
 
 ## Desview T3 einrichten
 
@@ -66,7 +64,7 @@ Bei Deinstallation der App können nicht exportierte lokale Aufnahmen verloren g
 
 ## Wenn etwas nicht funktioniert
 
-- **QR-Code lässt sich nicht scannen:** Samsung-Kameraerlaubnis prüfen, Code vollständig und scharf ins Bild halten. Beide Geräte müssen denselben lokalen Netzwerkpfad nutzen; alternativ Adresse, Port und Code manuell eingeben.
+- **Kamera wird nicht gefunden:** Auf dem Samsung die auf dem Xiaomi angezeigte IP-Adresse, den Port und den Sitzungscode eingeben. Beide Geräte müssen sich im lokalen Netzwerk direkt erreichen können; bei abgelaufenem Code die Verbindung neu beginnen.
 - **Beide im WLAN, aber kein Livebild:** Router-/Gastnetz-Isolation kann die direkte Geräteverbindung sperren. Ein gemeinsamer Internetzugang allein genügt nicht. Ein Server-Fallback wird noch entwickelt.
 - **Text im Glas falsch herum:** Auf dem Samsung **Spiegelung kalibrieren** öffnen und horizontal/vertikal getrennt testen. Maßgeblich ist die Lesbarkeit im eingebauten Glas.
 - **Aufnahme startet nicht:** Kamera- und insbesondere Mikrofonfreigabe auf dem Xiaomi, Kamerastatus und freien Speicher prüfen. Die App muss für die Kamerasitzung geöffnet bleiben.
