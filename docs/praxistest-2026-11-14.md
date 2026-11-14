@@ -50,3 +50,8 @@ pausierte mit ihr, lief nach dem Fortsetzen wieder an und blieb beim Stopp
 stehen. Dieser Schalter wurde danach aktiviert gelassen. Er synchronisiert die
 Bedienzustände; eine sprachgesteuerte Anpassung der Textposition ist noch nicht
 implementiert.
+
+Anschließend wurden über die angemeldete Videomaker-Webschnittstelle die
+Gerätebefehle für Tempo, Schriftgröße, Start und Pause an das Samsung
+gesendet. Das Gerät bestätigte jeden Befehl. Tempo und Schriftgröße wurden
+danach auf ihre vorherigen Werte zurückgestellt; die Aufnahme blieb gestoppt.
