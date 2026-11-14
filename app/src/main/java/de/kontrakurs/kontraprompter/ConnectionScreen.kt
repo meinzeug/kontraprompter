@@ -211,13 +211,16 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
                     LocalRecording.Idle -> Text("Video mit Mikrofon auf diesem Gerät aufnehmen.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                     is LocalRecording.Preparing -> Text("Aufnahme wird vorbereitet …", color = SoftText)
                     is LocalRecording.Recording -> Text(if (connected) "Aufnahme läuft · Video und Ton" else "Aufnahme läuft ohne Videoverbindung weiter.", color = Color(0xffffb2b2))
+                    is LocalRecording.Paused -> Text("Aufnahme pausiert · Video und Ton werden nicht aufgezeichnet.", color = Color(0xffffcd8a))
                     is LocalRecording.Finalizing -> Text("Video wird sicher gespeichert …", color = SoftText)
                     is LocalRecording.Ready -> Text("Aufnahme lokal gespeichert · ${current.durationUs / 1_000_000} Sek. Unter ‚Aufnahmen‘ kannst du sie exportieren.", color = Color(0xffa3dfbb))
                     is LocalRecording.Partial -> Text("Aufnahme unvollständig: ${current.message} Ein geprüftes Teilvideo ist unter ‚Aufnahmen‘ exportierbar.", color = Color(0xffffcd8a))
                     is LocalRecording.Failed -> Text("Aufnahme fehlgeschlagen: ${current.message}", color = MaterialTheme.colorScheme.error)
                 }
                 (recording as? LocalRecording.Ready)?.let { current -> recordingStopDescription(current.reason)?.let { Text(it, color = Color(0xffffcd8a)) } }
-                if (recording is LocalRecording.Preparing || recording is LocalRecording.Recording) {
+                if (recording is LocalRecording.Preparing || recording is LocalRecording.Recording || recording is LocalRecording.Paused) {
+                    if (recording is LocalRecording.Recording) QuietAction("Aufnahme pausieren") { if (!session.pauseRecording()) permissionMessage = "Pause nicht bestätigt. Bitte Status prüfen." }
+                    if (recording is LocalRecording.Paused) QuietAction("Aufnahme fortsetzen") { if (!session.resumeRecording()) permissionMessage = "Fortsetzen nicht bestätigt. Die Aufnahme bleibt pausiert; du kannst sie stoppen." }
                     MainAction("Aufnahme stoppen") { session.stopRecording() }
                 } else if (recording !is LocalRecording.Finalizing) {
                     MainAction("Aufnahme starten", enabled = connected && video != null && (recording as? LocalRecording.Failed)?.blocked != true) {

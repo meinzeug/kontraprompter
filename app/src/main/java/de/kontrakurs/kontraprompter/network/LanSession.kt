@@ -165,9 +165,11 @@ class LanSession(context: Context) : AutoCloseable {
             onReady?.invoke()
         }
     }
-    fun send(type: String, payload: String) {
-        val current = channel ?: return
-        if (_state.value.ready) scope.launch { try { current.send(type, payload) } catch (_: Exception) { disconnect("Verbindung verloren", current) } }
+    fun send(type: String, payload: String): Boolean {
+        val current = channel ?: return false
+        if (!_state.value.ready || closed.get()) return false
+        scope.launch { try { current.send(type, payload) } catch (_: Exception) { disconnect("Verbindung verloren", current) } }
+        return true
     }
     private fun disconnect(message: String, expected: AuthenticatedChannel) {
         synchronized(socketLock) {

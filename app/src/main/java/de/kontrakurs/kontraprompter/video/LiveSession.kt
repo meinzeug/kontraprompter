@@ -5,6 +5,11 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import de.kontrakurs.kontraprompter.network.LanSession
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
@@ -14,13 +19,14 @@ sealed interface LocalRecording {
     data object Idle : LocalRecording
     data class Preparing(val id: String) : LocalRecording
     data class Recording(val id: String) : LocalRecording
+    data class Paused(val id: String) : LocalRecording
     data class Finalizing(val id: String) : LocalRecording
     data class Ready(val id: String, val file: File, val bytes: Long, val durationUs: Long, val reason: String) : LocalRecording
     data class Partial(val id: String, val file: File, val bytes: Long, val durationUs: Long, val message: String) : LocalRecording
     data class Failed(val message: String, val blocked: Boolean = false, val id: String? = null) : LocalRecording
 }
 
-fun LocalRecording.isActive(): Boolean = this is LocalRecording.Preparing || this is LocalRecording.Recording || this is LocalRecording.Finalizing || (this is LocalRecording.Failed && blocked)
+fun LocalRecording.isActive(): Boolean = this is LocalRecording.Preparing || this is LocalRecording.Recording || this is LocalRecording.Paused || this is LocalRecording.Finalizing || (this is LocalRecording.Failed && blocked)
 internal fun shouldReleaseVideo(recording: LocalRecording, closed: Boolean, disconnected: Boolean): Boolean =
     !recording.isActive() && (closed || disconnected)
 /** Reject callbacks observed after disconnection and never duplicate an existing capture owner. */
@@ -43,8 +49,11 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
     val video: StateFlow<RtcVideo?> = _video
     private val _recording = MutableStateFlow<LocalRecording>(LocalRecording.Idle)
     val recording: StateFlow<LocalRecording> = _recording
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    internal val pairedCapture = PairedCapture(host, lan, scope, this)
 
     init {
+        scope.launch { recording.collect { pairedCapture.changed() } }
         lan.onReady = {
             val created = synchronized(guard) {
                 if (!mayCreateVideoPipeline(closed, lan.state.value.ready, _video.value != null)) null
@@ -56,9 +65,11 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
                 }
             }
             created?.start()
+            pairedCapture.ready()
         }
-        lan.onMessage = { type, payload -> _video.value?.message(type, payload) }
+        lan.onMessage = { type, payload -> if (!pairedCapture.message(type, payload)) _video.value?.message(type, payload) }
         lan.onDisconnect = {
+            pairedCapture.disconnected()
             val release = synchronized(guard) {
                 disconnected = true
                 _video.value?.invalidatePrimaryPeer()
@@ -97,9 +108,9 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
         if (video == null) result(false) else video.stopBrowserPreview(id, result)
     }
 
-    fun startRecording(id: String = UUID.randomUUID().toString(), projectId: String? = null): Boolean {
+    fun startRecording(id: String = UUID.randomUUID().toString(), projectId: String? = null, origin: RecordingOrigin = if (projectId == null) RecordingOrigin.MANUAL else RecordingOrigin.WEB): Boolean {
         val current: RtcVideo
-        if (runCatching { UUID.fromString(id).toString() != id || (projectId != null && UUID.fromString(projectId).toString() != projectId) }.getOrDefault(true)) return false
+        if (runCatching { UUID.fromString(id).toString() != id || (projectId != null && UUID.fromString(projectId).toString() != projectId) || RecordingOrigin.read(origin.wire, projectId) != origin }.getOrDefault(true)) return false
         synchronized(guard) {
             if (!host || closed || disconnected || (remoteExclusive && projectId == null) || _recording.value.isActive() || (_recording.value as? LocalRecording.Failed)?.blocked == true) return false
             current = _video.value ?: return false
@@ -111,7 +122,7 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
             if (track == null) {
                 recordingEvent(RtcMp4Recorder.Event.Failed(id, "Kamera ist noch nicht bereit", null))
             } else {
-                val capture = RtcMp4Recorder(app, track, egl, id, projectId, ::recordingEvent)
+                val capture = RtcMp4Recorder(app, track, egl, id, projectId, origin, ::recordingEvent)
                 val started = synchronized(guard) {
                     recorder = capture
                     val ok = capture.start()
@@ -135,12 +146,31 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
         }
     }
 
+    fun pauseRecording(recordingId: String? = null): Boolean = synchronized(guard) {
+        val current = _recording.value as? LocalRecording.Recording ?: return false
+        if (remoteExclusive) return false
+        if (recordingId != null && current.id != recordingId) return false
+        if (recorder?.pause() != true) return false
+        _recording.value = LocalRecording.Paused(current.id)
+        true
+    }
+
+    fun resumeRecording(recordingId: String? = null): Boolean = synchronized(guard) {
+        val current = _recording.value as? LocalRecording.Paused ?: return false
+        if (remoteExclusive) return false
+        if (recordingId != null && current.id != recordingId) return false
+        if (recorder?.resume() != true) return false
+        _recording.value = LocalRecording.Recording(current.id)
+        true
+    }
+
     fun stopRecording(): Boolean = stopRecording(null)
 
     fun stopRecording(recordingId: String?): Boolean = synchronized(guard) {
         val activeId = when (val state = _recording.value) {
             is LocalRecording.Preparing -> state.id
             is LocalRecording.Recording -> state.id
+            is LocalRecording.Paused -> state.id
             is LocalRecording.Finalizing -> state.id
             else -> null
         }
@@ -157,6 +187,7 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
             val activeId = when (val state = _recording.value) {
                 is LocalRecording.Preparing -> state.id
                 is LocalRecording.Recording -> state.id
+                is LocalRecording.Paused -> state.id
                 is LocalRecording.Finalizing -> state.id
                 is LocalRecording.Failed -> if (state.blocked) state.id else null
                 else -> null
@@ -210,6 +241,7 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
             else { recorder?.stop(); release = null }
         }
         lan.close()
+        scope.cancel()
         release?.close()
     }
 }

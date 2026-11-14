@@ -7,6 +7,9 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
+import android.view.KeyEvent
+import android.view.InputDevice
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
@@ -40,6 +43,7 @@ import de.kontrakurs.kontraprompter.cloud.CloudUploadViewModel
 import de.kontrakurs.kontraprompter.network.LanState
 import de.kontrakurs.kontraprompter.cloud.StudioClient
 import de.kontrakurs.kontraprompter.video.LiveSession
+import de.kontrakurs.kontraprompter.video.PairedCaptureState
 import de.kontrakurs.kontraprompter.video.RtcVideo
 import de.kontrakurs.kontraprompter.video.SavedRecording
 import de.kontrakurs.kontraprompter.video.savedRecordings
@@ -62,6 +66,25 @@ private val Red = Accent
 private data class RemoteEvent(val type: String, val completed: CompletableDeferred<Unit>)
 
 class MainActivity : ComponentActivity() {
+    internal var shutterHandler: (() -> Unit)? = null
+    private val shutterDebounce = ShutterDebounce()
+    internal var selectedVolumeRemote: String? = null
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val handler = shutterHandler
+        val device = event.device
+        if (handler != null && device != null && Build.VERSION.SDK_INT >= 29 &&
+            isSelfieTrigger(device.isExternal, device.isVirtual, device.vendorId, device.productId,
+                device.name, device.descriptor, selectedVolumeRemote, event.keyCode)) {
+            when (shutterKeyDecision(true, event.action, event.repeatCount)) {
+                ShutterKeyDecision.TRIGGER -> { if (shutterDebounce.accept(device.descriptor, event.eventTime)) handler(); return true }
+                ShutterKeyDecision.CONSUME -> return true
+                ShutterKeyDecision.PASS -> Unit
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -73,7 +96,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun KontraApp(activity: ComponentActivity) {
+private fun KontraApp(activity: MainActivity) {
     val repository = remember { ScriptRepository(activity) }
     val preferences = remember { activity.getSharedPreferences("prompter_settings", Activity.MODE_PRIVATE) }
     var scripts by remember { mutableStateOf(repository.load().ifEmpty { listOf(Script()) }) }
@@ -93,6 +116,18 @@ private fun KontraApp(activity: ComponentActivity) {
     val lanState by (session?.lan?.state ?: emptyLan).collectAsState()
     val emptyRecording = remember { kotlinx.coroutines.flow.MutableStateFlow<de.kontrakurs.kontraprompter.video.LocalRecording>(de.kontrakurs.kontraprompter.video.LocalRecording.Idle) }
     val recording by (session?.recording ?: emptyRecording).collectAsState()
+    val emptyCapture = remember { kotlinx.coroutines.flow.MutableStateFlow(PairedCaptureState()) }
+    val pairedCapture by (session?.pairedCapture?.state ?: emptyCapture).collectAsState()
+    var selectedVolumeRemote by remember { mutableStateOf(preferences.getString("volume_remote_descriptor", null)) }
+    var inputRefresh by remember { mutableIntStateOf(0) }
+    DisposableEffect(activity, page, session, lanState.ready, selectedVolumeRemote, selected.studioProjectId) {
+        val activeSession = session?.takeIf { !it.host && page == "prompter" && lanState.ready }
+        activity.selectedVolumeRemote = selectedVolumeRemote
+        activity.shutterHandler = activeSession?.let { current ->
+            { if (!current.pairedCapture.toggle(selected.studioProjectId)) current.pairedCapture.triggerUnavailable() }
+        }
+        onDispose { activity.shutterHandler = null; activity.selectedVolumeRemote = null }
+    }
     var recordings by remember { mutableStateOf<List<SavedRecording>>(emptyList()) }
     var unverified by remember { mutableStateOf<List<UnverifiedRecording>>(emptyList()) }
     var uploadRecordingId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -214,7 +249,7 @@ private fun KontraApp(activity: ComponentActivity) {
                                 "load" -> {
                                     val project = studioClient.projects().firstOrNull { it.id == command.projectId } ?: continue
                                     if (android.os.SystemClock.elapsedRealtime() >= deadline) continue
-                                    val copy = Script(title = project.title, text = project.text, generationNotice = project.generationNotice)
+                                    val copy = Script(title = project.title, text = project.text, generationNotice = project.generationNotice, studioProjectId = project.id)
                                     scripts = scripts + copy; repository.save(scripts); select(copy.id)
                                     page = "prompter"
                                 }
@@ -319,7 +354,7 @@ private fun KontraApp(activity: ComponentActivity) {
                 }
             }
             "studio" -> StudioScreen(studioClient, remoteEnabled, remoteStatus, onRemote = { remoteEnabled = it; remoteStatus = if (it) "Verbinde …" else "Aus" }, onSelect = { project ->
-                val copy = Script(title = project.title, text = project.text, generationNotice = project.generationNotice)
+                val copy = Script(title = project.title, text = project.text, generationNotice = project.generationNotice, studioProjectId = project.id)
                 scripts = scripts + copy; repository.save(scripts); select(copy.id); page = "editor"
             }, onBack = { page = "scripts" })
             "editor" -> Page("Skript bearbeiten", "LOKAL GESPEICHERT", onBack = { page = "scripts" }) {
@@ -346,6 +381,24 @@ private fun KontraApp(activity: ComponentActivity) {
                 Action("Video drehen: $videoRotation°") { videoRotation = (videoRotation + 90) % 360 }
                 SettingSlider("Video-Deckkraft", videoOpacity, 0f..1f, "${(videoOpacity * 100).toInt()} %") { videoOpacity = it }
                 SettingSlider("Video-Helligkeit", videoBrightness, 0f..1f, "${(videoBrightness * 100).toInt()} %") { videoBrightness = it }
+                Text("Bluetooth-Auslöser", style = MaterialTheme.typography.titleLarge)
+                Text("Der ITFIT Selfie P007 ist automatisch verfügbar. Für andere Auslöser mit Lautstärketasten wähle das externe Gerät ausdrücklich aus. Eingebaute Lautstärketasten bleiben unverändert.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                if (Build.VERSION.SDK_INT >= 29) {
+                    val externalDevices = remember(inputRefresh) {
+                        InputDevice.getDeviceIds().toList().mapNotNull { id -> InputDevice.getDevice(id) }.filter { it.isExternal && !it.isVirtual && it.descriptor.isNotBlank() }
+                    }
+                    if (externalDevices.isEmpty()) Text("Kein externes Eingabegerät verbunden.", color = SoftText)
+                    externalDevices.forEach { device ->
+                        QuietAction((if (selectedVolumeRemote == device.descriptor) "✓ " else "") + device.name.take(80)) {
+                            selectedVolumeRemote = device.descriptor
+                            preferences.edit().putString("volume_remote_descriptor", device.descriptor).apply()
+                        }
+                    }
+                    if (selectedVolumeRemote != null) QuietAction("Geräteauswahl entfernen") {
+                        selectedVolumeRemote = null; preferences.edit().remove("volume_remote_descriptor").apply()
+                    }
+                    QuietAction("Geräteliste aktualisieren") { inputRefresh++ }
+                } else Text("Externe Auslöser werden ab Android 10 unterstützt.", color = SoftText)
                 Text("Anzeige und Spiegelung", style = MaterialTheme.typography.titleLarge)
                 Toggle("Text horizontal spiegeln", textH) { textH = it }
                 Toggle("Text vertikal spiegeln", textV) { textV = it }
@@ -366,7 +419,7 @@ private fun KontraApp(activity: ComponentActivity) {
                 Toggle("Text vertikal spiegeln", textV) { textV = it }
                 Action("Drehen: $textRotation°") { textRotation = (textRotation + 90) % 360 }
             }
-            "prompter" -> key(selected.id) { Prompter(selected.text, selected.generationNotice, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, remoteActions) { playbackStatus = it } }
+            "prompter" -> key(selected.id) { Prompter(selected.text, selected.generationNotice, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, pairedCapture, { session?.pairedCapture?.toggle(selected.studioProjectId) }, { session?.pairedCapture?.request("stop") }, remoteActions) { playbackStatus = it } }
         }
     }
     }
@@ -388,7 +441,7 @@ private fun Page(title: String, eyebrow: String, onBack: (() -> Unit)? = null, c
 }
 
 @Composable
-private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
+private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, pairedCapture: PairedCaptureState, onCaptureToggle: () -> Unit, onCaptureStop: () -> Unit, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
     val remote = LocalRemoteIndicator.current
     val scroll = rememberScrollState(initialPosition)
     val density = LocalDensity.current.density
@@ -439,9 +492,24 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
                 Spacer(Modifier.height(400.dp))
             }
         }
-        if (controls || remote != null || notice?.needsAttention() == true) Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (controls || remote != null || notice?.needsAttention() == true || (lanState.role == "client" && lanState.ready && pairedCapture.phase in setOf("preparing", "recording", "paused", "finalizing"))) Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (remote != null) RemoteBanner(remote)
             notice?.let { PrompterGenerationNotice(it) }
+            if (lanState.role == "client" && lanState.ready) {
+                val phase = when (pairedCapture.phase) {
+                    "idle" -> "Kamera bereit"
+                    "preparing" -> "Aufnahme startet …"
+                    "recording" -> "Aufnahme läuft"
+                    "paused" -> "Aufnahme pausiert"
+                    "finalizing" -> "Aufnahme wird gespeichert …"
+                    "ready" -> "Aufnahme lokal gespeichert"
+                    "partial" -> "Teilaufnahme lokal gespeichert"
+                    "failed" -> "Aufnahme fehlgeschlagen"
+                    else -> "Kamerastatus wird ermittelt …"
+                }
+                Text(phase + if (pairedCapture.pending) " · Befehl ausstehend" else "", modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xe6202329)).padding(horizontal = 14.dp, vertical = 9.dp), color = if (pairedCapture.phase == "recording") Color(0xffffb2b2) else Color.White, style = MaterialTheme.typography.labelMedium)
+                pairedCapture.message?.let { Text(it, modifier = Modifier.background(Color(0xe6202329)).padding(10.dp), color = Color.White, style = MaterialTheme.typography.bodySmall) }
+            }
             if (controls) Text(
                 if (lanState.role.isEmpty()) "Offline-Prompter" else lanState.status + (lanState.rttMs?.let { " · RTT $it ms" } ?: ""),
                 modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xe6202329)).padding(horizontal = 14.dp, vertical = 9.dp),
@@ -450,13 +518,21 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
         }
         if (focusLine) Box(Modifier.align(Alignment.CenterStart).width(22.dp).height(3.dp).background(Red))
         if (remaining > 0) Text("$remaining", Modifier.align(Alignment.Center), color = Red, fontSize = 100.sp, fontWeight = FontWeight.Black)
-        if (controls) Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xf022252c)).padding(horizontal = 8.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (controls) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xf022252c)).padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+          if (lanState.role == "client" && lanState.ready) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            val toggleLabel = when (pairedCapture.phase) { "recording" -> "Aufnahme pausieren"; "paused" -> "Aufnahme fortsetzen"; else -> "Aufnahme starten" }
+            val canToggle = pairedCapture.phase in setOf("idle", "ready", "partial", "failed", "recording", "paused") && !pairedCapture.pending
+            Button(onClick = onCaptureToggle, enabled = canToggle, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(17.dp)) { Text(toggleLabel) }
+            TextButton(onClick = onCaptureStop, enabled = !pairedCapture.pending && pairedCapture.phase in setOf("preparing", "recording", "paused"), modifier = Modifier.heightIn(min = 48.dp)) { Text("Stopp", color = Color.White) }
+          }
+          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = back, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Editor", color = Color.White) }
             TextButton(onClick = { playing = false; countdownJob?.cancel(); remaining = 0; scope.launch { scroll.scrollTo(0) } }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Anfang", color = Color.White) }
             Button(onClick = {
                 if (playing || remaining > 0) { countdownJob?.cancel(); playing = false; remaining = 0 }
                 else { countdownJob = scope.launch { remaining = countdownSeconds; while (remaining > 0) { delay(1000); remaining-- }; playing = true } }
             }, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(17.dp)) { Text(if (playing || remaining > 0) "Pause" else "Start") }
+          }
         }
     }
 }

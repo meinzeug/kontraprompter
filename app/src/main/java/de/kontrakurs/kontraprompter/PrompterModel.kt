@@ -17,7 +17,7 @@ data class LayerTransform(val mirrorHorizontal: Boolean = false, val mirrorVerti
     fun rotate(): LayerTransform = copy(rotation = (rotation + 90) % 360)
 }
 
-data class Script(val id: String = UUID.randomUUID().toString(), val title: String = "Neues Skript", val text: String = "", val generationNotice: GenerationNotice? = null)
+data class Script(val id: String = UUID.randomUUID().toString(), val title: String = "Neues Skript", val text: String = "", val generationNotice: GenerationNotice? = null, val studioProjectId: String? = null)
 
 /** Legacy local scripts have no Studio metadata; malformed stored metadata stays visibly incomplete. */
 private fun storedGenerationNotice(script: JSONObject): GenerationNotice? {
@@ -42,12 +42,13 @@ class ScriptRepository(context: Context) {
     private val prefs = context.getSharedPreferences("scripts", Context.MODE_PRIVATE)
     fun load(): List<Script> = try {
         val array = JSONArray(prefs.getString("items", "[]"))
-        (0 until array.length()).map { i -> array.getJSONObject(i).let { Script(it.getString("id"), it.getString("title"), it.getString("text"), storedGenerationNotice(it)) } }
+        (0 until array.length()).map { i -> array.getJSONObject(i).let { Script(it.getString("id"), it.getString("title"), it.getString("text"), storedGenerationNotice(it), it.optString("studio_project_id").takeIf { id -> runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false) }) } }
     } catch (_: Exception) { emptyList() }
     fun save(scripts: List<Script>) {
         val array = JSONArray()
         scripts.forEach { script ->
             val item = JSONObject().put("id", script.id).put("title", script.title).put("text", script.text)
+            script.studioProjectId?.let { id -> item.put("studio_project_id", id) }
             script.generationNotice?.let { notice -> item.put("studio_notice", JSONObject().put("version", 1).put("status", notice.status.name).put("messages", JSONArray(notice.messages))) }
             array.put(item)
         }

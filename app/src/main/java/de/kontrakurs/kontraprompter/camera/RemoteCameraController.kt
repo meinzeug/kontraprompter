@@ -122,6 +122,7 @@ internal class RemoteCameraController private constructor(private val journal: R
             LocalRecording.Idle -> "idle" to null
             is LocalRecording.Preparing -> "preparing" to state.id
             is LocalRecording.Recording -> "recording" to state.id
+            is LocalRecording.Paused -> "recording" to state.id
             is LocalRecording.Finalizing -> "finalizing" to state.id
             is LocalRecording.Ready -> "ready" to state.id
             is LocalRecording.Partial -> "partial" to state.id

@@ -12,6 +12,7 @@ import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.media.MediaRecorder
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -48,6 +49,7 @@ internal class RtcMp4Recorder(
     private val sharedEglContext: EglBase.Context,
     private val recordingId: String,
     private val projectId: String?,
+    private val origin: RecordingOrigin,
     private val listener: (Event) -> Unit,
 ) : VideoSink, Closeable {
     sealed interface Event {
@@ -82,6 +84,7 @@ internal class RtcMp4Recorder(
     private val started = AtomicBoolean(false)
     private var resourceLease: Long? = null
     private val stopRequested = AtomicBoolean(false)
+    private val pauseLock = Any()
     private val configuring = AtomicBoolean(false)
     private val configured = AtomicBoolean(false)
     private val firstMedia = AtomicBoolean(false)
@@ -102,6 +105,8 @@ internal class RtcMp4Recorder(
     @Volatile private var encoderSurface: Surface? = null
     @Volatile private var renderer: EglRenderer? = null
     @Volatile private var timeline: RecordingTimeline? = null
+    @Volatile private var pauseTimeline: RecordingPauseTimeline? = null
+    @Volatile private var timelineOriginNs = 0L
     @Volatile private var cameraOffsetNs: Long? = null
     @Volatile private var width = 0
     @Volatile private var height = 0
@@ -118,7 +123,7 @@ internal class RtcMp4Recorder(
         control.execute {
             try {
                 check(app.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) { "Mikrofonberechtigung fehlt" }
-                val reserved = RecordingArchive.reserve(app, recordingId, projectId)
+                val reserved = RecordingArchive.reserve(app, recordingId, projectId, origin)
                 archive = reserved
                 startAtMs = SystemClock.elapsedRealtime()
                 emit(Event.Preparing(reserved.recordingId))
@@ -133,6 +138,24 @@ internal class RtcMp4Recorder(
         if (!started.get() || finished.get()) return false
         requestStop(StopReason.USER)
         return true
+    }
+
+    /** Stop accepting new camera/audio samples without closing the MP4. */
+    fun pause(): Boolean = synchronized(pauseLock) {
+        if (!configured.get() || !firstMedia.get() || stopRequested.get() || finished.get()) return false
+        pauseTimeline?.pause(System.nanoTime()) == true
+    }
+
+    fun resume(): Boolean = synchronized(pauseLock) {
+        if (!configured.get() || stopRequested.get() || finished.get() || pauseTimeline?.isPaused() != true) return false
+        val encoder = videoEncoder ?: return false
+        // A failed request leaves the recording paused; the encoder may still emit the next periodic keyframe.
+        if (runCatching { encoder.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) }) }.isFailure) return false
+        // Reset while still paused so the watchdog cannot observe stale stream timestamps.
+        val now = SystemClock.elapsedRealtime()
+        lastVideoAtMs.set(now); lastAudioAtMs.set(now)
+        lastEncodedVideoMs.set(now); lastEncodedAudioMs.set(now)
+        pauseTimeline?.resume(System.nanoTime()) == true
     }
 
     override fun close() { stop() }
@@ -161,7 +184,7 @@ internal class RtcMp4Recorder(
         if (frame.timestampNs <= 0 || deliveryDelay < -100_000_000L || deliveryDelay > 500_000_000L) { fail("Zeitbasis der Kamera ist nicht stabil"); return }
         val previous = lastVideoNs.getAndSet(absoluteNs)
         if (previous >= absoluteNs) return // A duplicate frame must not corrupt encoder timestamps.
-        val relative = timeline?.videoTimestampNs(absoluteNs) ?: return
+        val relative = pauseTimeline?.project(absoluteNs) ?: return
         val target = renderer ?: return
         frame.buffer.retain()
         val adjusted = VideoFrame(frame.buffer, frame.rotation, relative)
@@ -220,7 +243,10 @@ internal class RtcMp4Recorder(
             egl.init(sharedEglContext, EglBase.CONFIG_RECORDABLE, GlRectDrawer(), true)
             egl.createEglSurface(surface)
             width = w; height = h
-            timeline = RecordingTimeline(System.nanoTime())
+            val originNs = System.nanoTime()
+            timelineOriginNs = originNs
+            timeline = RecordingTimeline(originNs)
+            pauseTimeline = RecordingPauseTimeline(originNs)
             recorder.startRecording()
             check(recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Mikrofonaufnahme konnte nicht gestartet werden" }
             pipelineAtMs = SystemClock.elapsedRealtime()
@@ -232,7 +258,7 @@ internal class RtcMp4Recorder(
     }
 
     private fun feedAudio(recorder: AudioRecord, codec: MediaCodec) {
-        var framesRead = 0L; var firstFrame = -1L; var firstPts = -1L; var lastPts = 0L
+        var framesRead = 0L; var firstFrame = -1L; var firstPts = -1L; var lastRawPts = 0L; var lastPts = 0L
         var timestampUnavailableSince = SystemClock.elapsedRealtime()
         var lastSilenceCheck = 0L
         val bytes = ByteArray(2048); val stamp = AudioTimestamp()
@@ -257,9 +283,14 @@ internal class RtcMp4Recorder(
                     if (measured == null) continue
                     firstFrame = firstRead; firstPts = measured
                 }
-                val pts = firstPts + (firstRead - firstFrame) * 1_000_000L / SAMPLE_RATE
-                if (measured != null && abs(measured - pts) > MAX_CLOCK_DRIFT_US) error("Mikrofonzeitbasis ist instabil")
-                check(pts > lastPts || firstRead == firstFrame) { "Mikrofonzeit läuft rückwärts" }
+                val rawPts = firstPts + (firstRead - firstFrame) * 1_000_000L / SAMPLE_RATE
+                if (measured != null && abs(measured - rawPts) > MAX_CLOCK_DRIFT_US) error("Mikrofonzeitbasis ist instabil")
+                check(rawPts > lastRawPts || firstRead == firstFrame) { "Mikrofonzeit läuft rückwärts" }
+                lastRawPts = rawPts
+                val absoluteNs = Math.addExact(timelineOriginNs, Math.multiplyExact(rawPts, 1_000L))
+                val spanNs = (n / 2).toLong() * 1_000_000_000L / SAMPLE_RATE
+                val pts = (pauseTimeline?.project(absoluteNs, spanNs) ?: continue) / 1_000L
+                check(pts > lastPts || firstRead == firstFrame) { "Aufnahmezeit läuft rückwärts" }
                 val index = obtainInput(codec, 2_000)
                 val input = codec.getInputBuffer(index) ?: error("Audiopuffer nicht verfügbar")
                 input.clear(); check(input.remaining() >= n) { "Audiopuffer zu klein" }; input.put(bytes, 0, n)
@@ -315,7 +346,8 @@ internal class RtcMp4Recorder(
         try {
             val now = SystemClock.elapsedRealtime()
             if ((!configured.get() && now - startAtMs > START_TIMEOUT_MS) || (configured.get() && !firstMedia.get() && now - pipelineAtMs > START_TIMEOUT_MS)) { fail("Kamera oder Mikrofon liefert keine aufnehmbaren Daten"); return }
-            if (firstMedia.get()) {
+            synchronized(pauseLock) {
+              if (firstMedia.get() && pauseTimeline?.isPaused() != true) {
                 val videoAt = lastVideoAtMs.get(); val audioAt = lastAudioAtMs.get()
                 val encodedVideoAt = lastEncodedVideoMs.get(); val encodedAudioAt = lastEncodedAudioMs.get()
                 fun stalled(last: Long) = if (last == 0L) now - pipelineAtMs > DATA_STALL_MS else now - last > DATA_STALL_MS
@@ -323,6 +355,7 @@ internal class RtcMp4Recorder(
                 if (stalled(audioAt)) { fail("Mikrofon liefert keine neuen Daten"); return }
                 if (stalled(encodedVideoAt)) { fail("Videoencoder liefert keine neuen Daten"); return }
                 if (stalled(encodedAudioAt)) { fail("Audioencoder liefert keine neuen Daten"); return }
+              }
             }
             if (configured.get() && now - pipelineAtMs >= MAX_DURATION_MS) { requestStop(StopReason.DURATION_LIMIT); return }
             if ((archive?.availableBytes() ?: 0) < RecordingArchive.MIN_FREE_BYTES) requestStop(StopReason.STORAGE)
@@ -334,9 +367,11 @@ internal class RtcMp4Recorder(
         requestStop(StopReason.ERROR)
     }
     private fun requestStop(value: StopReason) {
-        if (value == StopReason.ERROR) reason.set(value)
-        if (!stopRequested.compareAndSet(false, true)) return
-        if (value != StopReason.ERROR) reason.compareAndSet(StopReason.USER, value)
+        synchronized(pauseLock) {
+            if (value == StopReason.ERROR) reason.set(value)
+            if (!stopRequested.compareAndSet(false, true)) return
+            if (value != StopReason.ERROR) reason.compareAndSet(StopReason.USER, value)
+        }
         control.execute { finalizeRecording() }
     }
 
@@ -362,8 +397,10 @@ internal class RtcMp4Recorder(
         runCatching { audioInput?.release() }.onFailure { unsafeRelease = true; failure.compareAndSet(null, "Mikrofon konnte nicht freigegeben werden") }; audioInput = null
         runCatching { audioEncoder?.stop() }.onFailure { if (audioEncoder != null) failure.compareAndSet(null, "Audioencoder konnte nicht geschlossen werden") }
         runCatching { audioEncoder?.release() }.onFailure { unsafeRelease = true; failure.compareAndSet(null, "Audioencoder konnte nicht freigegeben werden") }; audioEncoder = null
-        runCatching { videoEncoder?.stop() }.onFailure { if (videoEncoder != null) failure.compareAndSet(null, "Videoencoder konnte nicht geschlossen werden") }
-        runCatching { videoEncoder?.release() }.onFailure { unsafeRelease = true; failure.compareAndSet(null, "Videoencoder konnte nicht freigegeben werden") }; videoEncoder = null
+        synchronized(pauseLock) {
+            runCatching { videoEncoder?.stop() }.onFailure { if (videoEncoder != null) failure.compareAndSet(null, "Videoencoder konnte nicht geschlossen werden") }
+            runCatching { videoEncoder?.release() }.onFailure { unsafeRelease = true; failure.compareAndSet(null, "Videoencoder konnte nicht freigegeben werden") }; videoEncoder = null
+        }
         runCatching { encoderSurface?.release() }.onFailure { unsafeRelease = true; failure.compareAndSet(null, "Videooberfläche konnte nicht freigegeben werden") }; encoderSurface = null
         if (workers.any { it.isAlive }) {
             for (thread in workers) runCatching { thread.join(1_000) }

@@ -1,0 +1,35 @@
+package de.kontrakurs.kontraprompter.video
+
+import org.junit.Assert.*
+import org.junit.Test
+
+class PairedCapturePolicyTest {
+    @Test fun `only legal current phase admits each action`() {
+        assertTrue(pairedActionAllowed("start", "idle", false))
+        assertTrue(pairedActionAllowed("pause", "recording", false))
+        assertTrue(pairedActionAllowed("resume", "paused", false))
+        assertTrue(pairedActionAllowed("stop", "paused", false))
+        assertFalse(pairedActionAllowed("start", "recording", false))
+        assertFalse(pairedActionAllowed("pause", "paused", false))
+        assertFalse(pairedActionAllowed("resume", "recording", false))
+        assertFalse(pairedActionAllowed("stop", "unknown", false))
+        assertFalse(pairedActionAllowed("stop", "recording", true))
+        assertFalse(pairedActionAllowed("delete", "idle", false))
+    }
+    @Test fun `a repeated command never executes again or accepts changed payload`() {
+        val ledger = PairedCommandLedger(); var count = 0
+        val command = PairedCommand("start", "recording-1", "project-1")
+        assertTrue(ledger.execute("request", command) { count++; true })
+        assertTrue(ledger.execute("request", command) { count++; false })
+        assertFalse(ledger.execute("request", command.copy(projectId = "other")) { count++; true })
+        assertEquals(1, count)
+    }
+    @Test fun `rejection is sticky and no alternate action uses its identifier`() {
+        val ledger = PairedCommandLedger(); var count = 0
+        val command = PairedCommand("pause", "recording-1", null)
+        assertFalse(ledger.execute("request", command) { count++; false })
+        assertFalse(ledger.execute("request", command) { count++; true })
+        assertFalse(ledger.execute("request", command.copy(action = "stop")) { count++; true })
+        assertEquals(1, count)
+    }
+}
