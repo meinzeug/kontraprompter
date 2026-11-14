@@ -4,6 +4,28 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SelfieRemoteKeysTest {
+    @Test fun `only changes to the originating device cancel its pending keys and clicks`() {
+        val keys = ShutterKeyTracker()
+        assertEquals(ShutterKeyDecision.CONSUME, keys.event(true, "same", 66, 0, 0, 1000, deviceId = 7))
+        keys.clearDevice(8)
+        assertEquals(ShutterKeyDecision.SHORT_PRESS, keys.event(true, "same", 66, 1, 0, 1060, deviceId = 7))
+        keys.event(true, "same", 66, 0, 0, 2000, deviceId = 7)
+        keys.clearDevice(7)
+        assertEquals(ShutterKeyDecision.CONSUME, keys.event(true, "same", 66, 1, 0, 2060, deviceId = 7))
+
+        val clicks = ShutterClickMachine()
+        val c = context(id = 7)
+        val first = clicks.press("7:same", 66, 3000, c) as ShutterPress.Wait
+        clicks.clearDevice(8)
+        assertNull(clicks.expire("7:same", first.token, 3399))
+        assertEquals(c, clicks.expire("7:same", first.token, 3400))
+        val second = clicks.press("7:same", 66, 4000, c) as ShutterPress.Wait
+        clicks.clearDevice(7)
+        assertNull(clicks.expire("7:same", second.token, 4400))
+        val newId = context(id = 9)
+        val replacement = clicks.press("9:same", 66, 4500, newId) as ShutterPress.Wait
+        assertEquals(newId, clicks.expire("9:same", replacement.token, 4900))
+    }
     @Test fun `actual P007 supports both volume keys without internal key interception`() {
         fun check(external: Boolean, code: Int) = isSelfieTrigger(external, false, 0x0a5c, 1, "ITFIT Selfie P007", "bluetooth-p007", null, code)
         assertTrue(check(true, 24)); assertTrue(check(true, 25)); assertFalse(check(false, 24)); assertFalse(check(false, 25))

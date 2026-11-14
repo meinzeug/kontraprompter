@@ -1,5 +1,8 @@
 package de.kontrakurs.kontraprompter.video
 
+internal fun shutterRequestMatches(expectedPhase: String, expectedId: String?, phase: String, recordingId: String?, pending: Boolean, connectionCurrent: Boolean): Boolean =
+    connectionCurrent && !pending && phase == expectedPhase && recordingId == expectedId
+
 /** The viewer waits for a definitive camera status and never repeats an uncertain command. */
 internal fun pairedActionAllowed(action: String, phase: String, pending: Boolean): Boolean {
     if (pending) return false

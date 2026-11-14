@@ -4,6 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PairedCapturePolicyTest {
+    @Test fun `shutter command remains tied to its phase take and approved connection`() {
+        assertTrue(shutterRequestMatches("recording", "take-1", "recording", "take-1", false, true))
+        assertFalse(shutterRequestMatches("recording", "take-1", "recording", "take-2", false, true))
+        assertFalse(shutterRequestMatches("recording", "take-1", "paused", "take-1", false, true))
+        assertFalse(shutterRequestMatches("recording", "take-1", "recording", "take-1", true, true))
+        assertFalse(shutterRequestMatches("recording", "take-1", "recording", "take-1", false, false))
+        assertTrue(shutterRequestMatches("idle", null, "idle", null, false, true))
+        assertFalse(shutterRequestMatches("idle", null, "recording", "take-1", false, true))
+    }
     @Test fun `only legal current phase admits each action`() {
         assertTrue(pairedActionAllowed("start", "idle", false))
         assertTrue(pairedActionAllowed("pause", "recording", false))

@@ -19,14 +19,14 @@ internal enum class ShutterKeyDecision { PASS, SHORT_PRESS, CONSUME }
 
 /** Only a completed short press counts; repeats, long holds and orphan releases do not. */
 internal class ShutterKeyTracker(private val maximumPressMs: Long = 500L) {
-    private data class Key(val device: String, val code: Int)
+    private data class Key(val device: String, val code: Int, val deviceId: Int)
     private val pressed = mutableMapOf<Key, Long>()
     init { require(maximumPressMs in 1..2000) }
 
-    @Synchronized fun event(isTrigger: Boolean, device: String, code: Int, action: Int, repeat: Int, timeMs: Long, canceled: Boolean = false): ShutterKeyDecision {
+    @Synchronized fun event(isTrigger: Boolean, device: String, code: Int, action: Int, repeat: Int, timeMs: Long, canceled: Boolean = false, deviceId: Int = -1): ShutterKeyDecision {
         if (!isTrigger) return ShutterKeyDecision.PASS
         if (device.isBlank() || timeMs < 0L) return ShutterKeyDecision.CONSUME
-        val key = Key(device, code)
+        val key = Key(device, code, deviceId)
         if (action == 0 && repeat == 0 && key !in pressed && pressed.size < 16) pressed[key] = timeMs
         if (action == 1) {
             val started = pressed.remove(key) ?: return ShutterKeyDecision.CONSUME
@@ -38,6 +38,7 @@ internal class ShutterKeyTracker(private val maximumPressMs: Long = 500L) {
     }
 
     @Synchronized fun clear() { pressed.clear() }
+    @Synchronized fun clearDevice(deviceId: Int) { pressed.keys.removeAll { it.deviceId == deviceId } }
 }
 
 /** Reference identity makes a disconnect/reconnect invalidate pending clicks. */
@@ -78,22 +79,23 @@ internal sealed interface ShutterPress {
 internal class ShutterClickMachine(private val windowMs: Long = 400L, private val bounceMs: Long = 80L) {
     private data class Pending(val at: Long, val keyCode: Int, val token: Long, val context: ShutterContext)
     private val pending = mutableMapOf<String, Pending>()
-    private val cooldown = mutableMapOf<String, Long>()
+    private data class Cooldown(val until: Long, val deviceId: Int)
+    private val cooldown = mutableMapOf<String, Cooldown>()
     private var nextToken = 0L
 
     init { require(windowMs in 200..1000 && bounceMs in 1 until windowMs) }
 
     @Synchronized fun press(device: String, keyCode: Int, timeMs: Long, context: ShutterContext): ShutterPress {
         if (device.isBlank() || timeMs < 0L || timeMs > Long.MAX_VALUE - windowMs) return ShutterPress.Ignored
-        cooldown.entries.removeAll { it.value <= timeMs }
-        if (cooldown[device]?.let { timeMs < it } == true) return ShutterPress.Ignored
+        cooldown.entries.removeAll { it.value.until <= timeMs }
+        if (cooldown[device]?.let { timeMs < it.until } == true) return ShutterPress.Ignored
         val old = pending[device]
         if (old != null) {
             val elapsed = timeMs - old.at
             if (elapsed < 0L || elapsed < bounceMs || (old.keyCode != keyCode && elapsed < 250L)) return ShutterPress.Ignored
             if (elapsed < windowMs) {
                 pending.remove(device)
-                cooldown[device] = timeMs + windowMs
+                cooldown[device] = Cooldown(timeMs + windowMs, context.deviceId)
                 return if (old.context == context) ShutterPress.Double(context) else ShutterPress.Changed
             }
         } else if (pending.size + cooldown.size >= 8) return ShutterPress.Ignored
@@ -110,4 +112,8 @@ internal class ShutterClickMachine(private val windowMs: Long = 400L, private va
     }
 
     @Synchronized fun clear() { pending.clear(); cooldown.clear() }
+    @Synchronized fun clearDevice(deviceId: Int) {
+        pending.entries.removeAll { it.value.context.deviceId == deviceId }
+        cooldown.entries.removeAll { it.value.deviceId == deviceId }
+    }
 }
