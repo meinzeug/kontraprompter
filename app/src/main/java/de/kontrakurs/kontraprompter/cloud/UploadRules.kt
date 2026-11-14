@@ -24,6 +24,10 @@ internal fun receiptMatches(entry: UploadEntry, receipt: UploadReceipt): Boolean
 internal fun confirmedFor(status: CloudUploadState, recordingId: String, projectId: String): Boolean =
     status is CloudUploadState.Confirmed && status.recordingId == recordingId && status.projectId == projectId
 
+/** A continuation attempt must wait for its own durable intent transition. */
+internal fun showCoordinatorConfirmation(status: CloudUploadState, recordingId: String, projectId: String): Boolean =
+    status is CloudUploadState.Confirmed && !status.continuation && confirmedFor(status, recordingId, projectId)
+
 internal fun preserveActiveUpload(current: CloudUploadState, failure: CloudUploadState.Failed): CloudUploadState =
     if (current is CloudUploadState.Running) current else failure
 

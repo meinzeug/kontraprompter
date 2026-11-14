@@ -54,6 +54,16 @@ class UploadSafetyTest {
         assertFalse(confirmedFor(confirmed, "two", "project"))
         assertFalse(confirmedFor(confirmed, "one", "other"))
     }
+    @Test fun `continuation must not show coordinator success before its own durable completion`() {
+        val automatic = CloudUploadState.Confirmed("one", "project", continuation = true)
+        val manual = CloudUploadState.Confirmed("one", "project")
+        // Changing a checkbox cannot change the provenance of an earlier result.
+        assertFalse(showCoordinatorConfirmation(automatic, "one", "project"))
+        assertFalse(showCoordinatorConfirmation(automatic, "other", "project"))
+        assertTrue(showCoordinatorConfirmation(manual, "one", "project"))
+        assertFalse(showCoordinatorConfirmation(manual, "other", "project"))
+        assertFalse(showCoordinatorConfirmation(manual, "one", "other"))
+    }
     @Test fun `partial and busy rejection cannot hide an active upload`() {
         val running = CloudUploadState.Running("one", "project", 12, 100)
         for (kind in listOf("partial", "busy")) {

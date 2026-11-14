@@ -13,7 +13,7 @@ import kotlinx.coroutines.withContext
 internal sealed interface CloudUploadState {
     data object Idle : CloudUploadState
     data class Running(val recordingId: String, val projectId: String, val sent: Long, val total: Long) : CloudUploadState
-    data class Confirmed(val recordingId: String, val projectId: String) : CloudUploadState
+    data class Confirmed(val recordingId: String, val projectId: String, val continuation: Boolean = false) : CloudUploadState
     data class Failed(val recordingId: String, val projectId: String, val kind: String, val message: String) : CloudUploadState
 }
 
@@ -24,24 +24,26 @@ internal class CloudUploadCoordinator(context: Context, private val client: Stud
     private val _state = MutableStateFlow<CloudUploadState>(CloudUploadState.Idle)
     val state: StateFlow<CloudUploadState> = _state
 
-    suspend fun upload(recording: SavedRecording, projectId: String) {
+    suspend fun upload(recording: SavedRecording, projectId: String, requiredSession: StudioClient.ManualUploadSession? = null): CloudUploadState {
         if (recording.partial) {
-            _state.update { preserveActiveUpload(it, CloudUploadState.Failed(recording.id, projectId, "partial", "Unvollständige Teilvideos können derzeit nur lokal exportiert werden.")) }
-            return
+            val failure = CloudUploadState.Failed(recording.id, projectId, "partial", "Unvollständige Teilvideos können derzeit nur lokal exportiert werden.")
+            _state.update { preserveActiveUpload(it, failure) }
+            return failure
         }
         val ticket = gate.acquire() ?: run {
-            _state.update { preserveActiveUpload(it, CloudUploadState.Failed(recording.id, projectId, "busy", "Ein vorheriger Upload wird noch beendet.")) }
-            return
+            val failure = CloudUploadState.Failed(recording.id, projectId, "busy", "Ein vorheriger Upload wird noch beendet.")
+            _state.update { preserveActiveUpload(it, failure) }
+            return failure
         }
         var entry: UploadEntry? = null
-        try {
+        return try {
             _state.value = CloudUploadState.Running(recording.id, projectId, 0, recording.bytes)
             entry = withContext(Dispatchers.IO) { UploadJournal.begin(app, recording, projectId) }
             client.uploadRecording(recording, entry, { sent, total ->
                 gate.deliverProgress(ticket) { _state.value = CloudUploadState.Running(recording.id, projectId, sent, total) }
-            }, { gate.workerStarted(ticket) }, { gate.workerFinished(ticket) })
+            }, { gate.workerStarted(ticket) }, { gate.workerFinished(ticket) }, requiredSession)
             withContext(Dispatchers.IO) { UploadJournal.write(app, entry.copy(phase = "confirmed")) }
-            _state.value = CloudUploadState.Confirmed(recording.id, entry.projectId)
+            CloudUploadState.Confirmed(recording.id, entry.projectId, requiredSession != null).also { _state.value = it }
         } catch (error: CancellationException) {
             gate.stopProgress(ticket)
             _state.value = CloudUploadState.Failed(recording.id, projectId, "uncertain", "Upload abgebrochen oder unterbrochen; die lokale Aufnahme bleibt erhalten.")
@@ -52,7 +54,7 @@ internal class CloudUploadCoordinator(context: Context, private val client: Stud
             val kind = (error as? UploadException)?.kind ?: "uncertain"
             val phase = when (kind) { "project_missing" -> "project_missing"; "conflict", "manifest_mismatch", "manifest_partial" -> "conflict"; else -> "uncertain" }
             entry?.let { withContext(Dispatchers.IO) { runCatching { UploadJournal.write(app, it.copy(phase = phase)) } } }
-            _state.value = CloudUploadState.Failed(recording.id, projectId, kind, error.message?.take(220) ?: "Upload nicht bestätigt; die lokale Aufnahme bleibt erhalten.")
+            CloudUploadState.Failed(recording.id, projectId, kind, error.message?.take(220) ?: "Upload nicht bestätigt; die lokale Aufnahme bleibt erhalten.").also { _state.value = it }
         } finally { gate.operationFinished(ticket) }
     }
 }

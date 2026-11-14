@@ -33,6 +33,14 @@ class StudioClient {
     companion object { private const val BASE = "https://videomaker.dorfspy.de" }
     private val cookie = SessionCookie()
 
+    /** Kept only for the duration of one manual continuation attempt. */
+    internal class ManualUploadSession internal constructor(internal val cookie: String)
+    internal fun manualUploadSession(): ManualUploadSession? = cookie.get()?.let(::ManualUploadSession)
+    internal fun manualUploadSessionMatches(session: ManualUploadSession): Boolean = cookie.get() == session.cookie
+    /** Random bearer sessions are bound only by a one-way, domain-separated digest. */
+    internal fun manualUploadSessionBinding(session: ManualUploadSession): String =
+        hex(MessageDigest.getInstance("SHA-256").digest(("kontraprompter-manual-upload-session-v1\u0000" + session.cookie).toByteArray(Charsets.UTF_8)))
+
     /** A short-lived proof is kept only in memory and bound to the current studio login. */
     internal class CameraDeviceTicket internal constructor(internal val deviceId: String, internal val value: String, internal val studioSession: String, internal val expiresAt: Long)
 
@@ -73,7 +81,7 @@ class StudioClient {
     }
 
     /** Streams a local file without deleting it; only a matching durable receipt is success. */
-    internal suspend fun uploadRecording(recording: SavedRecording, entry: UploadEntry, progress: (Long, Long) -> Unit, workerStarted: () -> Unit, workerFinished: () -> Unit): Unit = suspendCancellableCoroutine { continuation ->
+    internal suspend fun uploadRecording(recording: SavedRecording, entry: UploadEntry, progress: (Long, Long) -> Unit, workerStarted: () -> Unit, workerFinished: () -> Unit, requiredSession: ManualUploadSession? = null): Unit = suspendCancellableCoroutine { continuation ->
         val active = AtomicReference<HttpURLConnection?>(null)
         val delivered = AtomicBoolean(false)
         continuation.invokeOnCancellation { delivered.set(true); active.get()?.let { connection -> Thread({ runCatching { connection.disconnect() } }, "KontraUploadCancel").start() } }
@@ -81,6 +89,7 @@ class StudioClient {
             try {
                 if (recording.partial) throw UploadException("partial", "Unvollständige Teilvideos können derzeit nur lokal exportiert werden.")
                 val session = cookie.get() ?: throw UploadException("auth", "Bitte erneut bei Videomaker anmelden.")
+                if (requiredSession != null && requiredSession.cookie != session) throw UploadException("auth", "Die Studio-Sitzung hat sich geändert. Bitte erneut anmelden.")
                 check(recording.bytes in 1..(1024L * 1024 * 1024) && recording.file.isFile && recording.file.length() == recording.bytes) { "Lokale Aufnahme ist nicht vollständig vorhanden." }
                 check(entry.recordingId == recording.id && entry.size == recording.bytes && entry.sha256 == recording.sha256)
                 check(entry.cameraRecordingId == if (recording.projectId == entry.projectId) recording.id else null)
@@ -91,6 +100,7 @@ class StudioClient {
                     while (true) { if (!continuation.isActive) throw IOException("Upload abgebrochen"); val count = source.read(block); if (count < 0) break; before.update(block, 0, count) }
                 }
                 check(hex(before.digest()) == recording.sha256) { "Lokale Aufnahme wurde verändert und wird nicht hochgeladen." }
+                if (requiredSession != null && cookie.get() != session) throw UploadException("auth", "Die Studio-Sitzung hat sich geändert. Bitte erneut anmelden.")
                 val connection = open("/api/projects/${entry.projectId}/recordings", "POST").also { active.set(it) }
                 val lastProgress = AtomicLong(android.os.SystemClock.elapsedRealtime())
                 val waitingForResponse = AtomicBoolean(false)
