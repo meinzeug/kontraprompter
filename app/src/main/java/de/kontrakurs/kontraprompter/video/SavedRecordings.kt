@@ -6,7 +6,7 @@ import java.io.File
 import java.util.UUID
 
 /** Only finalized, locally retained files are offered for export. */
-data class SavedRecording(val id: String, val file: File, val bytes: Long, val durationUs: Long, val createdAtMs: Long, val sha256: String, val partial: Boolean, val reason: String, val projectId: String? = null)
+data class SavedRecording(val id: String, val file: File, val bytes: Long, val durationUs: Long, val createdAtMs: Long, val sha256: String, val partial: Boolean, val reason: String, val projectId: String? = null, val origin: RecordingOrigin = if (projectId == null) RecordingOrigin.MANUAL else RecordingOrigin.WEB)
 
 /** A leftover is exportable as raw data only, never as a validated recording or cloud upload. */
 data class UnverifiedRecording(val id: String, val file: File, val bytes: Long)
@@ -53,7 +53,8 @@ fun savedRecordings(context: Context): List<SavedRecording> {
             val sha = data.getString("sha256")
             require(file.isFile && bytes > 0 && file.length() == bytes && duration > 0 && sha.matches(Regex("^[0-9a-f]{64}$")))
             val projectId = if (data.isNull("projectId")) null else UUID.fromString(data.getString("projectId")).toString()
-            SavedRecording(id, file, bytes, duration, data.getLong("createdAtMs"), sha, phase == "partial", data.optString("stopReason", "user"), projectId)
+            val origin = RecordingOrigin.read(if (data.has("origin")) data.getString("origin") else null, projectId)
+            SavedRecording(id, file, bytes, duration, data.getLong("createdAtMs"), sha, phase == "partial", data.optString("stopReason", "user"), projectId, origin)
         }.getOrNull()
     }.sortedByDescending { it.createdAtMs }
 }

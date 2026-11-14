@@ -5,6 +5,7 @@ import android.util.AtomicFile
 import android.system.Os
 import android.system.OsConstants
 import de.kontrakurs.kontraprompter.video.SavedRecording
+import de.kontrakurs.kontraprompter.video.cameraClaimRecordingId
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
@@ -35,14 +36,14 @@ internal object UploadJournal {
         check(data.getInt("version") == 1) { "Uploadstatus ist beschädigt." }
         val cameraId = if (data.isNull("cameraRecordingId")) null else uuid(data.getString("cameraRecordingId"))
         val entry = UploadEntry(uuid(data.getString("recordingId")), uuid(data.getString("projectId")), uuid(data.getString("uploadId")), data.getLong("sizeBytes"), data.getString("sha256"), data.getString("phase"), cameraId)
-        val expectedCameraId = if (recording.projectId == project) uuid(recording.id) else null
+        val expectedCameraId = cameraClaimRecordingId(recording.origin, uuid(recording.id), recording.projectId, project)
         check(entry.recordingId == uuid(recording.id) && entry.projectId == project && entry.size == recording.bytes && entry.sha256 == recording.sha256 && entry.cameraRecordingId == expectedCameraId && entry.phase in setOf("uploading", "confirmed", "uncertain", "project_missing", "conflict")) { "Uploadstatus passt nicht zur lokalen Aufnahme." }
         return entry
     }
     @Synchronized fun begin(context: Context, recording: SavedRecording, projectId: String): UploadEntry {
         val project = uuid(projectId)
         val old = get(context, recording, project)
-        val cameraId = if (recording.projectId == project) uuid(recording.id) else null
+        val cameraId = cameraClaimRecordingId(recording.origin, uuid(recording.id), recording.projectId, project)
         val entry = (old ?: UploadEntry(uuid(recording.id), project, uploadIdFor(recording.id, project), recording.bytes, recording.sha256, "uncertain", cameraId)).copy(phase = "uploading")
         write(context, entry)
         return entry
