@@ -20,22 +20,19 @@ class RemoteFixtureTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             remote.ui_state(hierarchy("Ein beliebiges Skript"))
 
-    def test_single_and_double_use_key_down_and_up(self):
+    def test_all_key_injection_remains_disabled_without_atomic_take_binding(self):
         fixture = remote.Fixture("unused")
-        fixture.selected = lambda: True
         fixture.device_block = lambda: "present"
         events = []
         fixture.write = events.append
-        fixture.press(2)
-        self.assertEqual(["inject", "delay", "inject", "delay", "inject", "delay", "inject"], [item["command"] for item in events])
-        self.assertEqual([1, 28, 1, 0, 0, 0], events[0]["events"])
-        self.assertEqual([1, 28, 0, 0, 0, 0], events[-1]["events"])
-        self.assertEqual(150, events[3]["duration"])
+        for count in (1, 2):
+            with self.assertRaises(RuntimeError):
+                fixture.press(count)
+        self.assertEqual([], events)
 
-    def test_unselected_or_removed_device_does_not_send(self):
+    def test_disconnected_device_does_not_send(self):
         fixture = remote.Fixture("unused")
-        fixture.selected = lambda: False
-        fixture.device_block = lambda: "present"
+        fixture.device_block = lambda: None
         fixture.write = lambda command: self.fail("event must not be sent")
         with self.assertRaises(RuntimeError):
             fixture.press(1)

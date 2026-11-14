@@ -37,7 +37,6 @@ class Fixture:
         self.id = secrets.randbelow(900000) + 100000
         self.process = None
         self.descriptor = None
-        self.started = False
 
     def adb(self, *args, timeout=12):
         result = subprocess.run(["adb", "-s", self.serial, *args], capture_output=True, text=True, timeout=timeout)
@@ -77,32 +76,11 @@ class Fixture:
         self.process.stdin.write(json.dumps(command, separators=(",", ":")) + "\n")
         self.process.stdin.flush()
 
-    def selected(self):
-        # This read is confined to the app's own preference and never prints its contents.
-        xml_text = self.adb("shell", "run-as", PACKAGE, "cat", "shared_prefs/prompter_settings.xml")
-        root = ET.fromstring(xml_text)
-        return any(n.get("name") == "volume_remote_descriptor" and n.text == self.descriptor for n in root)
-
     def press(self, count):
-        if not self.selected() or not self.device_block():
-            raise RuntimeError("Eigenes Testgerät nicht mehr ausgewählt/verbunden; keine Taste gesendet")
-        for index in range(count):
-            self.write({"id": self.id, "command": "inject", "events": [1, 28, 1, 0, 0, 0]})
-            self.write({"id": self.id, "command": "delay", "duration": 60})
-            self.write({"id": self.id, "command": "inject", "events": [1, 28, 0, 0, 0, 0]})
-            if index + 1 < count:
-                self.write({"id": self.id, "command": "delay", "duration": 150})
-
-    def await_phase(self, expected, timeout=12):
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            phase, scroll = self.snapshot()
-            if phase == expected:
-                return phase, scroll
-            if phase == "Aufnahme fehlgeschlagen":
-                break
-            time.sleep(.5)
-        raise RuntimeError("Erwarteter Aufnahmestatus nicht bestätigt; keine Wiederholung ausführen")
+        # A UI snapshot and local Boolean cannot bind a key to a camera take or
+        # connection. The remote may change state before Android delivers it.
+        # Do not inject until an atomic, take- and session-bound test API exists.
+        raise RuntimeError("Tasteneingabe gesperrt: atomare Aufnahme- und Sitzungsbindung fehlt")
 
     def close(self):
         if self.process:
@@ -125,42 +103,20 @@ def main():
     try:
         f.register()
         print("Testgerät registriert:", f.name)
-        print("In den App-Einstellungen dieses Gerät auswählen und zum verbundenen Prompter zurückkehren.")
-        print("Befehle: status, start, scroll, pause, resume, quit. Aufnahme nur regulär über Stopp in der App beenden.")
+        print("Keine App-Einstellungen ändern: die Eingabeprüfung ist noch nicht freigegeben.")
+        print("Befehle: status, quit. Tasteneingaben sind derzeit gesperrt.")
         while True:
             command = input("> ").strip().lower()
             if command == "quit":
-                if f.started:
-                    phase, _ = f.snapshot()
-                    if phase in {RUNNING, PAUSED, "Aufnahme startet …", "Aufnahme wird gespeichert …"}:
-                        print("Testaufnahme läuft noch: zuerst regulär in der App stoppen und Speicherung abwarten.")
-                        continue
                 break
-            phase, scroll = f.snapshot()
             if command == "status":
+                phase, scroll = f.snapshot()
                 print("Aufnahme:", phase, "| Textsteuerung:", scroll or "nicht sichtbar")
-            elif command == "start" and phase in READY and not f.started:
-                f.press(1)
-                # A timeout can still mean the request reached the camera: never retry automatically.
-                f.started = True
-                f.await_phase(RUNNING)
-                print("Aufnahme läuft bestätigt")
-            elif command == "scroll" and f.started and phase in {RUNNING, PAUSED} and scroll:
-                f.press(1)
-                time.sleep(1)
-                actual, after = f.snapshot()
-                if actual != phase or after not in {"Start", "Pause"} or after == scroll:
-                    raise RuntimeError("Textänderung oder unveränderter Aufnahmestatus nicht bestätigt")
-                print("Textsteuerung geändert; Aufnahmestatus unverändert")
-            elif command in {"pause", "resume"} and f.started and phase == (RUNNING if command == "pause" else PAUSED):
-                f.press(2)
-                f.await_phase(PAUSED if command == "pause" else RUNNING)
-                print("Aufnahmestatus bestätigt")
             else:
-                print("Befehl im aktuellen Zustand nicht zulässig; keine Taste gesendet")
+                print("Befehl nicht verfügbar; keine Taste gesendet")
     finally:
         f.close()
-        print("Testgerät entfernt. In den App-Einstellungen die frühere Geräteauswahl wiederherstellen.")
+        print("Testgerät entfernt. App-Einstellungen wurden nicht geändert.")
 
 
 if __name__ == "__main__":
