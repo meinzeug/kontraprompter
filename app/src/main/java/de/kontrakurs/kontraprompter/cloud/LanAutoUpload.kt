@@ -106,6 +106,7 @@ internal class LanAutoUploader(context: Context, private val client: StudioClien
     companion object { private val gate = Mutex() }
     private val app = context.applicationContext
     private val intents = LanUploadIntentStore(app)
+    private val liveBindings = LiveChunkBindingStore(app)
     private val blockedProjectImports = mutableSetOf<String>()
     private val _status = MutableStateFlow(LanAutoUploadStatus())
     val status: StateFlow<LanAutoUploadStatus> = _status
@@ -122,6 +123,14 @@ internal class LanAutoUploader(context: Context, private val client: StudioClien
         val recordings = withContext(Dispatchers.IO) { savedRecordings(app).filter { it.origin in setOf(RecordingOrigin.LAN, RecordingOrigin.LAN_UNASSIGNED) && !it.partial }.sortedBy { it.createdAtMs } }
         var blocked: LanAutoUploadStatus? = null
         for (recording in recordings) {
+            // A crash can leave a live stage behind. Never race it with the legacy
+            // whole-file publisher; a deliberate, verified handover is required.
+            val live = try { withContext(Dispatchers.IO) { liveBindings.get(recording.id) } }
+            catch (_: Exception) { blocked = LanAutoUploadStatus(recording.id, recording.projectId, "Live-Uploadauftrag beschädigt. Das Original bleibt lokal."); continue }
+            if (live != null) {
+                if (!live.confirmed) blocked = LanAutoUploadStatus(recording.id, live.binding.projectId, "Live-Upload muss fortgesetzt werden. Das Original bleibt lokal.")
+                continue
+            }
             val intent = try { withContext(Dispatchers.IO) { intents.get(recording.id) } }
             catch (_: Exception) { blocked = LanAutoUploadStatus(recording.id, recording.projectId, "Uploadauftrag beschädigt. Die Aufnahme bleibt lokal."); continue }
             var project = recording.projectId ?: intent?.projectId

@@ -45,6 +45,10 @@ internal class CloudUploadCoordinator(context: Context, private val client: Stud
         var entry: UploadEntry? = null
         return try {
             _state.value = CloudUploadState.Running(recording.id, projectId, 0, recording.bytes)
+            // An experimental live stage owns this recording even after process death.
+            // Never create a competing full-file upload under a different destination.
+            val liveBinding = withContext(Dispatchers.IO) { LiveChunkBindingStore(app).get(recording.id) }
+            if (liveBinding != null) throw UploadException("conflict", "Für diese Aufnahme besteht ein Live-Uploadauftrag. Das Original bleibt lokal.")
             entry = withContext(Dispatchers.IO) { UploadJournal.begin(app, recording, projectId) }
             client.uploadRecording(recording, entry, { sent, total ->
                 gate.deliverProgress(ticket) { _state.value = CloudUploadState.Running(recording.id, projectId, sent, total) }

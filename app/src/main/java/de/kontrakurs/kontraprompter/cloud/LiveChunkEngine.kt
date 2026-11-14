@@ -35,6 +35,7 @@ internal interface LiveChunkTransport {
 /** A single attempt; retry by recreating the engine with the same durable binding and querying server state. */
 internal class LiveChunkEngine(private val transport: LiveChunkTransport, private val sessionMatches: () -> Boolean) {
     companion object { const val CHUNK = 1024 * 1024; const val MAX_SIZE = 1024L * 1024 * 1024 }
+    private var cached: Pair<LiveChunkBinding, Pair<LivePage, Map<Int, LivePart>>>? = null
     private fun authorized() { check(sessionMatches()) { "Studio session changed" } }
     private fun hash(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
     private fun part(file: File, index: Int, size: Int): ByteArray {
@@ -69,9 +70,21 @@ internal class LiveChunkEngine(private val transport: LiveChunkTransport, privat
         }
     }
     /** Sends full chunks only during recording. A stopped original must come from the verified recorder manifest. */
-    fun transfer(binding: LiveChunkBinding, file: File, finalized: FinalOriginal? = null): LiveReceipt? {
+    fun transfer(binding: LiveChunkBinding, file: File, finalized: FinalOriginal? = null): LiveReceipt? = try {
+        transferAttempt(binding, file, finalized)
+    } catch (failure: Exception) {
+        // A failed request may have committed remotely despite a lost acknowledgement.
+        cached = null
+        throw failure
+    }
+    private fun transferAttempt(binding: LiveChunkBinding, file: File, finalized: FinalOriginal?): LiveReceipt? {
         authorized(); check(transport.begin(binding) == CHUNK)
-        val (state, existing) = pages(binding)
+        // On a live poll, reuse acknowledged state in this process. Restart, error and
+        // finalization always re-query and rehash the remote parts. This avoids hashing
+        // the entire growing video on every poll.
+        val snapshot = if (finalized == null) cached?.takeIf { it.first == binding }?.second ?: pages(binding) else pages(binding)
+        val (state, previous) = snapshot
+        val existing = previous.toMutableMap()
         val size = finalized?.size ?: file.length()
         check(size in 1..MAX_SIZE && file.isFile && file.length() >= size)
         if (finalized != null) {
@@ -87,16 +100,20 @@ internal class LiveChunkEngine(private val transport: LiveChunkTransport, privat
         check(existing.keys.all { it < count }) { "Server has unexpected extra chunks" }
         for (index in 0 until count) {
             val length = if (finalized != null) minOf(CHUNK.toLong(), size - index.toLong() * CHUNK).toInt() else CHUNK
+            val prior = existing[index]
+            if (finalized == null && prior?.state == "ready" && prior.size == length) continue
             val bytes = part(file, index, length)
             // Active MediaMuxer output can be rewritten. Do not send an unstable read.
             check(bytes.contentEquals(part(file, index, length))) { "Original changed while reading" }
-            val sha = hash(bytes); val prior = existing[index]
+            val sha = hash(bytes)
             if (prior?.state == "ready" && prior.size == length && prior.sha256 == sha) continue
             val revision = when (prior?.state) { null -> 0L; "writing" -> prior.expectedRevision; else -> prior.revision }
             authorized(); val ack = transport.put(binding, index, revision, bytes, sha)
             check(ack.revision == revision + 1 && ack.sha256 == sha)
+            existing[index] = LivePart(index, ack.revision, revision, length, sha, "ready")
         }
-        if (finalized == null) return null
+        if (finalized == null) { cached = binding to (state to existing.toMap()); return null }
+        cached = null
         check(fileHash(file, size) == finalized.sha256) { "Final original changed" }
         authorized(); val sealed = transport.seal(binding, finalized)
         check(sealed.state == "sealed" && !sealed.published && sealed.size == size && sealed.sha256 == finalized.sha256)

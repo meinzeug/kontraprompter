@@ -44,6 +44,10 @@ class StudioClient {
     internal fun manualUploadSessionBinding(session: ManualUploadSession): String =
         hex(MessageDigest.getInstance("SHA-256").digest(("kontraprompter-manual-upload-session-v1\u0000" + session.cookie).toByteArray(Charsets.UTF_8)))
 
+    /** Experimental: no production caller. Session and cookie remain on the camera phone. */
+    internal fun experimentalLiveTransport(session: ManualUploadSession): LiveChunkTransport =
+        StudioLiveChunkTransport(session.cookie, manualUploadSessionBinding(session), { manualUploadSessionMatches(session) }, ::open)
+
     /** A short-lived proof is kept only in memory and bound to the current studio login. */
     internal class CameraDeviceTicket internal constructor(internal val deviceId: String, internal val value: String, internal val studioSession: String, internal val expiresAt: Long)
 
