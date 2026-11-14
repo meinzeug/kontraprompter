@@ -24,6 +24,7 @@ internal class PairedCapture(
     private val session: LiveSession,
 ) {
     private val lock = Any()
+    private val statusLock = Any()
     private val revision = AtomicLong()
     private var lastRevision = -1L
     private var pendingId: String? = null
@@ -146,6 +147,7 @@ internal class PairedCapture(
     }
 
     private fun sendStatus() {
+      val payload = synchronized(statusLock) {
         val recording = session.recording.value
         val (phase, id) = when (recording) {
             LocalRecording.Idle -> "idle" to null
@@ -160,7 +162,9 @@ internal class PairedCapture(
         val data = JSONObject().put("revision", revision.incrementAndGet()).put("phase", phase)
         if (id != null) data.put("recording", id)
         if (recording is LocalRecording.Failed) data.put("message", recording.message.take(240))
-        lan.send("capture_status", data.toString())
+        data.toString()
+      }
+      lan.send("capture_status", payload)
     }
 
     private fun canonicalUuid(value: String): String? = runCatching { UUID.fromString(value).toString().takeIf { it == value } }.getOrNull()

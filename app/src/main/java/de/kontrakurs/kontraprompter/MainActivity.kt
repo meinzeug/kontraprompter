@@ -419,7 +419,7 @@ private fun KontraApp(activity: MainActivity) {
                 Toggle("Text vertikal spiegeln", textV) { textV = it }
                 Action("Drehen: $textRotation°") { textRotation = (textRotation + 90) % 360 }
             }
-            "prompter" -> key(selected.id) { Prompter(selected.text, selected.generationNotice, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, pairedCapture, { session?.pairedCapture?.toggle(selected.studioProjectId) }, { session?.pairedCapture?.request("stop") }, remoteActions) { playbackStatus = it } }
+            "prompter" -> key(selected.id) { Prompter(selected.text, selected.generationNotice, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, pairedCapture, selected.studioProjectId != null, { session?.pairedCapture?.toggle(selected.studioProjectId) }, { session?.pairedCapture?.request("stop") }, remoteActions) { playbackStatus = it } }
         }
     }
     }
@@ -441,7 +441,7 @@ private fun Page(title: String, eyebrow: String, onBack: (() -> Unit)? = null, c
 }
 
 @Composable
-private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, pairedCapture: PairedCaptureState, onCaptureToggle: () -> Unit, onCaptureStop: () -> Unit, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
+private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, pairedCapture: PairedCaptureState, cloudProjectLinked: Boolean, onCaptureToggle: () -> Unit, onCaptureStop: () -> Unit, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
     val remote = LocalRemoteIndicator.current
     val scroll = rememberScrollState(initialPosition)
     val density = LocalDensity.current.density
@@ -508,6 +508,7 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
                     else -> "Kamerastatus wird ermittelt …"
                 }
                 Text(phase + if (pairedCapture.pending) " · Befehl ausstehend" else "", modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xe6202329)).padding(horizontal = 14.dp, vertical = 9.dp), color = if (pairedCapture.phase == "recording") Color(0xffffb2b2) else Color.White, style = MaterialTheme.typography.labelMedium)
+                if (controls) Text(if (cloudProjectLinked) "Studio-Skript zugeordnet · Speicherung auf der Kamera" else "Lokales Skript · Aufnahme bleibt zunächst auf der Kamera", modifier = Modifier.background(Color(0xe6202329)).padding(horizontal = 10.dp, vertical = 5.dp), color = Color.White, style = MaterialTheme.typography.bodySmall)
                 pairedCapture.message?.let { Text(it, modifier = Modifier.background(Color(0xe6202329)).padding(10.dp), color = Color.White, style = MaterialTheme.typography.bodySmall) }
             }
             if (controls) Text(
