@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.InputDevice
 import android.os.Build
 import android.os.Handler
@@ -76,15 +77,23 @@ class MainActivity : ComponentActivity() {
     internal var shutterHandler: ((InputDevice, Int, Long) -> Unit)? = null
     private val shutterKeys = ShutterKeyTracker()
     internal var selectedVolumeRemote: String? = null
+    internal var shutterFocusAnchor: ShutterFocusAnchor? = null
     internal fun clearShutterKeys() = shutterKeys.clear()
     internal fun clearShutterKeysForDevice(deviceId: Int) = shutterKeys.clearDevice(deviceId)
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val handler = shutterHandler
         val device = event.device
-        if (handler != null && device != null && Build.VERSION.SDK_INT >= 29 &&
+        val trigger = device != null && Build.VERSION.SDK_INT >= 29 &&
             isSelfieTrigger(device.isExternal, device.isVirtual, device.vendorId, device.productId,
-                device.name, device.descriptor, selectedVolumeRemote, event.keyCode)) {
+                device.name, device.descriptor, selectedVolumeRemote, event.keyCode)
+        if (event.action == KeyEvent.ACTION_DOWN && !trigger && event.keyCode in setOf(
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_TAB,
+                KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_PAGE_DOWN,
+            )) shutterFocusAnchor?.yieldToKeyboard()
+        if (handler != null && device != null && Build.VERSION.SDK_INT >= 29 &&
+            trigger) {
             when (shutterKeys.event(true, device.descriptor, event.keyCode, event.action, event.repeatCount, event.eventTime, event.isCanceled, device.id)) {
                 ShutterKeyDecision.SHORT_PRESS -> { handler(device, event.keyCode, event.eventTime); return true }
                 ShutterKeyDecision.CONSUME -> return true
@@ -92,6 +101,12 @@ class MainActivity : ComponentActivity() {
             }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        val handled = super.dispatchTouchEvent(event)
+        if (event.actionMasked == MotionEvent.ACTION_UP) shutterFocusAnchor?.ensureFocus()
+        return handled
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -143,6 +158,9 @@ private fun KontraApp(activity: MainActivity) {
             override fun onInputDeviceChanged(deviceId: Int) { clicks.clearDevice(deviceId); activity.clearShutterKeysForDevice(deviceId) }
         }
         val listening = activeSession != null && runCatching { inputs.registerInputDeviceListener(inputListener, Handler(Looper.getMainLooper())); true }.getOrDefault(false)
+        val focusAnchor = selectedVolumeRemote?.takeIf { listening }?.let { ShutterFocusAnchor(activity, it) }
+        activity.shutterFocusAnchor = focusAnchor
+        activity.window.decorView.post { if (activity.shutterFocusAnchor === focusAnchor) focusAnchor?.ensureFocus() }
         activity.selectedVolumeRemote = selectedVolumeRemote
         activity.shutterHandler = activeSession?.takeIf { listening }?.let { current ->
             fun dispatch(gesture: ShutterGesture, context: ShutterContext) {
@@ -202,7 +220,7 @@ private fun KontraApp(activity: MainActivity) {
                 }
             }
         }
-        onDispose { activity.shutterHandler = null; activity.selectedVolumeRemote = null; if (listening) inputs.unregisterInputDeviceListener(inputListener); activity.clearShutterKeys(); clicks.clear(); scope.cancel() }
+        onDispose { activity.shutterHandler = null; activity.shutterFocusAnchor = null; focusAnchor?.close(); activity.selectedVolumeRemote = null; if (listening) inputs.unregisterInputDeviceListener(inputListener); activity.clearShutterKeys(); clicks.clear(); scope.cancel() }
     }
     var recordings by remember { mutableStateOf<List<SavedRecording>>(emptyList()) }
     var unverified by remember { mutableStateOf<List<UnverifiedRecording>>(emptyList()) }

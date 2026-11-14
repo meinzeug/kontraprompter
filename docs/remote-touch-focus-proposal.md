@@ -1,11 +1,12 @@
 # Vorschlag: erster externer Auslöser nach Touchbedienung
 
-Dieser Vorschlag ist noch keine implementierte oder freigegebene Lösung.
+Dieser Zweig enthält einen isolierten Prototyp und ist keine freigegebene Lösung.
 Nach einem Touch auf Samsung hatte der erste korrekt erzeugte ENTER-Druck keine
 Wirkung, der zweite dagegen schon. Der AOSP-Inputpfad kann einen ersten
 Navigations-DOWN beim Verlassen des Touchmodus für die Fokuswahl verbrauchen.
-Ob das auf diesem Gerät tatsächlich geschieht, muss die getrennte Diagnose
-nachweisen. Ein isoliertes UP darf nie als gültiger Auslöser gelten.
+Die getrennte Diagnose auf dem Samsung zeigte den Wechsel und ein einzelnes UP
+ohne ein an der Activity angekommenes DOWN. Ein isoliertes UP darf nie als
+gültiger Auslöser gelten.
 
 ## Prüfbarer Ansatz
 
@@ -17,8 +18,10 @@ Klicks noch eigene Tastenaktionen auslösen. Nach Verlassen der Ansicht müsste
 er vollständig entfernt werden. Bestehender Fokus, Texteingabe und insbesondere
 Barrierefreiheitsfunktionen dürfen dabei nicht still verdrängt werden.
 
-Vor einer Implementierung ist zu klären, ob sich diese Bedingungen mit der
-Compose- und Android-Fokushierarchie auf dem Samsung überhaupt erfüllen lassen:
+Der Prototyp verdrängt keinen bereits fokussierten Android-View, deaktiviert sich
+bei aktiven Accessibility-Diensten und gibt bei fremden Navigationstasten auf.
+Er ist noch nicht auf Geräten geprüft. Es ist zu klären, ob sich die Bedingungen
+mit der Compose- und Android-Fokushierarchie auf dem Samsung erfüllen lassen:
 Ein künstlicher Fokusanker kann sonst die Tastaturnavigation verschlechtern.
 Falls sich eine aktive Benutzer- oder Accessibility-Fokuswahl nicht eindeutig
 erkennen und erhalten lässt, bleibt der Ansatz gesperrt. Keine globale Änderung
