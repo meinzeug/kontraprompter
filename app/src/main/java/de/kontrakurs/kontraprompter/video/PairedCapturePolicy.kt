@@ -8,11 +8,12 @@ internal fun pairedActionAllowed(action: String, phase: String, pending: Boolean
         "pause" -> phase == "recording"
         "resume" -> phase == "paused"
         "stop" -> phase in setOf("preparing", "recording", "paused")
+        "switch_camera" -> phase in setOf("idle", "ready", "partial", "failed")
         else -> false
     }
 }
 
-internal data class PairedCommand(val action: String, val recordingId: String, val projectId: String?)
+internal data class PairedCommand(val action: String, val recordingId: String, val projectId: String?, val expectedFront: Boolean? = null)
 
 /** Replayed request IDs never execute twice or acknowledge a different payload as accepted. */
 internal class PairedCommandLedger(private val capacity: Int = 256) {

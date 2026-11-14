@@ -15,6 +15,10 @@ class PairedCapturePolicyTest {
         assertFalse(pairedActionAllowed("stop", "unknown", false))
         assertFalse(pairedActionAllowed("stop", "recording", true))
         assertFalse(pairedActionAllowed("delete", "idle", false))
+        assertTrue(pairedActionAllowed("switch_camera", "idle", false))
+        assertFalse(pairedActionAllowed("switch_camera", "recording", false))
+        assertFalse(pairedActionAllowed("switch_camera", "paused", false))
+        assertFalse(pairedActionAllowed("switch_camera", "finalizing", false))
     }
     @Test fun `a repeated command never executes again or accepts changed payload`() {
         val ledger = PairedCommandLedger(); var count = 0
@@ -22,6 +26,7 @@ class PairedCapturePolicyTest {
         assertTrue(ledger.execute("request", command) { count++; true })
         assertTrue(ledger.execute("request", command) { count++; false })
         assertFalse(ledger.execute("request", command.copy(projectId = "other")) { count++; true })
+        assertFalse(ledger.execute("request", command.copy(expectedFront = true)) { count++; true })
         assertEquals(1, count)
     }
     @Test fun `rejection is sticky and no alternate action uses its identifier`() {
