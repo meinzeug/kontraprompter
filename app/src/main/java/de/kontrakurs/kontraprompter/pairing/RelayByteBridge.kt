@@ -15,9 +15,11 @@ internal interface RelayByteEndpoint : Closeable {
 }
 
 /**
- * Bridges a local TLS socket and opaque relay records; never inspects plaintext.
- * This is not a TLS implementation. A closed/broken bridge requires a fresh TLS
- * handshake; no TLS state or partially delivered record is resumed after crash.
+ * Bridges a local socket and opaque relay records; never inspects their content.
+ * This is not a TLS implementation. Confidentiality depends on the caller: a
+ * pinned TLS stream remains end-to-end protected; the studio HMAC stream is
+ * visible to the trusted studio server despite HTTPS on each server hop. A
+ * closed/broken bridge needs a fresh handshake; partial state is never resumed.
  * EOF, an unknown send result, or an unknown ACK result closes both directions
  * immediately and reports failure. This is an abort, not a graceful drain: even
  * successfully queued bytes may be lost. Callers must require a separate peer

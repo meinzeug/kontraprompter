@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.os.Build
+import de.kontrakurs.kontraprompter.pairing.StudioRelaySocket
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,8 +58,10 @@ class LanSession(context: Context) : AutoCloseable, SignalingPort {
     private val deviceName = (Build.MANUFACTURER + " " + Build.MODEL).take(24)
 
     fun startHost() {
-        if (_state.value.role.isNotEmpty()) return
-        _state.value = LanState(role = "host", status = "Starte lokalen Dienst …", token = PairingCrypto.token())
+        synchronized(socketLock) {
+            if (closed.get() || _state.value.role.isNotEmpty()) return
+            _state.value = LanState(role = "host", status = "Starte lokalen Dienst …", token = PairingCrypto.token())
+        }
         val createdAt = android.os.SystemClock.elapsedRealtime()
         scope.launch {
             try {
@@ -93,8 +96,10 @@ class LanSession(context: Context) : AutoCloseable, SignalingPort {
         }
     }
     fun startDiscovery() {
-        if (_state.value.role.isNotEmpty()) return
-        _state.value = LanState(role = "client", status = "Suche Kamerageräte im lokalen Netz …")
+        synchronized(socketLock) {
+            if (closed.get() || _state.value.role.isNotEmpty()) return
+            _state.value = LanState(role = "client", status = "Suche Kamerageräte im lokalen Netz …")
+        }
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(type: String) = Unit
             override fun onDiscoveryStopped(type: String) = Unit
@@ -129,6 +134,53 @@ class LanSession(context: Context) : AutoCloseable, SignalingPort {
                 if (install(connection, socket)) authenticated(connection)
             } catch (_: Exception) { clearPending(socket); runCatching { socket.close() }; if (!closed.get()) _state.update { it.copy(status = "Nicht verbunden", error = "Verbindung fehlgeschlagen. Adresse, Port, Sitzungscode und gemeinsames Netz prüfen.") } }
         }
+    }
+
+    /**
+     * Experimental adapter only: the caller must obtain the short-lived token
+     * and socket through authenticated studio sessions and fence older attempts.
+     * The ordinary application flow does not call this method yet. The regular
+     * HMAC handshake and both on-device approvals still apply.
+     */
+    internal fun attachStudioRelay(
+        link: StudioRelaySocket,
+        token: String,
+        camera: Boolean,
+        validUntilElapsedMs: Long,
+    ): Boolean {
+        try { PairingCrypto.parseToken(token) } catch (_: IllegalArgumentException) { link.close(); return false }
+        val socket = link.socket
+        val role = if (camera) "host" else "client"
+        synchronized(socketLock) {
+            if (closed.get() || _state.value.role.isNotEmpty() || pendingSocket != null || channel != null ||
+                android.os.SystemClock.elapsedRealtime() >= validUntilElapsedMs) {
+                link.close()
+                return false
+            }
+            pendingSocket = socket
+            _state.value = LanState(role = role, status = "Verbinde über Studio …")
+        }
+        scope.launch {
+            try {
+                socket.soTimeout = 15_000
+                val connection = if (camera) AuthenticatedChannel.host(socket, token, deviceName)
+                    else AuthenticatedChannel.client(socket, token, deviceName)
+                if (android.os.SystemClock.elapsedRealtime() >= validUntilElapsedMs) {
+                    connection.close()
+                    throw IllegalStateException("Studio-Freigabe abgelaufen")
+                }
+                if (install(connection, socket)) authenticated(connection)
+            } catch (_: Exception) {
+                clearPending(socket)
+                if (!closed.get() && channel == null) _state.update {
+                    it.copy(status = "Nicht verbunden", error = "Studio-Verbindung fehlgeschlagen. Bitte erneut koppeln.")
+                }
+            } finally {
+                clearPending(socket)
+                link.close()
+            }
+        }
+        return true
     }
     private fun authenticated(connection: AuthenticatedChannel) {
         if (closed.get()) return
