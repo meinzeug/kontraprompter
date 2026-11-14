@@ -163,13 +163,14 @@ class RemoteCameraDecisionsTest {
 
     @Test fun `camera switch is only accepted when idle and never repeats after an acknowledged decision`() {
         val commandId = id()
-        val command = CameraCommand(commandId, "camera_switch", commandId, null)
+        val command = CameraCommand(commandId, "camera_switch", commandId, null, false)
         assertEquals("rejected", decideCameraCommand(CameraDecisionState(), command, false, true).result)
         val accepted = decideCameraCommand(CameraDecisionState(), command, false, true, canSwitch = true)
         assertEquals("switch", accepted.action)
-        assertEquals(3, cameraJournalVersion(accepted.state))
+        assertEquals(4, cameraJournalVersion(accepted.state))
         assertNull(decideCameraCommand(accepted.state, command, false, true, canSwitch = true).action)
         assertThrows(IllegalArgumentException::class.java) { decideCameraCommand(CameraDecisionState(), command.copy(recordingId = id()), false, true, canSwitch = true) }
+        assertThrows(IllegalArgumentException::class.java) { decideCameraCommand(CameraDecisionState(), command.copy(cameraFrom = null), false, true, canSwitch = true) }
         val begin = start()
         val recording = decideCameraCommand(CameraDecisionState(), begin, false, true).state
         assertEquals("rejected", decideCameraCommand(recording, command, false, true, canSwitch = true).result)

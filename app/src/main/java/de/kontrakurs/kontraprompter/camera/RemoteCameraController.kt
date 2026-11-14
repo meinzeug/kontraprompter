@@ -105,7 +105,7 @@ internal class RemoteCameraController private constructor(private val journal: R
                 val live = session.recording.value
                 val canPause = live is LocalRecording.Recording && live.id == command.recordingId
                 val canResume = live is LocalRecording.Paused && live.id == command.recordingId
-                withContext(Dispatchers.IO) { journal.decide(command, expired, session.canStartRemoteRecording(), canPause, canResume, !live.isActive() && session.cameraSelection.value.canSwitch && !session.cameraSelection.value.switching) }
+                withContext(Dispatchers.IO) { journal.decide(command, expired, session.canStartRemoteRecording(), canPause, canResume, !live.isActive() && session.cameraSelection.value.canSwitch && !session.cameraSelection.value.switching && session.cameraSelection.value.front == command.cameraFrom) }
             } catch (error: Exception) {
                 // A failed durable ACK must not prevent a correctly targeted active camera from stopping.
                 if (!expired && command.type == "record_stop") session.stopRecording(command.recordingId)
@@ -121,7 +121,7 @@ internal class RemoteCameraController private constructor(private val journal: R
                 "stop" -> session.stopRecording(command.recordingId)
                 "pause" -> session.pauseRemoteRecording(command.recordingId)
                 "resume" -> session.resumeRemoteRecording(command.recordingId)
-                "switch" -> session.switchRemoteCamera()
+                "switch" -> session.switchRemoteCamera(command.cameraFrom!!)
             }
             outcome
         }
