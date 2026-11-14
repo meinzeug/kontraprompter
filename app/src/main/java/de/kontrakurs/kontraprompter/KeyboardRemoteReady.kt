@@ -2,6 +2,7 @@ package de.kontrakurs.kontraprompter
 
 import android.content.res.ColorStateList
 import android.graphics.Color as AndroidColor
+import android.view.MotionEvent
 import android.widget.Button
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -27,7 +28,14 @@ internal fun KeyboardRemoteReady(activity: MainActivity, descriptor: String, con
     AndroidView(
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
         factory = { context ->
-            Button(context).apply {
+            object : Button(context) {
+                override fun onTouchEvent(event: MotionEvent): Boolean {
+                    // Focus before the native button handles the gesture; only its
+                    // normal completed click may activate readiness.
+                    if (event.actionMasked == MotionEvent.ACTION_DOWN && isEnabled) requestFocus()
+                    return super.onTouchEvent(event)
+                }
+            }.apply {
                 isFocusableInTouchMode = true
                 setTextColor(AndroidColor.WHITE)
                 backgroundTintList = ColorStateList.valueOf(AndroidColor.rgb(59, 65, 74))
