@@ -26,3 +26,10 @@ internal class PairedCommandLedger(private val capacity: Int = 256) {
         return result
     }
 }
+
+/** Late acknowledgements and out-of-order statuses never override the current request/state. */
+internal fun isCurrentCaptureAck(pendingRequest: String?, acknowledgement: String): Boolean =
+    pendingRequest != null && pendingRequest == acknowledgement
+
+internal fun isNewCaptureStatus(revision: Long, previous: Long): Boolean =
+    revision >= 0 && revision > previous

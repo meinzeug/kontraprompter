@@ -32,4 +32,13 @@ class PairedCapturePolicyTest {
         assertFalse(ledger.execute("request", command.copy(action = "stop")) { count++; true })
         assertEquals(1, count)
     }
+    @Test fun `late acknowledgements and statuses cannot supersede current capture`() {
+        assertFalse(isCurrentCaptureAck("new-request", "old-request"))
+        assertFalse(isCurrentCaptureAck(null, "old-request"))
+        assertTrue(isCurrentCaptureAck("new-request", "new-request"))
+        assertFalse(isNewCaptureStatus(41, 42))
+        assertFalse(isNewCaptureStatus(42, 42))
+        assertTrue(isNewCaptureStatus(43, 42))
+        assertFalse(isNewCaptureStatus(-1, -2))
+    }
 }

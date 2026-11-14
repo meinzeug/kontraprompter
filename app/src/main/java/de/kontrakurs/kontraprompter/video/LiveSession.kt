@@ -39,7 +39,7 @@ internal fun canAcquireWebOwner(recording: LocalRecording, alreadyOwned: Boolean
 internal fun releaseBlockedRecording(state: LocalRecording, id: String): LocalRecording =
     if (state is LocalRecording.Failed && state.blocked && state.id == id) state.copy(blocked = false) else state
 
-class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
+class LiveSession(context: Context, val host: Boolean, private val preferFrontCamera: Boolean = true) : AutoCloseable {
     private val app = context.applicationContext
     private val guard = Any()
     private var closed = false
@@ -64,7 +64,7 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
                 else {
                     val lease = if (host) RtcVideo.tryAcquireCamera() else null
                     if (host && lease == null) { lan.report("Kamera noch beschäftigt", "Die vorherige Aufnahme wird noch abgeschlossen. Bitte erneut verbinden."); null }
-                    else try { RtcVideo(app, host, lan, lease).also { it.onCameraFailure = ::cameraFailed; _video.value = it; disconnected = false } }
+                    else try { RtcVideo(app, host, lan, lease, preferFrontCamera).also { it.onCameraFailure = ::cameraFailed; _video.value = it; disconnected = false } }
                     catch (error: Exception) { lease?.let { RtcVideo.releaseCamera(it) }; lan.report("Videofehler", error.localizedMessage ?: "WebRTC nicht verfügbar"); null }
                 }
             }

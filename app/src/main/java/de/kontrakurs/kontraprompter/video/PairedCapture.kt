@@ -121,7 +121,7 @@ internal class PairedCapture(
         if (!host && type == "capture_ack") {
             val request = canonicalUuid(data.optString("request")) ?: return true
             synchronized(lock) {
-                if (pendingId == request) {
+                if (isCurrentCaptureAck(pendingId, request)) {
                     pendingId = null; timeout?.cancel(); timeout = null
                     _state.value = _state.value.copy(pending = false, message = if (data.optBoolean("accepted", false)) null else "Befehl wurde von der Kamera nicht angenommen.")
                 }
@@ -136,7 +136,7 @@ internal class PairedCapture(
             val id = if (rawId.isEmpty()) null else canonicalUuid(rawId) ?: return true
             if (phase in setOf("preparing", "recording", "paused", "finalizing") && id == null) return true
             synchronized(lock) {
-                if (rev > lastRevision) {
+                if (isNewCaptureStatus(rev, lastRevision)) {
                     lastRevision = rev
                     val failure = if (phase == "failed") data.optString("message").take(240).takeIf { it.isNotBlank() } else null
                     _state.value = _state.value.copy(phase = phase, recordingId = id, message = failure ?: _state.value.message)

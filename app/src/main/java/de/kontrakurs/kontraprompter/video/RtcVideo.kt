@@ -8,7 +8,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Preview only: owns the camera. It does not start or pretend to start an MP4 recording. */
-class RtcVideo(private val context: Context, private val host: Boolean, private val lan: LanSession, private val cameraLease: Long? = null) : AutoCloseable {
+class RtcVideo(private val context: Context, private val host: Boolean, private val lan: LanSession, private val cameraLease: Long? = null, private val preferFrontCamera: Boolean = true) : AutoCloseable {
     companion object {
         @Volatile private var initialized = false
         private val cameraGate = RecordingResourceGate()
@@ -57,7 +57,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
                 peer = factory!!.createPeerConnection(config, observer(generation)) ?: error("PeerConnection nicht verfügbar")
                 if (host) {
                     val enumerator: CameraEnumerator = if (Camera2Enumerator.isSupported(context)) Camera2Enumerator(context) else Camera1Enumerator(false)
-                    val name = enumerator.deviceNames.firstOrNull { enumerator.isBackFacing(it) } ?: enumerator.deviceNames.firstOrNull() ?: error("Keine Kamera verfügbar")
+                    val name = chooseCamera(enumerator.deviceNames.toList(), preferFrontCamera, enumerator::isFrontFacing, enumerator::isBackFacing) ?: error("Keine Kamera verfügbar")
                     camera = enumerator.createCapturer(name, cameraEvents()) ?: error("Kamera konnte nicht geöffnet werden")
                     textureHelper = SurfaceTextureHelper.create("KontraCamera", egl.eglBaseContext) ?: error("Kameraoberfläche nicht verfügbar")
                     source = factory!!.createVideoSource(false)

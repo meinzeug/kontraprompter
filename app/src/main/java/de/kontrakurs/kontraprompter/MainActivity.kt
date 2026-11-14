@@ -99,6 +99,7 @@ class MainActivity : ComponentActivity() {
 private fun KontraApp(activity: MainActivity) {
     val repository = remember { ScriptRepository(activity) }
     val preferences = remember { activity.getSharedPreferences("prompter_settings", Activity.MODE_PRIVATE) }
+    var cameraPreferFront by rememberSaveable { mutableStateOf(preferences.getBoolean("camera_prefer_front", true)) }
     var scripts by remember { mutableStateOf(repository.load().ifEmpty { listOf(Script()) }) }
     var selectedId by rememberSaveable { mutableStateOf(repository.currentId ?: scripts.first().id) }
     val selected = scripts.find { it.id == selectedId } ?: scripts.first()
@@ -189,7 +190,7 @@ private fun KontraApp(activity: MainActivity) {
     }
     fun startHost() {
         if (!RtcVideo.cameraAvailable()) { cameraBusyError = true; return }
-        cameraBusyError = false; session?.close(); session = LiveSession(activity, true); page = "connection"
+        cameraBusyError = false; session?.close(); session = LiveSession(activity, true, cameraPreferFront); page = "connection"
     }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) { cameraPermissionError = false; startHost() } else cameraPermissionError = true
@@ -205,6 +206,7 @@ private fun KontraApp(activity: MainActivity) {
         activity.lifecycle.addObserver(observer)
         onDispose { activity.lifecycle.removeObserver(observer); session?.close(); session = null }
     }
+    var recordingScrollSync by rememberSaveable { mutableStateOf(preferences.getBoolean("recording_scroll_sync", false)) }
     var keepAwake by rememberSaveable { mutableStateOf(preferences.getBoolean("awake", true)) }
     var fontSize by rememberSaveable { mutableFloatStateOf(preferences.getFloat("font", 44f)) }
     var speed by rememberSaveable { mutableFloatStateOf(preferences.getFloat("speed", 35f)) }
@@ -299,6 +301,8 @@ private fun KontraApp(activity: MainActivity) {
                 Spacer(Modifier.height(8.dp))
                 Text("Dieses Gerät verwenden als", style = MaterialTheme.typography.titleMedium, color = SoftText)
                 RoleTile("Teleprompter", "Skripte lesen und fernsteuern", camera = false) { page = "scripts" }
+                Toggle("Frontkamera bevorzugen", cameraPreferFront) { cameraPreferFront = it; preferences.edit().putBoolean("camera_prefer_front", it).apply() }
+                Text("Die Auswahl gilt für die nächste Kamerasitzung. Fehlt die gewählte Kamera, wird die andere verwendet. Bei aktiver Aufnahme bleibt sie unverändert.", color = SoftText, style = MaterialTheme.typography.bodySmall)
                 RoleTile("Kamera", "Livebild für den Teleprompter", camera = true) {
                     if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startHost()
                     else cameraPermission.launch(Manifest.permission.CAMERA)
@@ -382,6 +386,8 @@ private fun KontraApp(activity: MainActivity) {
                 Action("Video drehen: $videoRotation°") { videoRotation = (videoRotation + 90) % 360 }
                 SettingSlider("Video-Deckkraft", videoOpacity, 0f..1f, "${(videoOpacity * 100).toInt()} %") { videoOpacity = it }
                 SettingSlider("Video-Helligkeit", videoBrightness, 0f..1f, "${(videoBrightness * 100).toInt()} %") { videoBrightness = it }
+                Toggle("Aufnahme und Teleprompter synchron", recordingScrollSync) { recordingScrollSync = it; preferences.edit().putBoolean("recording_scroll_sync", it).apply() }
+                Text("Bei bestätigter Aufnahme startet oder pausiert der Text automatisch. Bei Stopp bleibt er stehen.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 Text("Bluetooth-Auslöser", style = MaterialTheme.typography.titleLarge)
                 Text("Der ITFIT Selfie P007 ist automatisch verfügbar. Für andere Auslöser mit Lautstärketasten wähle das externe Gerät ausdrücklich aus. Eingebaute Lautstärketasten bleiben unverändert.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 if (Build.VERSION.SDK_INT >= 29) {
@@ -420,7 +426,7 @@ private fun KontraApp(activity: MainActivity) {
                 Toggle("Text vertikal spiegeln", textV) { textV = it }
                 Action("Drehen: $textRotation°") { textRotation = (textRotation + 90) % 360 }
             }
-            "prompter" -> key(selected.id) { Prompter(selected.text, selected.generationNotice, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, pairedCapture, selected.studioProjectId != null, { session?.pairedCapture?.toggle(selected.studioProjectId) }, { session?.pairedCapture?.request("stop") }, remoteActions) { playbackStatus = it } }
+            "prompter" -> key(selected.id) { Prompter(selected.text, selected.generationNotice, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, pairedCapture, recordingScrollSync, selected.studioProjectId != null, { session?.pairedCapture?.toggle(selected.studioProjectId) }, { session?.pairedCapture?.request("stop") }, remoteActions) { playbackStatus = it } }
         }
     }
     }
@@ -442,7 +448,7 @@ private fun Page(title: String, eyebrow: String, onBack: (() -> Unit)? = null, c
 }
 
 @Composable
-private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, pairedCapture: PairedCaptureState, cloudProjectLinked: Boolean, onCaptureToggle: () -> Unit, onCaptureStop: () -> Unit, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
+private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, pairedCapture: PairedCaptureState, recordingScrollSync: Boolean, cloudProjectLinked: Boolean, onCaptureToggle: () -> Unit, onCaptureStop: () -> Unit, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
     val remote = LocalRemoteIndicator.current
     val scroll = rememberScrollState(initialPosition)
     val density = LocalDensity.current.density
@@ -452,6 +458,12 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
     var remaining by remember { mutableIntStateOf(0) }
     var countdownJob by remember { mutableStateOf<Job?>(null) }
     LaunchedEffect(playing, remaining) { onPlaybackStatus(if (remaining > 0) "Countdown" else if (playing) "Läuft" else "Pausiert") }
+    // React only to camera-reported states, not to a button press or command acknowledgement.
+    LaunchedEffect(recordingScrollSync, lanState.ready, pairedCapture.phase) {
+        if (recordingScrollSync && lanState.ready) recordingScrollPlayback(pairedCapture.phase)?.let { shouldPlay ->
+            countdownJob?.cancel(); remaining = 0; playing = shouldPlay
+        }
+    }
     LaunchedEffect(remoteActions) {
         for (event in remoteActions) {
             try {
