@@ -122,3 +122,21 @@ waren alle 21 Projekte und 22 Aufnahmen weiterhin vorhanden; die Projektinhalte
 waren gegenüber der Prüfung vor dem Austausch unverändert. Die vorherige APK
 liegt als eigenständige Sicherung auf dem Server. Die Web-Beschriftung und der
 Download-Dateiname können bis zum separaten Web-Update noch „Debug“ anzeigen.
+
+## Höhere Kameraauflösung: Versuch am 15. November
+
+Ein isolierter Kandidat forderte 1280 × 720 bei 20 Bildern pro Sekunde an und
+erhöhte die Zielbitrate der lokalen H.264-Aufnahme. Das Livebild wurde nach
+der Kopplung angezeigt, der Aufnahmestart auf dem Xiaomi scheiterte aber mit
+„Kein passender H.264-Oberflächenencoder für diese Kameraauflösung“.
+Android meldete unabhängig davon Hardware-Encoderunterstützung für 1280 × 720
+und 720 × 1280 bei 20 Bildern pro Sekunde. Welche Framegröße die App im
+fehlgeschlagenen Versuch tatsächlich erhalten hat, wurde nicht erfasst; die
+Ursache ist daher noch offen. Der Kandidat wurde nicht veröffentlicht.
+
+Danach wurde auf dem Xiaomi die oben dokumentierte Release-APK wieder als
+Update installiert und ihre Prüfsumme erneut kontrolliert. Nach einem erneuten
+WLAN-Verbindungsaufbau wurden Xiaomi und Samsung wieder gekoppelt; Samsung
+zeigte das Livebild und das Skript an. Der Test demonstriert keine erfolgreiche
+HD-Aufnahme. Die aktuelle veröffentlichte Version nahm zuvor im Geräteversuch
+mit 480 × 640 Pixeln auf.
