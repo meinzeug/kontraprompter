@@ -39,11 +39,12 @@ Ein Ansatz zur Kamera-Websteuerung mit gerätegebundenem Schlüssel, dauerhaftem
 
 ## Bauen unter Ubuntu/Linux
 
-Voraussetzungen: JDK 17, Android SDK Platform 36, Build Tools 35.0.0 (vom verwendeten Plugin gewählt), Internetzugriff beim ersten Abruf der Gradle-Abhängigkeiten. `ANDROID_HOME` auf das SDK setzen oder `sdk.dir` in einer nicht eingecheckten `local.properties` angeben.
+Voraussetzungen: JDK 17, Android SDK Platform 36, Build Tools 35.0.0 (vom verwendeten Plugin gewählt), Internetzugriff beim ersten Abruf der Gradle-Abhängigkeiten. `ANDROID_HOME` auf das SDK setzen oder `sdk.dir` in einer nicht eingecheckten `local.properties` angeben. Die Test- und Build-Aufrufe laufen getrennt, damit belegter Speicher dazwischen freigegeben wird. Gradle verwendet einen Worker und begrenzten Heap; zusätzlich wird nativer Arbeitsspeicher benötigt.
 
 ```bash
 export ANDROID_HOME="$HOME/Android/Sdk"
-./gradlew assembleDebug testDebugUnitTest
+./gradlew testDebugUnitTest
+./gradlew assembleDebug
 adb devices -l
 adb -s SERIENNUMMER install -r app/build/outputs/apk/debug/app-debug.apk
 ```
