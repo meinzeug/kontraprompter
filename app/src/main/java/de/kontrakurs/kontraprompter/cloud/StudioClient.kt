@@ -36,6 +36,9 @@ class StudioClient {
     companion object { private const val BASE = "https://videomaker.dorfspy.de" }
     private val cookie = SessionCookie()
 
+    /** Reports only whether this app process currently holds a studio session. */
+    fun hasSession(): Boolean = cookie.get() != null
+
     /** Kept only for the duration of one manual continuation attempt. */
     internal class ManualUploadSession internal constructor(internal val cookie: String)
     internal fun manualUploadSession(): ManualUploadSession? = cookie.get()?.let(::ManualUploadSession)

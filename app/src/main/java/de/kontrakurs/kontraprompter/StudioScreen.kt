@@ -9,6 +9,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import de.kontrakurs.kontraprompter.cloud.StudioClient
 import de.kontrakurs.kontraprompter.cloud.StudioProject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @Composable
@@ -19,6 +20,7 @@ fun StudioScreen(client: StudioClient, remoteEnabled: Boolean, remoteStatus: Str
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var stale by remember { mutableStateOf(false) }
+    var checkingSession by remember(client) { mutableStateOf(client.hasSession()) }
     fun load() {
         scope.launch {
             loading = true; error = null
@@ -26,10 +28,22 @@ fun StudioScreen(client: StudioClient, remoteEnabled: Boolean, remoteStatus: Str
             finally { loading = false }
         }
     }
+    LaunchedEffect(client) {
+        if (checkingSession) {
+            loading = true; error = null
+            try { projects = client.projects(); stale = false }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { error = e.message ?: "Verbindung fehlgeschlagen." }
+            finally { loading = false; checkingSession = false }
+        }
+    }
     AppPage("Deine Studio-Skripte", "VIDEOMAKER", "Öffne ein Skript aus deinem Studio auf diesem Gerät.", onBack = onBack, showRemote = false) {
-        if (projects == null) {
+        if (checkingSession) {
+            AppPanel { Text("Studio-Verbindung wird geprüft …", color = SoftText) }
+        } else if (projects == null) {
             AppPanel {
                 Text("Mit deinem Studio verbinden", style = MaterialTheme.typography.titleLarge)
+                if (client.hasSession()) QuietAction(if (loading) "Verbinde …" else "Erneut verbinden", enabled = !loading) { load() }
                 Text("Melde dich mit deinem Videomaker-Passwort an.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Studio-Passwort") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !loading)
                 MainAction(if (loading) "Verbinde …" else "Anmelden", enabled = password.isNotEmpty() && !loading, onClick = {
