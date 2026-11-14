@@ -39,7 +39,7 @@ if [[ "$output" = *.jar ]]; then
   jar cf "$output" -C "$fixture_dir/dex" classes.dex
 else
   "$sdk/build-tools/35.0.0/aapt2" link -I "$sdk/platforms/android-36/android.jar" \
-    --manifest "$android_root/scripts/fixtures/android-keystore-probe-manifest.xml" --min-sdk-version 26 --target-sdk-version 28 -o "$fixture_dir/unsigned.apk"
+    --manifest "$android_root/scripts/fixtures/android-keystore-probe-manifest.xml" --min-sdk-version 26 --target-sdk-version 36 -o "$fixture_dir/unsigned.apk"
   (cd "$fixture_dir/dex" && zip -q "$fixture_dir/unsigned.apk" classes.dex)
   "$sdk/build-tools/35.0.0/zipalign" -f 4 "$fixture_dir/unsigned.apk" "$fixture_dir/aligned.apk"
   keytool -genkeypair -alias fixture -keyalg EC -groupname secp256r1 -dname 'CN=temporary-fixture-only' \
