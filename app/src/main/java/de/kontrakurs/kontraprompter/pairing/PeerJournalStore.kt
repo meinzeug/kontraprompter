@@ -1,6 +1,8 @@
 package de.kontrakurs.kontraprompter.pairing
 
 import android.content.Context
+import android.system.Os
+import android.system.OsConstants
 import android.util.AtomicFile
 import java.io.File
 
@@ -59,7 +61,9 @@ internal class PeerJournalStore(context: Context) {
         validatePeerJournal(empty)
         require(empty.peers.isEmpty())
         check(!hasAnyFile()) { "Paarungsjournal existiert bereits." }
-        check(directory.isDirectory || directory.mkdirs()) { "Paarungsverzeichnis nicht verfügbar." }
+        val existed = directory.isDirectory
+        check(existed || directory.mkdirs()) { "Paarungsverzeichnis nicht verfügbar." }
+        if (!existed) syncDirectory(directory.parentFile!!)
         writeLocked(empty)
     }
 
@@ -97,5 +101,15 @@ internal class PeerJournalStore(context: Context) {
             atomic.failWrite(output)
             throw error
         }
+        // AtomicFile syncs the file; persist its rename separately in the containing directory.
+        syncDirectory(directory)
+    }
+
+    private fun syncDirectory(path: File) {
+        val descriptor = Os.open(path.absolutePath, OsConstants.O_RDONLY, 0)
+        try {
+            check(OsConstants.S_ISDIR(Os.fstat(descriptor).st_mode))
+            Os.fsync(descriptor)
+        } finally { Os.close(descriptor) }
     }
 }

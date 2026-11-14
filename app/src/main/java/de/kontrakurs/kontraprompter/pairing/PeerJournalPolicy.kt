@@ -29,12 +29,15 @@ internal fun validatePeerJournal(journal: PeerJournal): PeerJournal {
     require(journal.peers.size <= MAX_PEERS)
     val pairIds = mutableSetOf<String>()
     val devicePins = mutableMapOf<String, String>()
+    val pinDevices = mutableMapOf<String, String>()
     for (peer in journal.peers) {
         require(canonicalId(peer.pairId) && pairIds.add(peer.pairId) && canonicalId(peer.peerDeviceId))
         require(peer.peerDeviceId != journal.localDeviceId && HASH.matches(peer.peerSpkiSha256))
         require(peer.peerSpkiSha256 != journal.localSpkiSha256 && peer.serverRevision >= 0)
         val prior = devicePins.putIfAbsent(peer.peerDeviceId, peer.peerSpkiSha256)
         require(prior == null || prior == peer.peerSpkiSha256) { "Geräteidentität hat sich geändert." }
+        val priorDevice = pinDevices.putIfAbsent(peer.peerSpkiSha256, peer.peerDeviceId)
+        require(priorDevice == null || priorDevice == peer.peerDeviceId) { "Geräteschlüssel wird für mehrere Identitäten verwendet." }
     }
     return journal
 }
