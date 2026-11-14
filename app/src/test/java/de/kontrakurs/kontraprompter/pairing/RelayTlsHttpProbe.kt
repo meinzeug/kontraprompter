@@ -51,13 +51,14 @@ private fun testAdapterSequence() {
     val frames = LinkedBlockingQueue<RelayByteEndpoint.Frame>()
     val acknowledgements = LinkedBlockingQueue<Long>()
     val errors = AtomicInteger(); val failed = CountDownLatch(1)
+    val callbackSawClosed = AtomicReference(false)
     val endpoint = object : RelayByteEndpoint {
         override fun send(sequence: Long, bytes: ByteArray) = Unit
         override fun receive() = frames.poll(100, TimeUnit.MILLISECONDS)
         override fun acknowledge(sequence: Long) { acknowledgements.put(sequence) }
         override fun close() = Unit
     }
-    val bridge = RelayByteBridge(bridgeSocket, endpoint) { errors.incrementAndGet(); failed.countDown() }
+    val bridge = RelayByteBridge(bridgeSocket, endpoint) { callbackSawClosed.set(bridgeSocket.isClosed); errors.incrementAndGet(); failed.countDown() }
     try {
         bridge.start()
         check(runCatching { bridge.start() }.isFailure)
@@ -72,6 +73,7 @@ private fun testAdapterSequence() {
         frames.put(RelayByteEndpoint.Frame(4, byteArrayOf(13)))
         check(failed.await(2, TimeUnit.SECONDS))
         check(errors.get() == 1)
+        check(callbackSawClosed.get())
     } finally { bridge.close(); peer.close(); listener.close() }
 
     fun failureCase(action: (LinkedBlockingQueue<RelayByteEndpoint.Frame>, Socket) -> Unit, failAck: Boolean = false) {

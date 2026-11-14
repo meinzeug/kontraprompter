@@ -35,7 +35,9 @@ internal class RelayByteBridge(private val socket: Socket, private val relay: Re
         try { outbound.start(); inbound.start() } catch (error: Exception) { close(); throw error }
     }
 
-    private fun reportFailure() { if (!closed.get() && failureReported.compareAndSet(false, true)) onFailure() }
+    private fun reportFailure() {
+        if (failureReported.compareAndSet(false, true) && closeInternal()) onFailure()
+    }
 
     private fun runOutbound() {
         try {
@@ -67,10 +69,13 @@ internal class RelayByteBridge(private val socket: Socket, private val relay: Re
         finally { close() }
     }
 
-    override fun close() {
-        if (!closed.compareAndSet(false, true)) return
+    override fun close() { closeInternal() }
+
+    private fun closeInternal(): Boolean {
+        if (!closed.compareAndSet(false, true)) return false
         runCatching { socket.close() }; runCatching { relay.close() }
         outbound.interrupt(); inbound.interrupt()
+        return true
     }
 
     companion object { internal const val MAX_FRAME = 16 * 1024; private const val MAX_SEQUENCE = 9_007_199_254_740_990L }
