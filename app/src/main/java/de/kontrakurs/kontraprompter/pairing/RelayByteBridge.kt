@@ -3,9 +3,10 @@ package de.kontrakurs.kontraprompter.pairing
 import java.io.Closeable
 import java.io.IOException
 import java.net.Socket
+import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** Opaque ordered relay records. Implementations must use bounded timeouts and idempotent send/ack. */
+/** Opaque ordered relay records. Operations need bounded timeouts; close must terminate in-flight work. */
 internal interface RelayByteEndpoint : Closeable {
     data class Frame(val sequence: Long, val bytes: ByteArray)
     fun send(sequence: Long, bytes: ByteArray)
@@ -17,6 +18,10 @@ internal interface RelayByteEndpoint : Closeable {
  * Bridges a local TLS socket and opaque relay records; never inspects plaintext.
  * This is not a TLS implementation. A closed/broken bridge requires a fresh TLS
  * handshake; no TLS state or partially delivered record is resumed after crash.
+ * EOF, an unknown send result, or an unknown ACK result closes both directions
+ * immediately and reports failure. This is an abort, not a graceful drain: even
+ * successfully queued bytes may be lost. Callers must require a separate peer
+ * application acknowledgement and must fence the old relay epoch before retrying.
  */
 internal class RelayByteBridge(private val socket: Socket, private val relay: RelayByteEndpoint, private val onFailure: () -> Unit = {}) : Closeable {
     private val closed = AtomicBoolean(false)
@@ -36,7 +41,7 @@ internal class RelayByteBridge(private val socket: Socket, private val relay: Re
         try {
             val input = socket.getInputStream(); val buffer = ByteArray(MAX_FRAME); var sequence = 1L
             while (!closed.get()) {
-                val count = input.read(buffer); if (count < 0) break; if (count == 0) continue
+                val count = input.read(buffer); if (count < 0) { reportFailure(); break }; if (count == 0) continue
                 if (sequence > MAX_SEQUENCE) throw IOException("Relay sequence exhausted")
                 relay.send(sequence, buffer.copyOf(count)); sequence++
             }
@@ -46,14 +51,15 @@ internal class RelayByteBridge(private val socket: Socket, private val relay: Re
 
     private fun runInbound() {
         try {
-            val output = socket.getOutputStream(); var expected = 1L
+            val output = socket.getOutputStream(); var expected = 1L; var lastHash: ByteArray? = null
             while (!closed.get()) {
                 val frame = relay.receive()
                 if (frame == null) { Thread.sleep(25); continue }
                 if (frame.bytes.isEmpty() || frame.bytes.size > MAX_FRAME || frame.sequence !in 1..MAX_SEQUENCE) throw IOException("Invalid relay frame")
+                val hash = MessageDigest.getInstance("SHA-256").digest(frame.bytes)
                 if (frame.sequence == expected) {
-                    output.write(frame.bytes); output.flush(); expected++
-                } else if (frame.sequence != expected - 1) throw IOException("Invalid relay sequence")
+                    output.write(frame.bytes); output.flush(); expected++; lastHash = hash
+                } else if (frame.sequence != expected - 1 || lastHash == null || !MessageDigest.isEqual(lastHash, hash)) throw IOException("Invalid relay sequence or replay")
                 // A retransmitted frame is acknowledged but never written twice.
                 relay.acknowledge(frame.sequence)
             }

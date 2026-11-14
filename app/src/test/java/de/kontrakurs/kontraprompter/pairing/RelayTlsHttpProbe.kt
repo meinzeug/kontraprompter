@@ -73,6 +73,36 @@ private fun testAdapterSequence() {
         check(failed.await(2, TimeUnit.SECONDS))
         check(errors.get() == 1)
     } finally { bridge.close(); peer.close(); listener.close() }
+
+    fun failureCase(action: (LinkedBlockingQueue<RelayByteEndpoint.Frame>, Socket) -> Unit, failAck: Boolean = false) {
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val remote = Socket("127.0.0.1", server.localPort)
+        val frames = LinkedBlockingQueue<RelayByteEndpoint.Frame>()
+        val acks = LinkedBlockingQueue<Long>()
+        val failed = CountDownLatch(1)
+        val endpoint = object : RelayByteEndpoint {
+            override fun send(sequence: Long, bytes: ByteArray) = Unit
+            override fun receive() = frames.poll(100, TimeUnit.MILLISECONDS)
+            override fun acknowledge(sequence: Long) {
+                if (failAck) throw java.io.IOException("simulated lost acknowledgement")
+                acks.put(sequence)
+            }
+            override fun close() = Unit
+        }
+        val bridge = RelayByteBridge(server.accept(), endpoint) { failed.countDown() }
+        try {
+            bridge.start()
+            if (!failAck) {
+                frames.put(RelayByteEndpoint.Frame(1, byteArrayOf(42)))
+                check(acks.poll(2, TimeUnit.SECONDS) == 1L)
+            }
+            action(frames, remote)
+            check(failed.await(2, TimeUnit.SECONDS))
+        } finally { bridge.close(); remote.close(); server.close() }
+    }
+    failureCase({ queue, _ -> queue.put(RelayByteEndpoint.Frame(1, byteArrayOf(43))) })
+    failureCase({ _, remote -> remote.shutdownOutput() })
+    failureCase({ queue, _ -> queue.put(RelayByteEndpoint.Frame(1, byteArrayOf(42))) }, failAck = true)
 }
 
 /** Run by the Videomaker fixture server; both peers use pre-existing, synthetic pins. */
@@ -81,7 +111,7 @@ fun main(args: Array<String>) {
     testAdapterSequence()
     val (url, cameraKey, clientKey, cameraPath, clientPath) = args
     val wrongPin = args[5]
-    require(wrongPin in setOf("none", "server", "client"))
+    require(wrongPin in setOf("none", "server", "client", "lost-send", "lost-ack"))
     require(url.startsWith("http://127.0.0.1:"))
     val password = "fixture-only".toCharArray()
     fun store(path: String) = KeyStore.getInstance("PKCS12").apply { FileInputStream(path).use { load(it, password) } }
@@ -93,7 +123,8 @@ fun main(args: Array<String>) {
     val cameraListener = cameraTls.listen(loopback, 0, 10000)
     val proxy = ServerSocket(0, 1, loopback).apply { soTimeout = 10000 }
     val errors = AtomicReference<Throwable?>()
-    val cameraBridge = RelayByteBridge(Socket(loopback, cameraListener.localPort), FixtureEndpoint(url, "owner", cameraKey))
+    val bridgeFailed = CountDownLatch(1)
+    val cameraBridge = RelayByteBridge(Socket(loopback, cameraListener.localPort), FixtureEndpoint(url, "owner", cameraKey)) { bridgeFailed.countDown() }
     val clientBridge = AtomicReference<RelayByteBridge?>()
     val cameraThread = Thread {
         try {
@@ -107,7 +138,7 @@ fun main(args: Array<String>) {
         } catch (error: Throwable) { errors.set(error) }
     }.apply { isDaemon = true }
     val proxyThread = Thread {
-        try { RelayByteBridge(proxy.accept(), FixtureEndpoint(url, "guest", clientKey)).also { clientBridge.set(it); it.start() } }
+        try { RelayByteBridge(proxy.accept(), FixtureEndpoint(url, "guest", clientKey)) { bridgeFailed.countDown() }.also { clientBridge.set(it); it.start() } }
         catch (error: Throwable) { errors.compareAndSet(null, error) }
     }.apply { isDaemon = true }
     try {
@@ -128,13 +159,13 @@ fun main(args: Array<String>) {
         } catch (error: Exception) {
             if (wrongPin == "none") throw error
             if (wrongPin == "server") check(generateSequence(error as Throwable?) { it.cause }.any { it.message?.contains("Gegenstelle nicht gepinnt") == true })
-            else {
+            else if (wrongPin == "client") {
                 cameraThread.join(5000)
                 check(generateSequence(errors.get()) { it.cause }.any { it.message?.contains("Gegenstelle nicht gepinnt") == true })
-            }
+            } else check(bridgeFailed.await(5, TimeUnit.SECONDS))
         }
         check(connected == (wrongPin == "none"))
-        println(if (connected) "PINNED_TLS_OK" else "WRONG_PIN_REJECTED")
+        println(if (connected) "PINNED_TLS_OK" else if (wrongPin.startsWith("lost-")) "LOST_RESPONSE_ABORTED" else "WRONG_PIN_REJECTED")
     } finally {
         clientBridge.get()?.close(); cameraBridge.close(); proxy.close(); cameraListener.close()
         cameraThread.join(2000); proxyThread.join(2000)
