@@ -23,6 +23,9 @@ sealed interface LocalRecording {
 fun LocalRecording.isActive(): Boolean = this is LocalRecording.Preparing || this is LocalRecording.Recording || this is LocalRecording.Finalizing || (this is LocalRecording.Failed && blocked)
 internal fun shouldReleaseVideo(recording: LocalRecording, closed: Boolean, disconnected: Boolean): Boolean =
     !recording.isActive() && (closed || disconnected)
+/** Reject callbacks observed after disconnection and never duplicate an existing capture owner. */
+internal fun mayCreateVideoPipeline(closed: Boolean, pairingReady: Boolean, videoExists: Boolean): Boolean =
+    !closed && pairingReady && !videoExists
 internal fun releaseBlockedRecording(state: LocalRecording, id: String): LocalRecording =
     if (state is LocalRecording.Failed && state.blocked && state.id == id) state.copy(blocked = false) else state
 
@@ -44,7 +47,7 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
     init {
         lan.onReady = {
             val created = synchronized(guard) {
-                if (closed || _video.value != null) null
+                if (!mayCreateVideoPipeline(closed, lan.state.value.ready, _video.value != null)) null
                 else {
                     val lease = if (host) RtcVideo.tryAcquireCamera() else null
                     if (host && lease == null) { lan.report("Kamera noch beschäftigt", "Die vorherige Aufnahme wird noch abgeschlossen. Bitte erneut verbinden."); null }
@@ -88,7 +91,10 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
     internal fun browserPreviewCandidate(id: String, data: String, mid: String?, line: Int?) {
         synchronized(guard) { _video.value }?.browserPreviewCandidate(id, data, mid, line)
     }
-    internal fun stopBrowserPreview(id: String) { synchronized(guard) { _video.value }?.stopBrowserPreview(id) }
+    internal fun stopBrowserPreview(id: String, result: (Boolean) -> Unit = {}) {
+        val video = synchronized(guard) { _video.value }
+        if (video == null) result(false) else video.stopBrowserPreview(id, result)
+    }
 
     fun startRecording(id: String = UUID.randomUUID().toString(), projectId: String? = null): Boolean {
         val current: RtcVideo

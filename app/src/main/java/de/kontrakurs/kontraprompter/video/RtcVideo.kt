@@ -12,6 +12,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     companion object {
         @Volatile private var initialized = false
         private val cameraGate = RecordingResourceGate()
+        private val browserPreviewSafety = PreviewPeerSafety()
         internal fun tryAcquireCamera(): Long? = cameraGate.tryAcquire()
         internal fun releaseCamera(lease: Long) = cameraGate.release(lease)
         fun cameraAvailable(): Boolean = cameraGate.isAvailable()
@@ -161,11 +162,11 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
             executor.execute { action(if (closed.get() || !host) null else localTrack, egl.eglBaseContext) }
         }.isSuccess
     }
-    internal fun browserPreviewAvailable(): Boolean = host && !closed.get() && cameraFrameAvailable
+    internal fun browserPreviewAvailable(): Boolean = host && !closed.get() && cameraFrameAvailable && browserPreviewSafety.mayStart()
 
     /** All peer operations run on the camera owner executor; closing this peer never closes the track. */
     internal fun startBrowserPreview(id: String, offer: String, permitted: () -> Boolean, emit: (String, String, String?, Int?) -> Unit) = execute {
-        if (!permitted() || !browserPreviewAvailable() || browserPreview != null || factory == null || localTrack == null) {
+        if (!permitted() || !browserPreviewAvailable() || !browserPreviewSafety.mayStart() || browserPreview != null || factory == null || localTrack == null) {
             emit("end", "", null, null)
             return@execute
         }
@@ -180,25 +181,52 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
             browserPreview = created
             created.offer(offer)
         } catch (_: Exception) {
-            browserPreview?.close(); browserPreview = null; browserPreviewId = null
+            // A constructor can fail after making a native peer without ever
+            // returning an object. Even its own cleanup may have failed.
+            // For an existing object, preserve it if its close fails.
+            val failedPeer = browserPreview
+            val cleanupConfirmed = failedPeer != null && runCatching { failedPeer.close() }.isSuccess
+            if (cleanupConfirmed) browserPreview = null else browserPreviewSafety.markCleanupUnknown()
+            browserPreviewId = null
             emit("end", "", null, null)
         }
     }
     internal fun browserPreviewCandidate(id: String, data: String, mid: String?, line: Int?) = execute {
         if (browserPreviewId == id) browserPreview?.candidate(data, mid, line)
     }
-    internal fun stopBrowserPreview(id: String) = execute {
-        if (browserPreviewId == id) { browserPreviewId = null; browserPreview?.close(); browserPreview = null }
+    /** The callback only confirms that this executor completed the peer close. */
+    internal fun stopBrowserPreview(id: String, result: (Boolean) -> Unit = {}) {
+        if (closed.get()) { result(false); return }
+        val submitted = runCatching {
+            executor.execute {
+                if (closed.get()) { result(false); return@execute }
+                if (!browserPreviewSafety.mayConfirmNoPeer()) { result(false); return@execute }
+                if (browserPreviewId != id) {
+                    // There is no peer to close if start never created one or it
+                    // has already been removed after a successful close.
+                    result(browserPreviewId == null && browserPreview == null)
+                    return@execute
+                }
+                val ok = runCatching { browserPreview?.close() }.isSuccess
+                if (ok) { browserPreviewId = null; browserPreview = null }
+                else browserPreviewSafety.markCleanupUnknown()
+                result(ok)
+            }
+        }.isSuccess
+        if (!submitted) result(false)
     }
     internal fun stopAnyBrowserPreview() = execute {
-        browserPreviewId = null; browserPreview?.close(); browserPreview = null
+        browserPreviewId = null
+        val ok = runCatching { browserPreview?.close() }.isSuccess
+        if (ok) browserPreview = null else browserPreviewSafety.markCleanupUnknown()
     }
     private fun execute(block: () -> Unit) { if (!closed.get()) runCatching { executor.execute { if (!closed.get()) block() } } }
     override fun close() {
         synchronized(sinks) { if (!closed.compareAndSet(false, true)) return }
         executor.execute {
             browserPreviewId = null
-            runCatching { browserPreview?.close() }; browserPreview = null
+            if (runCatching { browserPreview?.close() }.isFailure) browserPreviewSafety.markCleanupUnknown()
+            browserPreview = null
             val track = synchronized(sinks) {
                 sinks.forEach { (if (host) localTrack else remoteTrack)?.removeSink(it) }
                 sinks.clear()

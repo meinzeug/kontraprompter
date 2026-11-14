@@ -28,6 +28,7 @@ internal class CameraPreviewRuntime(
     @Volatile private var closed = false
     private val pending = mutableListOf<JSONObject>()
     private var after = 0L
+    private val closing = PreviewCloseState()
     private val watchdog = Executors.newSingleThreadScheduledExecutor { task -> Thread(task, "preview-lease").apply { isDaemon = true } }
 
     init {
@@ -43,16 +44,19 @@ internal class CameraPreviewRuntime(
         val expired = synchronized(lock) {
             if (!previewLeaseMayExpire(id, observedDeadline, activeId, deadline, now)) false
             else {
-                _enabled.value = false; _status.value = "Webvorschau beendet · Verbindung abgelaufen"
+                _enabled.value = false
                 activeId = null; deadline = 0; pending.clear(); after = 0
+                closing.begin(id, "Webvorschau beendet · Verbindung abgelaufen")
+                _status.value = "Webvorschau wird getrennt …"
                 true
             }
         }
-        if (expired) session.stopBrowserPreview(id)
+        if (expired) requestClose(id)
     }
 
     fun enable() = synchronized(lock) {
         if (closed || _enabled.value) return@synchronized
+        if (closing.id != null) return@synchronized
         if (worker?.isAlive == true) { _status.value = "Webvorschau wird noch getrennt"; return@synchronized }
         if (!session.browserPreviewAvailable()) { _status.value = "Kamera ist für die Webvorschau noch nicht bereit"; return@synchronized }
         pending.clear(); after = 0; activeId = null; deadline = 0
@@ -62,11 +66,26 @@ internal class CameraPreviewRuntime(
 
     fun disable(message: String = "Webvorschau aus") {
         val id = synchronized(lock) {
-            _enabled.value = false; _status.value = message
+            _enabled.value = false
             val old = activeId; activeId = null; deadline = 0; pending.clear(); after = 0
+            if (old != null) {
+                closing.begin(old, message)
+                _status.value = "Webvorschau wird getrennt …"
+            } else if (closing.id != null) closing.afterClose(message)
+            else _status.value = message
             old
         }
-        if (id != null) session.stopBrowserPreview(id)
+        if (id != null) requestClose(id)
+    }
+
+    private fun requestClose(id: String) {
+        session.stopBrowserPreview(id) { success ->
+            synchronized(lock) {
+                val result = closing.complete(id, success) ?: return@synchronized
+                if (!success) _enabled.value = false
+                _status.value = if (success && _enabled.value) "Webvorschau freigegeben · wartet auf Dashboard" else result
+            }
+        }
     }
 
     private fun emit(id: String, kind: String, data: String, mid: String?, line: Int?) {
@@ -84,6 +103,7 @@ internal class CameraPreviewRuntime(
         var lastTicket: StudioClient.CameraDeviceTicket? = null
         try {
             while (_enabled.value && !closed) {
+                if (synchronized(lock) { closing.id != null }) { Thread.sleep(100); continue }
                 check(session.browserPreviewAvailable()) { "Kamera ist nicht mehr verfügbar" }
                 val proof = ticket() ?: throw IllegalStateException("Kameraticket nicht verfügbar")
                 lastTicket = proof
@@ -101,7 +121,17 @@ internal class CameraPreviewRuntime(
                 }
                 val incoming = if (response.isNull("session")) null else response.getJSONObject("session")
                 if (incoming == null) {
-                    if (sentId != null) { session.stopBrowserPreview(sentId); synchronized(lock) { activeId = null; after = 0; pending.clear(); deadline = 0 } }
+                    if (sentId != null) {
+                        val shouldClose = synchronized(lock) {
+                            if (!_enabled.value || activeId != sentId) false else {
+                                activeId = null; after = 0; pending.clear(); deadline = 0
+                                closing.begin(sentId, "Webvorschau aus")
+                                _status.value = "Webvorschau wird getrennt …"
+                                true
+                            }
+                        }
+                        if (shouldClose) requestClose(sentId)
+                    }
                 } else {
                     val id = incoming.getString("sessionId")
                     check(UUID.fromString(id).toString() == id && incoming.getString("deviceId") == proof.deviceId)
@@ -139,8 +169,8 @@ internal class CameraPreviewRuntime(
             disable("Webvorschau nicht erreichbar · Aufnahme läuft unabhängig weiter")
         } finally {
             if (_enabled.value) disable()
-            // Revocation uses the same serial worker, after any in-flight poll. The local
-            // peer is already closed and a new opt-in cannot start until this worker exits.
+            // Revocation uses the same serial worker, after any in-flight poll.
+            // Local peer closure is separately confirmed by requestClose.
             lastTicket?.let { proof -> runCatching {
                 client.pollCameraPreview(proof, JSONObject().put("deviceId", proof.deviceId)
                     .put("sessionId", JSONObject.NULL).put("available", false).put("after", 0).put("events", JSONArray()))

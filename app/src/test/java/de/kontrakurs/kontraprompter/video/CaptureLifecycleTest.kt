@@ -6,6 +6,18 @@ import org.junit.Test
 import java.io.File
 
 class CaptureLifecycleTest {
+    @Test fun `late pairing callback cannot create a capture after disconnect or close`() {
+        assertTrue(mayCreateVideoPipeline(closed = false, pairingReady = true, videoExists = false))
+        assertFalse(mayCreateVideoPipeline(closed = false, pairingReady = false, videoExists = false))
+        assertFalse(mayCreateVideoPipeline(closed = true, pairingReady = true, videoExists = false))
+    }
+
+    @Test fun `pairing callback never creates a second capture while an existing owner survives`() {
+        assertFalse(mayCreateVideoPipeline(closed = false, pairingReady = true, videoExists = true))
+        assertFalse(mayCreateVideoPipeline(closed = false, pairingReady = false, videoExists = true))
+        assertFalse(mayCreateVideoPipeline(closed = true, pairingReady = true, videoExists = true))
+    }
+
     @Test fun `connection loss never releases camera during preparation capture or finalization`() {
         val active = listOf(LocalRecording.Preparing("id"), LocalRecording.Recording("id"), LocalRecording.Finalizing("id"))
         active.forEach { state ->

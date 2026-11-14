@@ -23,6 +23,7 @@ internal class BrowserPreviewPeer(
     }, ThreadPoolExecutor.AbortPolicy())
     private var connection: PeerConnection? = null
     private var closed = false
+    private var closeSucceeded = false
     private var remoteSet = false
     private var answerSent = false
     private var gatheringFinished = false
@@ -140,12 +141,14 @@ internal class BrowserPreviewPeer(
 
     private fun fail() { if (!closed) { emit("end", "", null, null); close() } }
     override fun close() {
-        if (closed) return
+        // A previous exception must not make a later retry look successful.
+        if (closed) { check(closeSucceeded) { "Vorschautrennung nicht bestätigt" }; return }
         closed = true
         if (callbackRegistered) { runCatching { manager.unregisterNetworkCallback(networkCallback) }; callbackRegistered = false }
         candidateWorker.shutdownNow()
         pendingRemote.clear(); pendingLocal.clear()
         connection?.close(); connection?.dispose(); connection = null
+        closeSucceeded = true
     }
 }
 
