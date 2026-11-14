@@ -55,7 +55,7 @@ internal fun HelpScreen(onBack: () -> Unit) {
             HelpParagraph("Optional kannst du in den Einstellungen „Aufnahme und Teleprompter synchron“ aktivieren. Der Text startet oder pausiert dann mit der bestätigten Aufnahme; beim Stopp bleibt er stehen.")
         }
         HelpSection("Bluetooth-Auslöser") {
-            HelpParagraph("Den Auslöser zuerst in den Android-Bluetooth-Einstellungen mit dem Samsung koppeln. Der ITFIT Selfie P007 wird unterstützt; andere externe Auslöser können in den App-Einstellungen ausgewählt werden.")
+            HelpParagraph("Den Auslöser zuerst in den Android-Bluetooth-Einstellungen mit dem Samsung koppeln. Ab Android 10 wird der ITFIT Selfie P007 unterstützt; andere externe Auslöser können in den App-Einstellungen ausgewählt werden.")
             HelpParagraph("Im verbundenen Prompter löst eine unterstützte Taste Start, Pause oder Fortsetzen der Aufnahme aus. Zum endgültigen Beenden „Stopp“ in der App verwenden. Eingebaute Lautstärketasten bleiben unverändert.")
         }
         HelpSection("Speichern und Grenzen") {
