@@ -33,3 +33,20 @@ ITFIT-Fernbedienung war am Samsung gekoppelt, wurde von Android aber als
 getrennt gemeldet; echte Einzel- und Doppelklicks wurden daher nicht geprüft.
 Der getestete App-Arbeitsstand ist keine Aussage darüber, welche APK aktuell
 auf dem Videomaker-Server zum Download bereitsteht.
+
+## Sprechtest und Aufnahme-Synchronisierung
+
+Anschließend wurde auf Wunsch des Nutzers ein vorhandenes Skript am Samsung
+gestartet und testweise eingesprochen. Die Aufnahme wurde auf dem Xiaomi
+regulär beendet und automatisch hochgeladen. Original und Serverkopie hatten
+übereinstimmende SHA-256-Summen und waren 19.665.405 Bytes groß. Die Datei ist
+83,33 Sekunden lang und enthält H.264-Video sowie AAC-Ton mit 48 kHz mono. Die
+Pegelprüfung zeigte ein Audiosignal; eine Prüfung der Sprachverständlichkeit
+fand nicht statt.
+
+In einem weiteren kurzen Test wurde am Samsung „Aufnahme und Teleprompter
+synchron“ aktiviert. Der Text startete mit der bestätigten Aufnahme,
+pausierte mit ihr, lief nach dem Fortsetzen wieder an und blieb beim Stopp
+stehen. Dieser Schalter wurde danach aktiviert gelassen. Er synchronisiert die
+Bedienzustände; eine sprachgesteuerte Anpassung der Textposition ist noch nicht
+implementiert.
