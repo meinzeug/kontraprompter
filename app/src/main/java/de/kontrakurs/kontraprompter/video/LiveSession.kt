@@ -34,6 +34,8 @@ internal fun mayCreateVideoPipeline(closed: Boolean, pairingReady: Boolean, vide
     !closed && pairingReady && !videoExists
 internal fun recordingOwnerAllowed(remoteExclusive: Boolean, origin: RecordingOrigin): Boolean =
     !remoteExclusive || origin == RecordingOrigin.WEB
+internal fun canAcquireWebOwner(recording: LocalRecording, alreadyOwned: Boolean): Boolean =
+    alreadyOwned || !recording.isActive()
 internal fun releaseBlockedRecording(state: LocalRecording, id: String): LocalRecording =
     if (state is LocalRecording.Failed && state.blocked && state.id == id) state.copy(blocked = false) else state
 
@@ -88,9 +90,11 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
             ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     }
 
-    fun setRemoteExclusive(enabled: Boolean) = synchronized(guard) {
+    fun setRemoteExclusive(enabled: Boolean): Boolean = synchronized(guard) {
+        if (enabled && !canAcquireWebOwner(_recording.value, remoteExclusive)) return false
         remoteExclusive = enabled
         if (!enabled) _video.value?.stopAnyBrowserPreview()
+        true
     }
 
     internal fun browserPreviewAvailable(): Boolean = synchronized(guard) {

@@ -88,7 +88,11 @@ internal class RemoteCameraController private constructor(private val journal: R
             if (current != null) {
                 check(!current.closing && current.journal === journal && current.session === session) { "An earlier camera remote session is still shutting down" }
                 current
-            } else RemoteCameraController(journal, session).also { session.setRemoteExclusive(true); owner = it }
+            } else {
+                check(session.setRemoteExclusive(true)) { "Eine laufende Aufnahme gehört bereits einem anderen Steuergerät." }
+                try { RemoteCameraController(journal, session).also { owner = it } }
+                catch (error: Exception) { session.setRemoteExclusive(false); throw error }
+            }
         }
     }
 

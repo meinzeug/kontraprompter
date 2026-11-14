@@ -10,4 +10,12 @@ class RecordingOwnerTest {
         assertFalse(recordingOwnerAllowed(true, RecordingOrigin.LAN))
         assertTrue(recordingOwnerAllowed(false, RecordingOrigin.LAN))
     }
+    @Test fun `web owner cannot take over an active paired recording`() {
+        assertTrue(canAcquireWebOwner(LocalRecording.Idle, false))
+        assertFalse(canAcquireWebOwner(LocalRecording.Preparing("take"), false))
+        assertFalse(canAcquireWebOwner(LocalRecording.Recording("take"), false))
+        assertFalse(canAcquireWebOwner(LocalRecording.Paused("take"), false))
+        assertFalse(canAcquireWebOwner(LocalRecording.Finalizing("take"), false))
+        assertTrue(canAcquireWebOwner(LocalRecording.Recording("take"), true))
+    }
 }
