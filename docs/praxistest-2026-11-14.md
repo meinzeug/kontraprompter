@@ -111,3 +111,14 @@ für den Test nicht verbunden. Ein kurzzeitig aktivierter Samsung-Screenreader
 startete zunächst seine eigene Einrichtung und verdrängte die App; ein
 vollständiger Screenreader-Test des Schalters bleibt offen. Die vorherigen
 Bedienungshilfen-Einstellungen wurden wiederhergestellt.
+
+## Veröffentlichung am 15. November
+
+Die oben beschriebene Release-APK wurde auf Videomaker veröffentlicht. Ein
+vollständiger authentifizierter HTTPS-Download hatte die gleiche SHA-256-Summe
+`ab7c923a968fdc744964f997c544db0691e1946b71b62bc3eb8ab92cc6652903`
+wie die auf beiden Smartphones getestete Datei. Beim anschließenden Vergleich
+waren alle 21 Projekte und 22 Aufnahmen weiterhin vorhanden; die Projektinhalte
+waren gegenüber der Prüfung vor dem Austausch unverändert. Die vorherige APK
+liegt als eigenständige Sicherung auf dem Server. Die Web-Beschriftung und der
+Download-Dateiname können bis zum separaten Web-Update noch „Debug“ anzeigen.
