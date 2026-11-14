@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -44,6 +45,8 @@ import de.kontrakurs.kontraprompter.video.VideoView
 import de.kontrakurs.kontraprompter.video.LocalRecording
 import de.kontrakurs.kontraprompter.video.isActive
 import de.kontrakurs.kontraprompter.video.recordingStopDescription
+import de.kontrakurs.kontraprompter.camera.CAMERA_REMOTE_UI_ENABLED
+import de.kontrakurs.kontraprompter.camera.CameraRemoteRuntime
 
 @Composable
 fun LivePreview(video: RtcVideo, horizontal: Boolean = false, vertical: Boolean = false, rotation: Int = 0, fill: Boolean = false, opacity: Float = 1f, modifier: Modifier = Modifier) {
@@ -248,6 +251,7 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
                     Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .5f)))
                 ))
             }
+            if (CAMERA_REMOTE_UI_ENABLED) CameraRemotePanel(session, connected)
             Surface(Modifier.fillMaxWidth(), color = Panel.copy(alpha = .96f), shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, Color(0xff343a44))) {
                 Column(Modifier.padding(horizontal = 18.dp, vertical = 15.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -282,5 +286,42 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
             Text("Die Aufnahme bleibt auf diesem Gerät. Ton wird nicht live übertragen.", color = SoftText, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(12.dp))
         }
+    }
+}
+
+@Composable
+private fun CameraRemotePanel(session: LiveSession, connected: Boolean) {
+    val context = LocalContext.current
+    val runtime = remember(session) { CameraRemoteRuntime(context, session) }
+    val active by runtime.active.collectAsState()
+    val status by runtime.status.collectAsState()
+    val uploadStatus by runtime.uploadStatus.collectAsState()
+    var password by remember { mutableStateOf("") }
+    var pendingPassword by remember { mutableStateOf<String?>(null) }
+    var permissionError by remember { mutableStateOf(false) }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val entered = pendingPassword; pendingPassword = null
+        if (granted && entered != null) { permissionError = false; runtime.activate(entered) }
+        else permissionError = true
+    }
+    DisposableEffect(runtime) { onDispose { runtime.dispose() } }
+    AppPanel {
+        Text("Websteuerung", style = MaterialTheme.typography.titleMedium)
+        Text(status, color = SoftText)
+        if (active) {
+            Text("Beim Beenden der Websteuerung wird eine laufende Aufnahme gestoppt.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+            QuietAction("Websteuerung beenden") { runtime.deactivate() }
+        } else {
+            Text("Verbinde diese Kamera mit Videomaker, um Aufnahmen vom Dashboard zu steuern.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+            OutlinedTextField(password, { password = it }, label = { Text("Studio-Passwort") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth())
+            MainAction("Websteuerung aktivieren", enabled = connected && password.isNotEmpty()) {
+                val entered = password; password = ""
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) runtime.activate(entered)
+                else { pendingPassword = entered; permission.launch(Manifest.permission.RECORD_AUDIO) }
+            }
+            if (!connected) Text("Verbinde zuerst die Kamera mit dem Teleprompter.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+        }
+        if (permissionError) Text("Für Aufnahmen mit Ton ist die Mikrofonfreigabe erforderlich.", color = MaterialTheme.colorScheme.error)
+        if (uploadStatus.isNotBlank()) Text(uploadStatus, color = SoftText, style = MaterialTheme.typography.bodySmall)
     }
 }

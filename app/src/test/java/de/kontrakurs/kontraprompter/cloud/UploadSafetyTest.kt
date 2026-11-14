@@ -5,6 +5,14 @@ import org.junit.Test
 
 class UploadSafetyTest {
     private val entry = UploadEntry("recording", "project", "upload", 123, "a".repeat(64), "uploading")
+    @Test fun `camera manifest pending is retryable but mismatches remain conflicts`() {
+        assertEquals("manifest_pending", cameraUploadConflictKind("camera_manifest_pending", true))
+        assertEquals("manifest_mismatch", cameraUploadConflictKind("camera_manifest_mismatch", true))
+        assertEquals("manifest_partial", cameraUploadConflictKind("camera_manifest_partial", true))
+        assertEquals("busy", cameraUploadConflictKind("camera_upload_busy", true))
+        assertEquals("conflict", cameraUploadConflictKind("camera_manifest_pending", false))
+        assertEquals("conflict", cameraUploadConflictKind("unknown", true))
+    }
     @Test fun `late unauthorized response cannot clear a newer session`() {
         val cookie = SessionCookie()
         cookie.set("old")
@@ -30,6 +38,7 @@ class UploadSafetyTest {
         assertEquals(uploadIdFor(recording, project), uploadIdFor(recording.uppercase(), project.uppercase()))
         assertNotEquals(uploadIdFor(recording, project), uploadIdFor(recording, other))
         assertNotEquals(uploadIdFor(recording, project), uploadIdFor(other, project))
+        assertEquals("d20a348a-53dc-8f68-bc92-0e5d00768144", uploadIdFor("00000000-0000-4000-8000-000000000004", "00000000-0000-4000-8000-000000000003"))
     }
     @Test fun `receipt must match exact upload project size and digest`() {
         val receipt = UploadReceipt("upload", "project", 123, "a".repeat(64))

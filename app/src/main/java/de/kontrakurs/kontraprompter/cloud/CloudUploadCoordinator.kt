@@ -50,7 +50,7 @@ internal class CloudUploadCoordinator(context: Context, private val client: Stud
         } catch (error: Exception) {
             gate.stopProgress(ticket)
             val kind = (error as? UploadException)?.kind ?: "uncertain"
-            val phase = kind.takeIf { it == "project_missing" || it == "conflict" } ?: "uncertain"
+            val phase = when (kind) { "project_missing" -> "project_missing"; "conflict", "manifest_mismatch", "manifest_partial" -> "conflict"; else -> "uncertain" }
             entry?.let { withContext(Dispatchers.IO) { runCatching { UploadJournal.write(app, it.copy(phase = phase)) } } }
             _state.value = CloudUploadState.Failed(recording.id, projectId, kind, error.message?.take(220) ?: "Upload nicht bestätigt; die lokale Aufnahme bleibt erhalten.")
         } finally { gate.operationFinished(ticket) }

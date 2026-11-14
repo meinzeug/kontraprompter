@@ -6,7 +6,7 @@ import java.io.File
 import java.util.UUID
 
 /** Only finalized, locally retained files are offered for export. */
-data class SavedRecording(val id: String, val file: File, val bytes: Long, val durationUs: Long, val createdAtMs: Long, val sha256: String, val partial: Boolean, val reason: String)
+data class SavedRecording(val id: String, val file: File, val bytes: Long, val durationUs: Long, val createdAtMs: Long, val sha256: String, val partial: Boolean, val reason: String, val projectId: String? = null)
 
 fun recordingStopDescription(reason: String): String? = when (reason.lowercase()) {
     "storage" -> "Automatisch beendet: Gerätespeicher fast voll."
@@ -32,7 +32,8 @@ fun savedRecordings(context: Context): List<SavedRecording> {
             val duration = data.getLong("durationUs")
             val sha = data.getString("sha256")
             require(file.isFile && bytes > 0 && file.length() == bytes && duration > 0 && sha.matches(Regex("^[0-9a-f]{64}$")))
-            SavedRecording(id, file, bytes, duration, data.getLong("createdAtMs"), sha, phase == "partial", data.optString("stopReason", "user"))
+            val projectId = if (data.isNull("projectId")) null else UUID.fromString(data.getString("projectId")).toString()
+            SavedRecording(id, file, bytes, duration, data.getLong("createdAtMs"), sha, phase == "partial", data.optString("stopReason", "user"), projectId)
         }.getOrNull()
     }.sortedByDescending { it.createdAtMs }
 }

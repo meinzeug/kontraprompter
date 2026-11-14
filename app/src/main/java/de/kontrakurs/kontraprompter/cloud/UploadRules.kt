@@ -27,6 +27,14 @@ internal fun confirmedFor(status: CloudUploadState, recordingId: String, project
 internal fun preserveActiveUpload(current: CloudUploadState, failure: CloudUploadState.Failed): CloudUploadState =
     if (current is CloudUploadState.Running) current else failure
 
+internal fun cameraUploadConflictKind(code: String?, cameraClaim: Boolean): String = if (!cameraClaim) "conflict" else when (code) {
+    "camera_manifest_pending" -> "manifest_pending"
+    "camera_manifest_mismatch" -> "manifest_mismatch"
+    "camera_manifest_partial" -> "manifest_partial"
+    "camera_upload_busy" -> "busy"
+    else -> "conflict"
+}
+
 internal data class JournalLookup(val recordingId: String, val projectId: String, val phase: String?, val failed: Boolean)
 internal fun matchingJournal(value: JournalLookup?, recordingId: String, projectId: String): JournalLookup? =
     value?.takeIf { it.recordingId == recordingId && it.projectId == projectId }

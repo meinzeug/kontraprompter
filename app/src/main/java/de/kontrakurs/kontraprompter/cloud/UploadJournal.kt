@@ -10,7 +10,7 @@ import java.io.File
 import java.util.UUID
 
 /** Upload decisions are persisted separately from the immutable local recording. */
-internal data class UploadEntry(val recordingId: String, val projectId: String, val uploadId: String, val size: Long, val sha256: String, val phase: String)
+internal data class UploadEntry(val recordingId: String, val projectId: String, val uploadId: String, val size: Long, val sha256: String, val phase: String, val cameraRecordingId: String? = null)
 
 internal object UploadJournal {
     private fun uuid(value: String): String {
@@ -33,21 +33,24 @@ internal object UploadJournal {
         check(text.isNotEmpty()) { "Uploadstatus ist beschädigt." }
         val data = JSONObject(text)
         check(data.getInt("version") == 1) { "Uploadstatus ist beschädigt." }
-        val entry = UploadEntry(uuid(data.getString("recordingId")), uuid(data.getString("projectId")), uuid(data.getString("uploadId")), data.getLong("sizeBytes"), data.getString("sha256"), data.getString("phase"))
-        check(entry.recordingId == uuid(recording.id) && entry.projectId == project && entry.size == recording.bytes && entry.sha256 == recording.sha256 && entry.phase in setOf("uploading", "confirmed", "uncertain", "project_missing", "conflict")) { "Uploadstatus passt nicht zur lokalen Aufnahme." }
+        val cameraId = if (data.isNull("cameraRecordingId")) null else uuid(data.getString("cameraRecordingId"))
+        val entry = UploadEntry(uuid(data.getString("recordingId")), uuid(data.getString("projectId")), uuid(data.getString("uploadId")), data.getLong("sizeBytes"), data.getString("sha256"), data.getString("phase"), cameraId)
+        val expectedCameraId = if (recording.projectId == project) uuid(recording.id) else null
+        check(entry.recordingId == uuid(recording.id) && entry.projectId == project && entry.size == recording.bytes && entry.sha256 == recording.sha256 && entry.cameraRecordingId == expectedCameraId && entry.phase in setOf("uploading", "confirmed", "uncertain", "project_missing", "conflict")) { "Uploadstatus passt nicht zur lokalen Aufnahme." }
         return entry
     }
     @Synchronized fun begin(context: Context, recording: SavedRecording, projectId: String): UploadEntry {
         val project = uuid(projectId)
         val old = get(context, recording, project)
-        val entry = (old ?: UploadEntry(uuid(recording.id), project, uploadIdFor(recording.id, project), recording.bytes, recording.sha256, "uncertain")).copy(phase = "uploading")
+        val cameraId = if (recording.projectId == project) uuid(recording.id) else null
+        val entry = (old ?: UploadEntry(uuid(recording.id), project, uploadIdFor(recording.id, project), recording.bytes, recording.sha256, "uncertain", cameraId)).copy(phase = "uploading")
         write(context, entry)
         return entry
     }
     @Synchronized fun write(context: Context, entry: UploadEntry) {
         val atomic = AtomicFile(file(context, entry.recordingId, entry.projectId))
         val payload = JSONObject().put("version", 1).put("recordingId", uuid(entry.recordingId)).put("projectId", uuid(entry.projectId))
-            .put("uploadId", uuid(entry.uploadId)).put("sizeBytes", entry.size).put("sha256", entry.sha256).put("phase", entry.phase)
+            .put("uploadId", uuid(entry.uploadId)).put("sizeBytes", entry.size).put("sha256", entry.sha256).put("phase", entry.phase).put("cameraRecordingId", entry.cameraRecordingId ?: JSONObject.NULL)
         val output = atomic.startWrite()
         try { output.write(payload.toString().toByteArray(Charsets.UTF_8)); output.fd.sync(); atomic.finishWrite(output) }
         catch (error: Exception) { atomic.failWrite(output); throw error }
