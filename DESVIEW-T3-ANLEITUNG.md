@@ -52,7 +52,7 @@ Optional startet und pausiert die Einstellung **Aufnahme und Teleprompter synchr
 
 Den Bluetooth-Auslöser in Android mit dem **Samsung** koppeln. Der ITFIT Selfie P007 wird erkannt. Andere externe Auslöser mit Lautstärketasten können unter **Einstellungen → Bluetooth-Auslöser** ausdrücklich ausgewählt werden; die Liste lässt sich dort aktualisieren. Externe Auslöser werden ab Android 10 unterstützt.
 
-Im verbundenen Prompter kann eine unterstützte Auslösertaste die Aufnahme starten, pausieren oder fortsetzen. Für das endgültige Beenden **Stopp** in der App verwenden. Eingebaute Lautstärketasten des Smartphones werden nicht als Auslöser umgedeutet. Da Fernbedienungen verschiedene Tasten senden können, den eigenen Auslöser vor einer wichtigen Aufnahme ausprobieren.
+Vor der Aufnahme startet ein kurzer Druck auf eine unterstützte Auslösertaste die Kamera. Während der Aufnahme pausiert oder startet ein kurzer Druck nur den Teleprompter; ein schneller Doppeldruck pausiert oder setzt die Aufnahme fort. Für das endgültige Beenden **Stopp** in der App verwenden. Bei ausdrücklich ausgewählten externen Geräten können auch Enter, Leertaste und Steuerkreuz-Mitte verwendet werden. Eingebaute und virtuelle Tastaturen werden nicht als Auslöser umgedeutet. Da Fernbedienungen verschiedene Tasten senden können, den eigenen Auslöser vor einer wichtigen Aufnahme ausprobieren.
 
 ## Speichern und Upload
 
