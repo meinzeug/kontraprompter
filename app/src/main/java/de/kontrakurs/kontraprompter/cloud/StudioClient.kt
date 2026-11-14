@@ -1,6 +1,7 @@
 package de.kontrakurs.kontraprompter.cloud
 
 import kotlinx.coroutines.Dispatchers
+import de.kontrakurs.kontraprompter.video.cameraClaimRecordingId
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
@@ -94,7 +95,7 @@ class StudioClient {
                 if (requiredSession != null && requiredSession.cookie != session) throw UploadException("auth", "Die Studio-Sitzung hat sich geändert. Bitte erneut anmelden.")
                 check(recording.bytes in 1..(1024L * 1024 * 1024) && recording.file.isFile && recording.file.length() == recording.bytes) { "Lokale Aufnahme ist nicht vollständig vorhanden." }
                 check(entry.recordingId == recording.id && entry.size == recording.bytes && entry.sha256 == recording.sha256)
-                check(entry.cameraRecordingId == if (recording.projectId == entry.projectId) recording.id else null)
+                check(entry.cameraRecordingId == cameraClaimRecordingId(recording.origin, recording.id, recording.projectId, entry.projectId))
                 check(UUID.fromString(entry.projectId).toString() == entry.projectId && UUID.fromString(entry.uploadId).toString() == entry.uploadId)
                 val before = MessageDigest.getInstance("SHA-256")
                 recording.file.inputStream().buffered().use { source ->
