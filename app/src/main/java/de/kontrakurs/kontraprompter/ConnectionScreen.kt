@@ -223,6 +223,7 @@ private fun CameraCloudPanel(cloud: CloudUploadViewModel) {
 private fun CameraConnectionScreen(session: LiveSession, state: LanState, video: RtcVideo?, cloud: CloudUploadViewModel, onClose: () -> Unit) {
     val context = LocalContext.current
     val recording by session.recording.collectAsState()
+    val cameraSelection by session.cameraSelection.collectAsState()
     var permissionMessage by remember { mutableStateOf<String?>(null) }
     val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -247,8 +248,17 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
                     Text("KONTRAPROMPTER", color = SoftText, style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp)
                     Text("Deine Kamera", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                 }
+                CameraSwitchControl(enabled = cameraSelection.canSwitch && !cameraSelection.switching && !recording.isActive(), onClick = { if (!session.requestCameraSwitch()) permissionMessage = "Kamerawechsel derzeit nicht möglich." })
                 TextButton(onClick = onClose, enabled = !recording.isActive() || recording is LocalRecording.Failed, modifier = Modifier.heightIn(min = 48.dp)) { Text("Trennen") }
             }
+            Text(when {
+                recording.isActive() -> "Kamerawechsel während einer Aufnahme gesperrt."
+                cameraSelection.switching -> "Kamera wird gewechselt …"
+                cameraSelection.front == true -> "Frontkamera"
+                cameraSelection.front == false -> "Rückkamera"
+                else -> "Kamera wird vorbereitet …"
+            }, color = SoftText, style = MaterialTheme.typography.bodySmall)
+            cameraSelection.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             AppPanel {
                 Text("Aufnahme", style = MaterialTheme.typography.titleMedium)
                 when (val current = recording) {

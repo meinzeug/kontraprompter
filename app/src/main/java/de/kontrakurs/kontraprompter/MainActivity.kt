@@ -105,6 +105,7 @@ private fun KontraApp(activity: MainActivity) {
     val selected = scripts.find { it.id == selectedId } ?: scripts.first()
     var page by rememberSaveable { mutableStateOf("roles") }
     var session by remember { mutableStateOf<LiveSession?>(null) }
+    LaunchedEffect(page) { if (page == "roles") cameraPreferFront = preferences.getBoolean("camera_prefer_front", true) }
     val cloud: CloudUploadViewModel = viewModel()
     val studioClient = cloud.client
     var remoteEnabled by remember { mutableStateOf(false) }
@@ -426,7 +427,7 @@ private fun KontraApp(activity: MainActivity) {
                 Toggle("Text vertikal spiegeln", textV) { textV = it }
                 Action("Drehen: $textRotation°") { textRotation = (textRotation + 90) % 360 }
             }
-            "prompter" -> key(selected.id) { Prompter(selected.text, selected.generationNotice, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, pairedCapture, recordingScrollSync, selected.studioProjectId != null, { session?.pairedCapture?.toggle(selected.studioProjectId) }, { session?.pairedCapture?.request("stop") }, remoteActions) { playbackStatus = it } }
+            "prompter" -> key(selected.id) { Prompter(selected.text, selected.generationNotice, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, pairedCapture, recordingScrollSync, selected.studioProjectId != null, { session?.pairedCapture?.toggle(selected.studioProjectId) }, { session?.pairedCapture?.request("stop") }, { session?.pairedCapture?.request("switch_camera") }, remoteActions) { playbackStatus = it } }
         }
     }
     }
@@ -448,7 +449,7 @@ private fun Page(title: String, eyebrow: String, onBack: (() -> Unit)? = null, c
 }
 
 @Composable
-private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, pairedCapture: PairedCaptureState, recordingScrollSync: Boolean, cloudProjectLinked: Boolean, onCaptureToggle: () -> Unit, onCaptureStop: () -> Unit, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
+private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, pairedCapture: PairedCaptureState, recordingScrollSync: Boolean, cloudProjectLinked: Boolean, onCaptureToggle: () -> Unit, onCaptureStop: () -> Unit, onCameraSwitch: () -> Unit, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
     val remote = LocalRemoteIndicator.current
     val scroll = rememberScrollState(initialPosition)
     val density = LocalDensity.current.density
@@ -523,6 +524,14 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
                 Text(phase + if (pairedCapture.pending) " · Befehl ausstehend" else "", modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xe6202329)).padding(horizontal = 14.dp, vertical = 9.dp), color = if (pairedCapture.phase == "recording") Color(0xffffb2b2) else Color.White, style = MaterialTheme.typography.labelMedium)
                 if (controls) Text(if (cloudProjectLinked) "Studio-Skript zugeordnet · Speicherung auf der Kamera" else "Lokales Skript · Aufnahme bleibt zunächst auf der Kamera", modifier = Modifier.background(Color(0xe6202329)).padding(horizontal = 10.dp, vertical = 5.dp), color = Color.White, style = MaterialTheme.typography.bodySmall)
                 pairedCapture.message?.let { Text(it, modifier = Modifier.background(Color(0xe6202329)).padding(10.dp), color = Color.White, style = MaterialTheme.typography.bodySmall) }
+                if (controls) Text(when {
+                    pairedCapture.cameraSwitching -> "Kamera wird gewechselt …"
+                    pairedCapture.phase in setOf("preparing", "recording", "paused", "finalizing") -> "Kamerawechsel während Aufnahme gesperrt"
+                    pairedCapture.cameraFront == true -> "Frontkamera"
+                    pairedCapture.cameraFront == false -> "Rückkamera"
+                    else -> "Kamerastatus wird ermittelt …"
+                }, modifier = Modifier.background(Color(0xe6202329)).padding(horizontal = 10.dp, vertical = 5.dp), color = Color.White, style = MaterialTheme.typography.bodySmall)
+                pairedCapture.cameraError?.let { Text(it, modifier = Modifier.background(Color(0xe6202329)).padding(10.dp), color = Color.White, style = MaterialTheme.typography.bodySmall) }
             }
             if (controls) Text(
                 if (lanState.role.isEmpty()) "Offline-Prompter" else lanState.status + (lanState.rttMs?.let { " · RTT $it ms" } ?: ""),
@@ -538,6 +547,7 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
             val canToggle = pairedCapture.phase in setOf("idle", "ready", "partial", "failed", "recording", "paused") && !pairedCapture.pending
             Button(onClick = onCaptureToggle, enabled = canToggle, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(17.dp)) { Text(toggleLabel) }
             TextButton(onClick = onCaptureStop, enabled = !pairedCapture.pending && pairedCapture.phase in setOf("preparing", "recording", "paused"), modifier = Modifier.heightIn(min = 48.dp)) { Text("Stopp", color = Color.White) }
+            CameraSwitchControl(enabled = pairedCapture.cameraCanSwitch && !pairedCapture.pending && !pairedCapture.cameraSwitching && pairedCapture.phase in setOf("idle", "ready", "partial", "failed"), onClick = onCameraSwitch)
           }
           Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = back, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Editor", color = Color.White) }

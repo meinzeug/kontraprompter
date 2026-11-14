@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 sealed interface LocalRecording {
     data object Idle : LocalRecording
@@ -63,6 +65,7 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
 
     init {
         scope.launch { recording.collect { pairedCapture.changed() } }
+        scope.launch { cameraSelection.collect { pairedCapture.changed() } }
         lan.onReady = {
             val created = synchronized(guard) {
                 if (!mayCreateVideoPipeline(closed, lan.state.value.ready, _video.value != null)) null
@@ -97,7 +100,7 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
     }
 
     fun canStartRemoteRecording(): Boolean = synchronized(guard) {
-        host && !closed && !disconnected && !_cameraSelection.value.switching && _video.value != null && !_recording.value.isActive() &&
+        host && !closed && !disconnected && !_cameraSelection.value.switching && _cameraSelection.value.error == null && _video.value != null && !_recording.value.isActive() &&
             ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     }
 
@@ -129,7 +132,7 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
         val current: RtcVideo
         if (runCatching { UUID.fromString(id).toString() != id || (projectId != null && UUID.fromString(projectId).toString() != projectId) || RecordingOrigin.read(origin.wire, projectId) != origin }.getOrDefault(true)) return false
         synchronized(guard) {
-            if (!host || closed || disconnected || _cameraSelection.value.switching || !recordingOwnerAllowed(remoteExclusive, origin) || _recording.value.isActive() || (_recording.value as? LocalRecording.Failed)?.blocked == true) return false
+            if (!host || closed || disconnected || _cameraSelection.value.switching || _cameraSelection.value.error != null || !recordingOwnerAllowed(remoteExclusive, origin) || _recording.value.isActive() || (_recording.value as? LocalRecording.Failed)?.blocked == true) return false
             current = _video.value ?: return false
             stopWhenStarted = false
             pendingCameraFailure = null
@@ -164,20 +167,23 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
     }
 
     /** Returns admission immediately; completion is reported only after the camera callback. */
-    fun requestCameraSwitch(remoteOwner: Boolean = false, complete: (CameraSwitchResult) -> Unit = {}): Boolean = synchronized(guard) {
+    fun requestCameraSwitch(remoteOwner: Boolean = false, expectedCurrentFront: Boolean? = null, complete: (CameraSwitchResult) -> Unit = {}): Boolean = synchronized(guard) {
         val selection = _cameraSelection.value
         val current = _video.value
-        if (!cameraSwitchAllowed(host, closed, disconnected, remoteExclusive, remoteOwner, _recording.value.isActive(), selection.switching, selection.canSwitch) || current == null || selection.front == null) return false
-        val targetFront = !selection.front
+        if (!cameraSwitchAllowed(host, closed, disconnected, remoteExclusive, remoteOwner, _recording.value.isActive(), selection.switching, selection.canSwitch, selection.front, expectedCurrentFront) || current == null) return false
+        val currentFront = selection.front ?: return false
+        val targetFront = !currentFront
         _cameraSelection.value = selection.copy(switching = true, error = null)
-        val queued = current.switchCamera(targetFront) { front, error ->
+        val completed = AtomicBoolean(false)
+        val queued = current.switchCamera(targetFront) switchCallback@ { front, error ->
+            if (!completed.compareAndSet(false, true)) return@switchCallback
             val result = synchronized(guard) {
                 if (_video.value !== current || closed) {
                     CameraSwitchResult(false, null, "Kamerasitzung wurde beendet.")
                 } else if (error != null || front != targetFront) {
-                    val message = error ?: "Gewünschte Kamera wurde nicht bestätigt."
-                    _cameraSelection.value = selection.copy(switching = false, error = message)
-                    CameraSwitchResult(false, selection.front, message)
+                    val message = (error ?: "Gewünschte Kamera wurde nicht bestätigt.") + " Bitte Kamera erneut verbinden."
+                    _cameraSelection.value = selection.copy(front = null, canSwitch = false, switching = false, error = message)
+                    CameraSwitchResult(false, null, message)
                 } else {
                     _cameraSelection.value = selection.copy(front = targetFront, switching = false, error = null)
                     app.getSharedPreferences("prompter_settings", Context.MODE_PRIVATE).edit().putBoolean("camera_prefer_front", targetFront).apply()
@@ -186,15 +192,26 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
             }
             complete(result)
         }
-        if (!queued) _cameraSelection.value = selection.copy(error = "Kamerawechsel konnte nicht gestartet werden.")
+        if (!queued) _cameraSelection.value = selection.copy(error = "Kamerawechsel konnte nicht gestartet werden. Bitte Kamera erneut verbinden.")
+        else scope.launch {
+            delay(10_000)
+            synchronized(guard) {
+                if (!completed.get() && _video.value === current && !closed)
+                    _cameraSelection.value = _cameraSelection.value.copy(error = "Kamerawechsel nicht bestätigt. Bitte ggf. erneut verbinden.")
+            }
+        }
         queued
     }
 
     /** A timeout is not a success; the switch gate remains closed until the real callback. */
-    suspend fun switchRemoteCamera(): CameraSwitchResult = withTimeoutOrNull(10_000) {
+    suspend fun switchRemoteCamera(expectedCurrentFront: Boolean): CameraSwitchResult = withTimeoutOrNull(10_000) {
         suspendCancellableCoroutine { continuation ->
-            val accepted = requestCameraSwitch(remoteOwner = true) { result -> if (continuation.isActive) continuation.resume(result) }
-            if (!accepted && continuation.isActive) continuation.resume(CameraSwitchResult(false, null, "Kamerawechsel derzeit nicht möglich."))
+            val accepted = requestCameraSwitch(remoteOwner = true, expectedCurrentFront = expectedCurrentFront) { result -> if (continuation.isActive) continuation.resume(result) }
+            if (!accepted && continuation.isActive) {
+                val current = cameraSelection.value.front
+                val message = if (current != null && current != expectedCurrentFront) "Aktive Kamera hat sich geändert. Bitte Status aktualisieren." else "Kamerawechsel derzeit nicht möglich."
+                continuation.resume(CameraSwitchResult(false, current, message))
+            }
         }
     } ?: CameraSwitchResult(false, null, "Kamerawechsel nicht bestätigt; Status prüfen.")
 

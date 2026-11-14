@@ -14,6 +14,8 @@ import java.util.concurrent.atomic.AtomicLong
 internal data class PairedCaptureState(
     val phase: String = "unknown", val recordingId: String? = null,
     val pending: Boolean = false, val message: String? = null,
+    val cameraFront: Boolean? = null, val cameraCanSwitch: Boolean = false,
+    val cameraSwitching: Boolean = false, val cameraError: String? = null,
 )
 
 /** Commands are admitted only by the already-authenticated and approved LAN session. */
@@ -28,6 +30,7 @@ internal class PairedCapture(
     private val revision = AtomicLong()
     private var lastRevision = -1L
     private var pendingId: String? = null
+    private var pendingAction: String? = null
     private var timeout: Job? = null
     private val handled = PairedCommandLedger()
     private val _state = MutableStateFlow(PairedCaptureState())
@@ -51,7 +54,7 @@ internal class PairedCapture(
     }
 
     fun disconnected() = synchronized(lock) {
-        pendingId = null; timeout?.cancel(); timeout = null; lastRevision = -1L
+        pendingId = null; pendingAction = null; timeout?.cancel(); timeout = null; lastRevision = -1L
         _state.value = PairedCaptureState(message = "Kameraverbindung getrennt. Aufnahmezustand unbekannt.")
     }
 
@@ -71,20 +74,21 @@ internal class PairedCapture(
         if (host || !lan.state.value.ready || pendingId != null) return false
         val snapshot = _state.value
         if (!pairedActionAllowed(action, snapshot.phase, pending = false)) return false
+        if (action == "switch_camera" && (!snapshot.cameraCanSwitch || snapshot.cameraSwitching || snapshot.cameraFront == null)) return false
         val requestId = UUID.randomUUID().toString()
-        val recordingId = if (action == "start") UUID.randomUUID().toString() else snapshot.recordingId ?: return false
+        val recordingId = if (action == "start" || action == "switch_camera") UUID.randomUUID().toString() else snapshot.recordingId ?: return false
         val project = if (action == "start" && projectId != null) canonicalUuid(projectId) ?: return false else null
-        val message = JSONObject().put("request", requestId).put("action", action).put("recording", recordingId).apply { if (project != null) put("project", project) }.toString()
-        pendingId = requestId
+        val message = JSONObject().put("request", requestId).put("action", action).put("recording", recordingId).apply { if (project != null) put("project", project); if (action == "switch_camera") put("cameraFront", snapshot.cameraFront) }.toString()
+        pendingId = requestId; pendingAction = action
         _state.value = snapshot.copy(pending = true, message = null)
         if (!lan.send("capture_command", message)) {
-            pendingId = null; _state.value = snapshot.copy(message = "Kameraverbindung nicht verfügbar."); return false
+            pendingId = null; pendingAction = null; _state.value = snapshot.copy(message = "Kameraverbindung nicht verfügbar."); return false
         }
         timeout = scope.launch {
             delay(8_000)
             synchronized(lock) {
                 if (pendingId == requestId) {
-                    pendingId = null
+                    pendingId = null; pendingAction = null
                     _state.value = _state.value.copy(pending = false, message = "Keine Bestätigung. Bitte Kamerastatus prüfen; der Befehl wird nicht automatisch wiederholt.")
                     lan.send("capture_query", "")
                 }
@@ -105,12 +109,14 @@ internal class PairedCapture(
             val rawProject = data.optString("project", "")
             val project = if (rawProject.isEmpty()) null else canonicalUuid(rawProject) ?: return true
             if (action != "start" && project != null) return true
-            val accepted = handled.execute(request, PairedCommand(action, recording, project)) {
+            val expectedFront = if (action == "switch_camera") { data.opt("cameraFront") as? Boolean ?: return true } else null
+            val accepted = handled.execute(request, PairedCommand(action, recording, project, expectedFront)) {
                 when (action) {
                     "start" -> session.startRecording(recording, project, if (project == null) RecordingOrigin.LAN_UNASSIGNED else RecordingOrigin.LAN)
                     "pause" -> session.pauseRecording(recording)
                     "resume" -> session.resumeRecording(recording)
                     "stop" -> session.stopRecording(recording)
+                    "switch_camera" -> session.requestCameraSwitch(expectedCurrentFront = expectedFront)
                     else -> false
                 }
             }
@@ -122,8 +128,10 @@ internal class PairedCapture(
             val request = canonicalUuid(data.optString("request")) ?: return true
             synchronized(lock) {
                 if (isCurrentCaptureAck(pendingId, request)) {
-                    pendingId = null; timeout?.cancel(); timeout = null
-                    _state.value = _state.value.copy(pending = false, message = if (data.optBoolean("accepted", false)) null else "Befehl wurde von der Kamera nicht angenommen.")
+                    val wasSwitch = pendingAction == "switch_camera"
+                    val accepted = data.optBoolean("accepted", false)
+                    pendingId = null; pendingAction = null; timeout?.cancel(); timeout = null
+                    _state.value = _state.value.copy(pending = false, cameraSwitching = if (wasSwitch && accepted) true else _state.value.cameraSwitching, message = if (accepted) null else "Befehl wurde von der Kamera nicht angenommen.")
                 }
             }
             return true
@@ -139,7 +147,9 @@ internal class PairedCapture(
                 if (isNewCaptureStatus(rev, lastRevision)) {
                     lastRevision = rev
                     val failure = if (phase == "failed") data.optString("message").take(240).takeIf { it.isNotBlank() } else null
-                    _state.value = _state.value.copy(phase = phase, recordingId = id, message = failure ?: _state.value.message)
+                    val facing = when (data.optString("cameraFacing")) { "front" -> true; "back" -> false; else -> null }
+                    val cameraError = data.optString("cameraError").take(200).takeIf { it.isNotBlank() }
+                    _state.value = _state.value.copy(phase = phase, recordingId = id, message = failure ?: _state.value.message, cameraFront = facing, cameraCanSwitch = data.optBoolean("cameraCanSwitch", false), cameraSwitching = data.optBoolean("cameraSwitching", false), cameraError = cameraError)
                 }
             }
         }
@@ -159,7 +169,11 @@ internal class PairedCapture(
             is LocalRecording.Partial -> "partial" to recording.id
             is LocalRecording.Failed -> "failed" to recording.id
         }
+        val camera = session.cameraSelection.value
         val data = JSONObject().put("revision", revision.incrementAndGet()).put("phase", phase)
+            .put("cameraFacing", when (camera.front) { true -> "front"; false -> "back"; null -> "unknown" })
+            .put("cameraCanSwitch", camera.canSwitch).put("cameraSwitching", camera.switching)
+        camera.error?.let { data.put("cameraError", it.take(200)) }
         if (id != null) data.put("recording", id)
         if (recording is LocalRecording.Failed) data.put("message", recording.message.take(240))
         data.toString()
