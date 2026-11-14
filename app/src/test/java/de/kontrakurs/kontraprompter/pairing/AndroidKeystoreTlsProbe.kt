@@ -18,6 +18,8 @@ fun main() {
     val prefix = "kp-shell-tls-fixture-${UUID.randomUUID()}-"
     val aliases = listOf(prefix + "camera", prefix + "prompter")
     check(aliases.none(store::containsAlias))
+    // If the process is externally killed, the operator can identify only its own aliases.
+    println("TEST_ALIASES=${aliases.joinToString(",")}")
     try {
         for (alias in aliases) {
             val generator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore")
@@ -25,6 +27,10 @@ fun main() {
                 .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
                 .setDigests(KeyProperties.DIGEST_SHA256).build())
             generator.generateKeyPair()
+        }
+        for (alias in aliases) {
+            val privateKey = store.getKey(alias, null)
+            check(privateKey.encoded == null && privateKey.format == null)
         }
         fun pin(alias: String) = MessageDigest.getInstance("SHA-256").digest(store.getCertificate(alias).publicKey.encoded)
         val camera = PinnedPairingTls(store, null, pin(aliases[1]), aliases[0])
@@ -50,10 +56,25 @@ fun main() {
                 }
                 check(accepted.get(12, TimeUnit.SECONDS))
             }
+            fun pinError(error: Throwable?): Boolean = generateSequence(error) { it.cause }
+                .any { it.message?.contains("Gegenstelle nicht gepinnt") == true }
+            fun rejected(client: PinnedPairingTls, rejectedByServer: Boolean) {
+                camera.listen(loopback, 0, 10000).use { listener ->
+                    val accepted = worker.submit<Throwable?> { runCatching { listener.accept().use { } }.exceptionOrNull() }
+                    val clientError = runCatching { client.connect(loopback, listener.localPort, 10000).use { } }.exceptionOrNull()
+                    check(clientError != null)
+                    val serverError = accepted.get(12, TimeUnit.SECONDS)
+                    check(serverError != null)
+                    check(pinError(if (rejectedByServer) serverError else clientError))
+                }
+            }
+            rejected(PinnedPairingTls(store, null, ByteArray(32), aliases[1]), false)
+            rejected(PinnedPairingTls(store, null, pin(aliases[0]), aliases[0]), true)
         } finally { worker.shutdownNow() }
-        println("ANDROID_KEYSTORE_TLS13_OK")
     } finally {
         // The names were generated inside this process and confirmed absent before creation.
         aliases.forEach { alias -> if (store.containsAlias(alias)) store.deleteEntry(alias) }
+        check(aliases.none(store::containsAlias))
     }
+    println("ANDROID_KEYSTORE_TLS13_OK NEGATIVE_PINS_OK NON_EXPORTABLE_OK CLEANUP_OK")
 }
