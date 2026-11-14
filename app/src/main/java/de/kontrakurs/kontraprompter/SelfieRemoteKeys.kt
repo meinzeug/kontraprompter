@@ -17,6 +17,7 @@ internal fun isSelfieTrigger(
 
 internal fun isKeyboardShutterKey(keyCode: Int): Boolean = keyCode in setOf(23, 62, 66, 160)
 internal fun keyboardShutterAdmitted(keyCode: Int, ready: Boolean): Boolean = !isKeyboardShutterKey(keyCode) || ready
+internal fun keyboardEpochCurrent(expected: Any?, current: Any, ready: Boolean): Boolean = ready && expected != null && expected === current
 
 internal enum class ShutterKeyDecision { PASS, SHORT_PRESS, CONSUME }
 
@@ -42,6 +43,7 @@ internal class ShutterKeyTracker(private val maximumPressMs: Long = 500L) {
 
     @Synchronized fun clear() { pressed.clear() }
     @Synchronized fun clearDevice(deviceId: Int) { pressed.keys.removeAll { it.deviceId == deviceId } }
+    @Synchronized fun clearDescriptor(descriptor: String) { pressed.keys.removeAll { it.device == descriptor } }
 }
 
 /** Reference identity makes a disconnect/reconnect invalidate pending clicks. */
@@ -51,7 +53,7 @@ internal class ShutterLink(val state: Any) {
 }
 internal data class ShutterContext(
     val phase: String, val recordingId: String?, val projectId: String?,
-    val link: ShutterLink, val deviceId: Int, val descriptor: String, val keyboardBased: Boolean = false,
+    val link: ShutterLink, val deviceId: Int, val descriptor: String, val keyboardBased: Boolean = false, val keyboardEpoch: Any? = null,
 )
 internal enum class ShutterGesture { SINGLE, DOUBLE }
 internal enum class ShutterAction { START, SCROLL, CAPTURE_TOGGLE, NONE }
@@ -115,6 +117,10 @@ internal class ShutterClickMachine(private val windowMs: Long = 400L, private va
     }
 
     @Synchronized fun clear() { pending.clear(); cooldown.clear() }
+    @Synchronized fun clearDescriptor(descriptor: String) {
+        pending.entries.removeAll { it.value.context.descriptor == descriptor }
+        cooldown.keys.removeAll { it == descriptor || it.substringAfter(':', "") == descriptor }
+    }
     @Synchronized fun clearDevice(deviceId: Int) {
         pending.entries.removeAll { it.value.context.deviceId == deviceId }
         cooldown.entries.removeAll { it.value.deviceId == deviceId }
