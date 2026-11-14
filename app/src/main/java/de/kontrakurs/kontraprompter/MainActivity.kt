@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.view.WindowManager
 import android.view.KeyEvent
 import android.view.InputDevice
+import android.view.View
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -76,6 +77,20 @@ class MainActivity : ComponentActivity() {
     internal var shutterHandler: ((InputDevice, Int, Long) -> Unit)? = null
     private val shutterKeys = ShutterKeyTracker()
     internal var selectedVolumeRemote: String? = null
+    internal var shutterKeyboardReady by mutableStateOf(false)
+    private var shutterReadyView: View? = null
+    internal fun disarmKeyboardRemote(view: View? = null) {
+        if (view == null || view === shutterReadyView) { shutterKeyboardReady = false; shutterReadyView = null; clearShutterKeys() }
+    }
+    internal fun keyboardRemoteReadyFor(descriptor: String): Boolean = shutterKeyboardReady && selectedVolumeRemote == descriptor &&
+        shutterReadyView?.isFocused == true && shutterReadyView?.isAttachedToWindow == true && hasWindowFocus() && shutterHandler != null
+    internal fun armKeyboardRemote(view: View, descriptor: String) {
+        val connected = Build.VERSION.SDK_INT >= 29 && InputDevice.getDeviceIds().any { id -> InputDevice.getDevice(id)?.let { it.isExternal && !it.isVirtual && it.descriptor == descriptor } == true }
+        if (!connected || selectedVolumeRemote != descriptor || shutterHandler == null || !hasWindowFocus()) { disarmKeyboardRemote(); return }
+        shutterReadyView = view
+        shutterKeyboardReady = view.requestFocus() && view.isFocused
+        if (!shutterKeyboardReady) shutterReadyView = null
+    }
     internal fun clearShutterKeys() = shutterKeys.clear()
     internal fun clearShutterKeysForDevice(deviceId: Int) = shutterKeys.clearDevice(deviceId)
 
@@ -85,6 +100,7 @@ class MainActivity : ComponentActivity() {
         if (handler != null && device != null && Build.VERSION.SDK_INT >= 29 &&
             isSelfieTrigger(device.isExternal, device.isVirtual, device.vendorId, device.productId,
                 device.name, device.descriptor, selectedVolumeRemote, event.keyCode)) {
+            if (!keyboardShutterAdmitted(event.keyCode, keyboardRemoteReadyFor(device.descriptor))) { clearShutterKeys(); return true }
             when (shutterKeys.event(true, device.descriptor, event.keyCode, event.action, event.repeatCount, event.eventTime, event.isCanceled, device.id)) {
                 ShutterKeyDecision.SHORT_PRESS -> { handler(device, event.keyCode, event.eventTime); return true }
                 ShutterKeyDecision.CONSUME -> return true
@@ -92,6 +108,11 @@ class MainActivity : ComponentActivity() {
             }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) disarmKeyboardRemote()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -138,9 +159,9 @@ private fun KontraApp(activity: MainActivity) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val inputs = activity.getSystemService(Context.INPUT_SERVICE) as InputManager
         val inputListener = object : InputManager.InputDeviceListener {
-            override fun onInputDeviceAdded(deviceId: Int) = Unit
-            override fun onInputDeviceRemoved(deviceId: Int) { clicks.clearDevice(deviceId); activity.clearShutterKeysForDevice(deviceId) }
-            override fun onInputDeviceChanged(deviceId: Int) { clicks.clearDevice(deviceId); activity.clearShutterKeysForDevice(deviceId) }
+            override fun onInputDeviceAdded(deviceId: Int) { inputRefresh++ }
+            override fun onInputDeviceRemoved(deviceId: Int) { inputRefresh++; activity.disarmKeyboardRemote(); clicks.clearDevice(deviceId); activity.clearShutterKeysForDevice(deviceId) }
+            override fun onInputDeviceChanged(deviceId: Int) { inputRefresh++; activity.disarmKeyboardRemote(); clicks.clearDevice(deviceId); activity.clearShutterKeysForDevice(deviceId) }
         }
         val listening = activeSession != null && runCatching { inputs.registerInputDeviceListener(inputListener, Handler(Looper.getMainLooper())); true }.getOrDefault(false)
         activity.selectedVolumeRemote = selectedVolumeRemote
@@ -149,7 +170,8 @@ private fun KontraApp(activity: MainActivity) {
                 val now = current.pairedCapture.state.value
                 val input = InputDevice.getDevice(context.deviceId)
                 val deviceCurrent = input != null && input.isExternal && !input.isVirtual && input.descriptor == context.descriptor
-                if (!shutterContextCurrent(context, now.phase, now.recordingId, now.pending, current.lan.isApprovedConnection(context.link.state), deviceCurrent)) {
+                if ((context.keyboardBased && !activity.keyboardRemoteReadyFor(context.descriptor)) ||
+                    !shutterContextCurrent(context, now.phase, now.recordingId, now.pending, current.lan.isApprovedConnection(context.link.state), deviceCurrent)) {
                     current.pairedCapture.triggerUnavailable(); return
                 }
                 when (shutterAction(context, gesture)) {
@@ -162,7 +184,7 @@ private fun KontraApp(activity: MainActivity) {
                         val event = RemoteEvent("toggle", CompletableDeferred()) {
                             val state = current.pairedCapture.state.value
                             val device = InputDevice.getDevice(context.deviceId)
-                            shutterContextCurrent(context, state.phase, state.recordingId, state.pending, current.lan.isApprovedConnection(context.link.state),
+                            (!context.keyboardBased || activity.keyboardRemoteReadyFor(context.descriptor)) && shutterContextCurrent(context, state.phase, state.recordingId, state.pending, current.lan.isApprovedConnection(context.link.state),
                                 device != null && device.isExternal && !device.isVirtual && device.descriptor == context.descriptor)
                         }
                         try {
@@ -184,7 +206,7 @@ private fun KontraApp(activity: MainActivity) {
                 if (state.pending || marker == null || (state.phase in setOf("recording", "paused") && state.recordingId == null)) {
                     clicks.clear(); current.pairedCapture.triggerUnavailable()
                 } else {
-                    val context = ShutterContext(state.phase, state.recordingId, selected.studioProjectId, ShutterLink(marker), device.id, device.descriptor)
+                    val context = ShutterContext(state.phase, state.recordingId, selected.studioProjectId, ShutterLink(marker), device.id, device.descriptor, isKeyboardShutterKey(code))
                     val deviceKey = "${device.id}:${device.descriptor}"
                     when (val result = clicks.press(deviceKey, code, time, context)) {
                         is ShutterPress.Wait -> {
@@ -202,7 +224,7 @@ private fun KontraApp(activity: MainActivity) {
                 }
             }
         }
-        onDispose { activity.shutterHandler = null; activity.selectedVolumeRemote = null; if (listening) inputs.unregisterInputDeviceListener(inputListener); activity.clearShutterKeys(); clicks.clear(); scope.cancel() }
+        onDispose { activity.disarmKeyboardRemote(); activity.shutterHandler = null; activity.selectedVolumeRemote = null; if (listening) inputs.unregisterInputDeviceListener(inputListener); activity.clearShutterKeys(); clicks.clear(); scope.cancel() }
     }
     var recordings by remember { mutableStateOf<List<SavedRecording>>(emptyList()) }
     var unverified by remember { mutableStateOf<List<UnverifiedRecording>>(emptyList()) }
@@ -489,6 +511,7 @@ private fun KontraApp(activity: MainActivity) {
                 Text("Bei bestätigter Aufnahme startet oder pausiert der Text automatisch. Bei Stopp bleibt er stehen.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 Text("Bluetooth-Auslöser", style = MaterialTheme.typography.titleLarge)
                 Text("Vor der Aufnahme startet ein kurzer Druck die Kamera. Während der Aufnahme startet oder pausiert ein kurzer Druck nur den Teleprompter; ein schneller Doppeldruck pausiert oder setzt die Aufnahme fort. Der ITFIT Selfie P007 wird automatisch erkannt. Andere Auslöser mit Lautstärke- oder Tastatureingaben bitte unten auswählen. Eingebaute Tasten bleiben unverändert.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                Text("Für ausgewählte Auslöser mit Enter oder ähnlichen Tasten im Prompter zuerst „Enter-Auslöser nicht bereit – aktivieren“ antippen. Bei Fokusverlust erneut aktivieren.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 if (Build.VERSION.SDK_INT >= 29) {
                     val externalDevices = remember(inputRefresh) {
                         InputDevice.getDeviceIds().toList().mapNotNull { id -> InputDevice.getDevice(id) }.filter { it.isExternal && !it.isVirtual && it.descriptor.isNotBlank() }
@@ -525,7 +548,7 @@ private fun KontraApp(activity: MainActivity) {
                 Toggle("Text vertikal spiegeln", textV) { textV = it }
                 Action("Drehen: $textRotation°") { textRotation = (textRotation + 90) % 360 }
             }
-            "prompter" -> key(selected.id) { Prompter(selected.text, selected.generationNotice, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, pairedCapture, recordingScrollSync, selected.studioProjectId != null, { session?.pairedCapture?.toggle(selected.studioProjectId) }, { session?.pairedCapture?.request("stop") }, { session?.pairedCapture?.request("switch_camera") }, remoteActions) { playbackStatus = it } }
+            "prompter" -> key(selected.id) { Prompter(selected.text, selected.generationNotice, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, pairedCapture, recordingScrollSync, selected.studioProjectId != null, activity, selectedVolumeRemote, inputRefresh, { session?.pairedCapture?.toggle(selected.studioProjectId) }, { session?.pairedCapture?.request("stop") }, { session?.pairedCapture?.request("switch_camera") }, remoteActions) { playbackStatus = it } }
         }
     }
     }
@@ -547,8 +570,9 @@ private fun Page(title: String, eyebrow: String, onBack: (() -> Unit)? = null, c
 }
 
 @Composable
-private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, pairedCapture: PairedCaptureState, recordingScrollSync: Boolean, cloudProjectLinked: Boolean, onCaptureToggle: () -> Unit, onCaptureStop: () -> Unit, onCameraSwitch: () -> Unit, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
+private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, pairedCapture: PairedCaptureState, recordingScrollSync: Boolean, cloudProjectLinked: Boolean, activity: MainActivity, keyboardDescriptor: String?, inputRefresh: Int, onCaptureToggle: () -> Unit, onCaptureStop: () -> Unit, onCameraSwitch: () -> Unit, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
     val remote = LocalRemoteIndicator.current
+    val keyboardConnected = remember(keyboardDescriptor, inputRefresh) { Build.VERSION.SDK_INT >= 29 && keyboardDescriptor != null && InputDevice.getDeviceIds().any { id -> InputDevice.getDevice(id)?.let { it.isExternal && !it.isVirtual && it.descriptor == keyboardDescriptor } == true } }
     val scroll = rememberScrollState(initialPosition)
     val density = LocalDensity.current.density
     val scope = rememberCoroutineScope()
@@ -606,7 +630,7 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
                 Spacer(Modifier.height(400.dp))
             }
         }
-        if (controls || remote != null || notice?.needsAttention() == true || (lanState.role == "client" && lanState.ready && pairedCapture.phase in setOf("preparing", "recording", "paused", "finalizing"))) Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (controls || remote != null || notice?.needsAttention() == true || (lanState.role == "client" && lanState.ready && (keyboardDescriptor != null || pairedCapture.phase in setOf("preparing", "recording", "paused", "finalizing")))) Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (remote != null) RemoteBanner(remote)
             notice?.let { PrompterGenerationNotice(it) }
             if (lanState.role == "client" && lanState.ready) {
@@ -622,6 +646,7 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
                     else -> "Kamerastatus wird ermittelt …"
                 }
                 Text(phase + if (pairedCapture.pending) " · Befehl ausstehend" else "", modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xe6202329)).padding(horizontal = 14.dp, vertical = 9.dp), color = if (pairedCapture.phase == "recording") Color(0xffffb2b2) else Color.White, style = MaterialTheme.typography.labelMedium)
+                if (keyboardDescriptor != null && !controls) Text("Enter-Auslöser nicht bereit · Anzeige antippen und aktivieren", modifier = Modifier.background(Color(0xe6202329)).padding(10.dp), color = Color.White, style = MaterialTheme.typography.labelMedium)
                 if (controls) Text(if (cloudProjectLinked) "Studio-Skript zugeordnet · Speicherung auf der Kamera" else "Lokales Skript · Aufnahme bleibt zunächst auf der Kamera", modifier = Modifier.background(Color(0xe6202329)).padding(horizontal = 10.dp, vertical = 5.dp), color = Color.White, style = MaterialTheme.typography.bodySmall)
                 pairedCapture.message?.let { Text(it, modifier = Modifier.background(Color(0xe6202329)).padding(10.dp), color = Color.White, style = MaterialTheme.typography.bodySmall) }
                 if (controls) Text(when {
@@ -642,6 +667,7 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
         if (focusLine) Box(Modifier.align(Alignment.CenterStart).width(22.dp).height(3.dp).background(Red))
         if (remaining > 0) Text("$remaining", Modifier.align(Alignment.Center), color = Red, fontSize = 100.sp, fontWeight = FontWeight.Black)
         if (controls) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xf022252c)).padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+          if (lanState.role == "client" && lanState.ready && keyboardDescriptor != null) KeyboardRemoteReady(activity, keyboardDescriptor, keyboardConnected)
           if (lanState.role == "client" && lanState.ready) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             val toggleLabel = when (pairedCapture.phase) { "recording" -> "Aufnahme pausieren"; "paused" -> "Aufnahme fortsetzen"; else -> "Aufnahme starten" }
             val canToggle = pairedCapture.phase in setOf("idle", "ready", "partial", "failed", "recording", "paused") && !pairedCapture.pending

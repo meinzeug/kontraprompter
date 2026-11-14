@@ -6,14 +6,17 @@ internal fun isSelfieTrigger(
     descriptor: String, selectedDescriptor: String?, keyCode: Int,
 ): Boolean {
     if (!external || virtual || descriptor.isBlank()) return false
-    // Android KeyEvent constants; dedicated camera/focus/media trigger keys from external devices.
-    if (keyCode in setOf(27, 80, 85, 126, 127, 130)) return true
+    // Dedicated keys from other external devices require an explicit choice as well.
+    if (keyCode in setOf(27, 80, 85, 126, 127, 130)) return !selectedDescriptor.isNullOrBlank() && descriptor == selectedDescriptor
     // Keyboard-like buttons are accepted only from an explicitly selected external device.
-    if (keyCode in setOf(23, 62, 66, 160)) return !selectedDescriptor.isNullOrBlank() && descriptor == selectedDescriptor
+    if (isKeyboardShutterKey(keyCode)) return !selectedDescriptor.isNullOrBlank() && descriptor == selectedDescriptor
     if (keyCode !in setOf(24, 25)) return false
     val knownP007 = vendor == 0x0a5c && product == 0x0001 && name.equals("ITFIT Selfie P007", ignoreCase = true)
     return knownP007 || (!selectedDescriptor.isNullOrBlank() && descriptor == selectedDescriptor)
 }
+
+internal fun isKeyboardShutterKey(keyCode: Int): Boolean = keyCode in setOf(23, 62, 66, 160)
+internal fun keyboardShutterAdmitted(keyCode: Int, ready: Boolean): Boolean = !isKeyboardShutterKey(keyCode) || ready
 
 internal enum class ShutterKeyDecision { PASS, SHORT_PRESS, CONSUME }
 
@@ -48,7 +51,7 @@ internal class ShutterLink(val state: Any) {
 }
 internal data class ShutterContext(
     val phase: String, val recordingId: String?, val projectId: String?,
-    val link: ShutterLink, val deviceId: Int, val descriptor: String,
+    val link: ShutterLink, val deviceId: Int, val descriptor: String, val keyboardBased: Boolean = false,
 )
 internal enum class ShutterGesture { SINGLE, DOUBLE }
 internal enum class ShutterAction { START, SCROLL, CAPTURE_TOGGLE, NONE }

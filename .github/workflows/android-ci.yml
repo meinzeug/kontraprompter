@@ -3,7 +3,7 @@ name: Android test and unsigned APK
 on:
   push:
     branches:
-      - wip/ci-manual-remote-20261114
+      - wip/hid-visible-ready-20261114
 
 permissions:
   contents: read
