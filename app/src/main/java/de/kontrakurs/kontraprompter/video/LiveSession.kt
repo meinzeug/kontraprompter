@@ -32,6 +32,8 @@ internal fun shouldReleaseVideo(recording: LocalRecording, closed: Boolean, disc
 /** Reject callbacks observed after disconnection and never duplicate an existing capture owner. */
 internal fun mayCreateVideoPipeline(closed: Boolean, pairingReady: Boolean, videoExists: Boolean): Boolean =
     !closed && pairingReady && !videoExists
+internal fun recordingOwnerAllowed(remoteExclusive: Boolean, origin: RecordingOrigin): Boolean =
+    !remoteExclusive || origin == RecordingOrigin.WEB
 internal fun releaseBlockedRecording(state: LocalRecording, id: String): LocalRecording =
     if (state is LocalRecording.Failed && state.blocked && state.id == id) state.copy(blocked = false) else state
 
@@ -112,7 +114,7 @@ class LiveSession(context: Context, val host: Boolean) : AutoCloseable {
         val current: RtcVideo
         if (runCatching { UUID.fromString(id).toString() != id || (projectId != null && UUID.fromString(projectId).toString() != projectId) || RecordingOrigin.read(origin.wire, projectId) != origin }.getOrDefault(true)) return false
         synchronized(guard) {
-            if (!host || closed || disconnected || (remoteExclusive && projectId == null) || _recording.value.isActive() || (_recording.value as? LocalRecording.Failed)?.blocked == true) return false
+            if (!host || closed || disconnected || !recordingOwnerAllowed(remoteExclusive, origin) || _recording.value.isActive() || (_recording.value as? LocalRecording.Failed)?.blocked == true) return false
             current = _video.value ?: return false
             stopWhenStarted = false
             pendingCameraFailure = null
