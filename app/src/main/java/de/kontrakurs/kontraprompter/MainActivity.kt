@@ -210,6 +210,14 @@ private fun KontraApp(activity: MainActivity) {
     var keepAwake by rememberSaveable { mutableStateOf(preferences.getBoolean("awake", true)) }
     var fontSize by rememberSaveable { mutableFloatStateOf(preferences.getFloat("font", 44f)) }
     var speed by rememberSaveable { mutableFloatStateOf(preferences.getFloat("speed", 35f)) }
+    var reportedSpeed by remember { mutableFloatStateOf(speed) }
+    var reportedFontSize by remember { mutableFloatStateOf(fontSize) }
+    LaunchedEffect(speed, fontSize) {
+        // Do not advertise a just-assigned value before Compose has rendered it.
+        androidx.compose.runtime.withFrameNanos { }
+        androidx.compose.runtime.withFrameNanos { }
+        reportedSpeed = speed; reportedFontSize = fontSize
+    }
     var width by rememberSaveable { mutableFloatStateOf(preferences.getFloat("width", .9f)) }
     var lineSpacing by rememberSaveable { mutableFloatStateOf(preferences.getFloat("line", 1.25f)) }
     var textH by rememberSaveable { mutableStateOf(preferences.getBoolean("textH", false)) }
@@ -240,7 +248,7 @@ private fun KontraApp(activity: MainActivity) {
             while (isActive) {
                 try {
                     val started = android.os.SystemClock.elapsedRealtime()
-                    val commands = studioClient.pollDevice(deviceId, android.os.Build.MODEL, if (page == "prompter") playbackStatus else "Bereit", acknowledged)
+                    val commands = studioClient.pollDevice(deviceId, android.os.Build.MODEL, if (page == "prompter") playbackStatus else "Bereit", acknowledged, reportedSpeed, reportedFontSize)
                     acknowledged.clear()
                     remoteStatus = "Verbunden"
                     for (command in commands) {
@@ -254,6 +262,18 @@ private fun KontraApp(activity: MainActivity) {
                                     val copy = Script(title = project.title, text = project.text, generationNotice = project.generationNotice, studioProjectId = project.id)
                                     scripts = scripts + copy; repository.save(scripts); select(copy.id)
                                     page = "prompter"
+                                }
+                                "set_speed", "set_font_size" -> {
+                                    val value = remotePrompterValue(command.type, command.value) ?: continue
+                                    val remaining = (deadline - android.os.SystemClock.elapsedRealtime()).coerceIn(0, 5000)
+                                    val completed = withTimeoutOrNull(remaining) {
+                                        if (command.type == "set_speed") speed = value else fontSize = value
+                                        // Wait for composition and a subsequent frame before acknowledging.
+                                        androidx.compose.runtime.withFrameNanos { }
+                                        androidx.compose.runtime.withFrameNanos { }
+                                        if (command.type == "set_speed") speed == value else fontSize == value
+                                    } == true
+                                    if (!completed) break
                                 }
                                 "play", "pause", "reset" -> {
                                     if (page != "prompter") page = "prompter"
