@@ -397,35 +397,8 @@ class StudioClient {
     }
 
     suspend fun pollDevice(id: String, name: String, status: String, acknowledged: List<String>, speed: Float, fontSize: Float): List<StudioCommand> = withContext(Dispatchers.IO) {
-        require(speed.isFinite() && speed in 5f..160f && fontSize.isFinite() && fontSize in 20f..100f)
         val session = cookie.get() ?: throw IllegalStateException("Bitte erneut anmelden.")
-        val connection = open("/api/devices/poll", "POST")
-        try {
-            connection.setRequestProperty("Cookie", session)
-            connection.setRequestProperty("Origin", BASE)
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            connection.doOutput = true
-            val payload = JSONObject().put("id", id).put("name", name.take(80)).put("role", "prompter").put("status", status.take(120)).put("ack", JSONArray(acknowledged))
-                .put("controls", JSONObject().put("speed", speed.toDouble()).put("fontSize", fontSize.toDouble()))
-            connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
-            if (connection.responseCode == 401 || connection.responseCode == 403) { cookie.invalidate(session); throw IllegalStateException("Studio-Sitzung abgelaufen.") }
-            if (connection.responseCode != 200) throw IllegalStateException("Fernsteuerung nicht erreichbar.")
-            val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
-                val result = StringBuilder(); val block = CharArray(1024)
-                while (true) { val count = input.read(block); if (count < 0) break; check(result.length + count <= 16_384); result.append(block, 0, count) }
-                result.toString()
-            }
-            check(cookie.get() == session) { "Studio-Sitzung hat sich geändert." }
-            val array = JSONObject(text).getJSONArray("commands"); check(array.length() <= 1)
-            (0 until array.length()).map { i -> array.getJSONObject(i).let { item ->
-                val raw = if (item.isNull("value")) null else item.get("value")
-                check(raw == null || raw is Number) { "Ungültiger Fernsteuerungswert." }
-                val id = item.getString("id"); val type = item.getString("type"); val remaining = item.getLong("remainingMs")
-                check(runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false) && remaining in 0..10_000)
-                check(type in setOf("load", "play", "pause", "reset", "set_speed", "set_font_size"))
-                StudioCommand(id, type, item.optString("projectId", ""), remaining, (raw as? Number)?.toDouble())
-            } }
-        } finally { connection.disconnect() }
+        pollPrompterDevice(::open, BASE, session, { cookie.get() == session }, { cookie.invalidate(session) }, id, name, status, acknowledged, speed, fontSize)
     }
 
     private fun open(path: String, method: String): HttpURLConnection = (URL(BASE + path).openConnection() as HttpURLConnection).apply {
@@ -438,7 +411,6 @@ class StudioClient {
 }
 
 data class StudioProject(val id: String, val title: String, val text: String, val generationNotice: GenerationNotice = GenerationNotice(GenerationNoticeStatus.UNKNOWN))
-data class StudioCommand(val id: String, val type: String, val projectId: String, val remainingMs: Long, val value: Double? = null)
 internal class UploadException(val kind: String, message: String) : IOException(message)
 internal class CameraDeviceTicketException(message: String) : IOException(message)
 internal class CameraProtocolConflictException(message: String) : IOException(message)
