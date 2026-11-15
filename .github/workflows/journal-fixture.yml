@@ -20,7 +20,8 @@ jobs:
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;35.0.0"'
       - name: Run JVM tests and compile isolated instrumentation APKs
         run: |
-          ./gradlew --no-daemon --max-workers=1 --stacktrace :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+          ./gradlew --no-daemon --max-workers=1 --stacktrace :app:testDebugUnitTest
+          ./gradlew --no-daemon --max-workers=1 --stacktrace -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8" :app:assembleDebug :app:assembleDebugAndroidTest
           sha256sum app/build/outputs/apk/debug/*.apk app/build/outputs/apk/androidTest/debug/*.apk
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
