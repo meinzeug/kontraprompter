@@ -32,27 +32,31 @@ import de.kontrakurs.kontraprompter.parseGenerationNotice
 import de.kontrakurs.kontraprompter.requireProjectString
 
 /** HTTPS-only, in-memory session. No password or session cookie is persisted. */
-class StudioClient {
+class StudioClient private constructor(internal val cookie: SessionCookie) {
+    constructor() : this(SessionCookie())
+    internal constructor(registry: SessionRegistry, owner: SessionOwner) : this(registry.slot(owner))
     companion object { private const val BASE = "https://videomaker.dorfspy.de" }
-    private val cookie = SessionCookie()
 
     /** Reports only whether this app process currently holds a studio session. */
     fun hasSession(): Boolean = cookie.get() != null
 
     /** Kept only for the duration of one manual continuation attempt. */
-    internal class ManualUploadSession internal constructor(internal val cookie: String)
+    internal class ManualUploadSession internal constructor(internal val snapshot: SessionCookie.Snapshot) {
+        internal val cookie: String get() = snapshot.value
+    }
     internal fun manualUploadSession(): ManualUploadSession? = cookie.get()?.let(::ManualUploadSession)
-    internal fun manualUploadSessionMatches(session: ManualUploadSession): Boolean = cookie.get() == session.cookie
+    internal fun manualUploadSessionMatches(session: ManualUploadSession): Boolean = cookie.isCurrent(session.snapshot)
     /** Random bearer sessions are bound only by a one-way, domain-separated digest. */
     internal fun manualUploadSessionBinding(session: ManualUploadSession): String =
         hex(MessageDigest.getInstance("SHA-256").digest(("kontraprompter-manual-upload-session-v1\u0000" + session.cookie).toByteArray(Charsets.UTF_8)))
 
     /** A short-lived proof is kept only in memory and bound to the current studio login. */
-    internal class CameraDeviceTicket internal constructor(internal val deviceId: String, internal val value: String, internal val studioSession: String, internal val expiresAt: Long)
+    internal class CameraDeviceTicket internal constructor(internal val deviceId: String, internal val value: String, internal val studioSession: SessionCookie.Snapshot, internal val expiresAt: Long)
 
     suspend fun login(password: String): Unit = withContext(Dispatchers.IO) {
-        cookie.set(null)
-        val connection = open("/api/login", "POST")
+        val attempt = cookie.beginLogin()
+        val connection = try { open("/api/login", "POST") }
+            catch (error: Exception) { cookie.abandon(attempt); throw error }
         try {
             connection.doOutput = true
             connection.setRequestProperty("Origin", BASE)
@@ -62,15 +66,15 @@ class StudioClient {
             val session = connection.headerFields.entries.filter { it.key.equals("Set-Cookie", true) }
                 .flatMap { it.value }.map { it.substringBefore(';') }.firstOrNull { it.startsWith("kontrakurs_session=") }
                 ?: throw IllegalStateException("Der Server hat keine Sitzung eingerichtet.")
-            cookie.set(session)
-        } finally { connection.disconnect() }
+            check(cookie.complete(attempt, session)) { "Anmeldung durch neuere Aktion ersetzt." }
+        } finally { cookie.abandon(attempt); connection.disconnect() }
     }
 
     suspend fun projects(): List<StudioProject> = withContext(Dispatchers.IO) {
         val connection = open("/api/projects", "GET")
         try {
             val session = cookie.get() ?: throw IllegalStateException("Bitte erneut anmelden.")
-            connection.setRequestProperty("Cookie", session)
+            connection.setRequestProperty("Cookie", session.value)
             if (connection.responseCode == 401) { cookie.invalidate(session); throw IllegalStateException("Sitzung abgelaufen. Bitte erneut anmelden.") }
             if (connection.responseCode != 200) throw IllegalStateException("Skripte konnten nicht geladen werden.")
             val array = JSONArray(connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
@@ -99,7 +103,7 @@ class StudioClient {
             connection.doOutput = true; connection.setFixedLengthStreamingMode(payload.size)
             connection.outputStream.use { it.write(payload) }
             val code = connection.responseCode
-            if (code == 401 || code == 403) { cookie.invalidate(requiredSession.cookie); throw UploadException("auth", "Studio-Sitzung abgelaufen. Bitte erneut anmelden.") }
+            if (code == 401 || code == 403) { cookie.invalidate(requiredSession.snapshot); throw UploadException("auth", "Studio-Sitzung abgelaufen. Bitte erneut anmelden.") }
             if (code == 409) throw UploadException("conflict", "Das Aufnahmeprojekt kann nicht eindeutig zugeordnet werden. Das Original bleibt lokal.")
             if (code !in setOf(200, 201)) throw UploadException("uncertain", "Aufnahmeprojekt nicht bestätigt (HTTP $code). Das Original bleibt lokal.")
             val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
@@ -124,7 +128,7 @@ class StudioClient {
             try {
                 if (recording.partial) throw UploadException("partial", "Unvollständige Teilvideos können derzeit nur lokal exportiert werden.")
                 val session = cookie.get() ?: throw UploadException("auth", "Bitte erneut bei Videomaker anmelden.")
-                if (requiredSession != null && requiredSession.cookie != session) throw UploadException("auth", "Die Studio-Sitzung hat sich geändert. Bitte erneut anmelden.")
+                if (requiredSession != null && requiredSession.snapshot !== session) throw UploadException("auth", "Die Studio-Sitzung hat sich geändert. Bitte erneut anmelden.")
                 fun ensureSession() {
                     if (cookie.get() != session) throw UploadException("auth", "Studio-Sitzung geändert; Serverbeleg prüfen. Die Aufnahme bleibt lokal.")
                 }
@@ -154,7 +158,7 @@ class StudioClient {
                         }
                     }, 5, 5, TimeUnit.SECONDS)
                     connection.readTimeout = 120_000
-                    connection.setRequestProperty("Cookie", session)
+                    connection.setRequestProperty("Cookie", session.value)
                     connection.setRequestProperty("Origin", BASE)
                     connection.setRequestProperty("Content-Type", "video/mp4")
                     connection.setRequestProperty("X-Recording-Id", entry.uploadId)
@@ -197,6 +201,8 @@ class StudioClient {
                     check(rawSize is Int || rawSize is Long) { "Serverbestätigung ist ungültig." }
                     val receipt = UploadReceipt(response.getString("id"), response.getString("projectId"), (rawSize as Number).toLong(), response.getString("sha256"))
                     check(receiptMatches(entry, receipt)) { "Serverbestätigung stimmt nicht mit der Aufnahme überein." }
+                    // The later coordinator journal write still needs its own logout fence.
+                    ensureSession()
                     if (delivered.compareAndSet(false, true) && continuation.isActive) continuation.resume(Unit)
                 } catch (error: IOException) {
                     if (error is UploadException) throw error
@@ -213,7 +219,7 @@ class StudioClient {
 
     private fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-    private fun uploadFailure(status: Int, session: String, connection: HttpURLConnection, cameraClaim: Boolean): UploadException = when (status) {
+    private fun uploadFailure(status: Int, session: SessionCookie.Snapshot, connection: HttpURLConnection, cameraClaim: Boolean): UploadException = when (status) {
         401, 403 -> { cookie.invalidate(session); UploadException("auth", "Sitzung abgelaufen. Bitte erneut anmelden.") }
         404 -> UploadException("project_missing", "Skript nicht gefunden oder Upload-Endpunkt nicht verfügbar. Die Aufnahme bleibt lokal.")
         409 -> {
@@ -258,7 +264,7 @@ class StudioClient {
         val connection = open("/api/camera-preview/device", "POST")
         try {
             connection.connectTimeout = 3000; connection.readTimeout = 3000
-            connection.setRequestProperty("Cookie", ticket.studioSession)
+            connection.setRequestProperty("Cookie", ticket.studioSession.value)
             connection.setRequestProperty("X-Camera-Device-Ticket", ticket.value)
             connection.setRequestProperty("Origin", BASE)
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -292,7 +298,7 @@ class StudioClient {
                 .put("sizeBytes", request.report.sizeBytes ?: JSONObject.NULL).put("sha256", request.report.sha256 ?: JSONObject.NULL).put("ack", ack)
                 .toString().toByteArray(Charsets.UTF_8)
             check(body.size <= 8192)
-            connection.setRequestProperty("Cookie", session)
+            connection.setRequestProperty("Cookie", session.value)
             if (ticket != null) {
                 check(session == ticket.studioSession)
                 connection.setRequestProperty("X-Camera-Device-Ticket", ticket.value)
@@ -362,7 +368,7 @@ class StudioClient {
         CameraDeviceTicket(identity.id, value, session, expiresAt)
     }
 
-    private fun cameraProof(identity: CameraDeviceIdentity, action: String, session: String): JSONObject {
+    private fun cameraProof(identity: CameraDeviceIdentity, action: String, session: SessionCookie.Snapshot): JSONObject {
         check(cookie.get() == session)
         val started = android.os.SystemClock.elapsedRealtime()
         val challenge = try { cameraJsonPost("/api/camera-devices/pairing/challenge", session, JSONObject().put("deviceId", identity.id).put("action", action)) }
@@ -378,12 +384,12 @@ class StudioClient {
             .put("challengeId", challengeId).put("payload", encode(payload)).put("signature", encode(signature)))
     }
 
-    private fun cameraJsonPost(path: String, session: String, body: JSONObject): JSONObject {
+    private fun cameraJsonPost(path: String, session: SessionCookie.Snapshot, body: JSONObject): JSONObject {
         check(cookie.get() == session) { "Studio-Sitzung hat sich geändert." }
         val connection = open(path, "POST")
         try {
             val bytes = body.toString().toByteArray(Charsets.UTF_8); check(bytes.size <= 8192)
-            connection.setRequestProperty("Cookie", session); connection.setRequestProperty("Origin", BASE)
+            connection.setRequestProperty("Cookie", session.value); connection.setRequestProperty("Origin", BASE)
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             connection.doOutput = true; connection.setFixedLengthStreamingMode(bytes.size)
             connection.outputStream.use { it.write(bytes) }
@@ -407,7 +413,7 @@ class StudioClient {
         val session = cookie.get() ?: throw IllegalStateException("Bitte erneut anmelden.")
         val connection = open("/api/devices/poll", "POST")
         try {
-            connection.setRequestProperty("Cookie", session)
+            connection.setRequestProperty("Cookie", session.value)
             connection.setRequestProperty("Origin", BASE)
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             connection.doOutput = true

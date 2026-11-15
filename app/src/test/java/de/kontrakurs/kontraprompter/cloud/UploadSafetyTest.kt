@@ -15,11 +15,11 @@ class UploadSafetyTest {
     }
     @Test fun `late unauthorized response cannot clear a newer session`() {
         val cookie = SessionCookie()
-        cookie.set("old")
+        cookie.complete(cookie.beginLogin(), "old")
         val oldRequest = cookie.get()!!
-        cookie.set("new")
+        cookie.complete(cookie.beginLogin(), "new")
         cookie.invalidate(oldRequest)
-        assertEquals("new", cookie.get())
+        assertEquals("new", cookie.get()?.value)
         cookie.invalidate(cookie.get()!!)
         assertNull(cookie.get())
     }
