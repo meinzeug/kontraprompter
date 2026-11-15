@@ -50,8 +50,8 @@ vergleicht die unter denselben Werkzeugversionen neu erzeugten Bytes mit dem
 Asset, ohne es zu verändern. CI prüft die Größe und den SHA-256-Wert sowohl
 vor dem Build als auch in der Test-APK. Auf dem Entwicklungsrechner lieferte
 das vorhandene Linux-Vosk 0.3.45 mit dem Modell genau die vorgegebene Wortfolge;
-das Android-AAR und die Geräte wurden mit dieser Sprachdatei noch nicht
-ausgeführt. Der exakte Solltexttest misst eine einzige synthetische Stimme und
+anschließend wurde die Datei mit dem Android-AAR auf beiden Geräten geprüft,
+wie unten dokumentiert. Der exakte Solltexttest misst eine einzige synthetische Stimme und
 beweist keine allgemeine Sprachqualität, Aufnahmeanbindung oder Echtzeitfähigkeit.
 
 Die Klasse `Recognizer` des geprüften AAR deklariert den nativen PCM-Rückgabewert
@@ -65,9 +65,9 @@ Ein späterer Bau vom Hauptverzeichnis des Speech-WIP aus wäre beispielsweise
 `./gradlew -p experiments/vosk-android-fixture :app:assembleDebug :app:assembleDebugAndroidTest`.
 Ein solcher Build lädt gegebenenfalls Abhängigkeiten und muss bei knappen
 Ressourcen abgestimmt werden. Der Instrumentierungslauf würde eine separate
-Fixture-App und Test-APK auf einem geeigneten Testgerät installieren und ist
-hier ausdrücklich **noch nicht ausgeführt oder freigegeben**. Eine vollständige
-Analyse der aufgelösten Abhängigkeiten steht noch aus.
+Fixture-App und Test-APK auf einem geeigneten Testgerät installieren. Die unten
+dokumentierten Tests wurden isoliert ausgeführt; eine Produktionsfreigabe und
+vollständige Analyse der aufgelösten Abhängigkeiten stehen noch aus.
 
 Auf dem Speech-WIP baut der Workflow `.github/workflows/vosk-fixture.yml`
 ausschließlich diese isolierte App und ihre Test-APK, ohne das Modell zu
@@ -106,9 +106,8 @@ App-APK: 40.926.499 Bytes, SHA-256
 Test-APK einschließlich geprüftem Modell und synthetischem Sprachasset:
 47.742.005 Bytes, SHA-256
 `b6d2cc61b5566cd7f263c06182430483355a7762a7cb558bfcbfdb4b78caffef`.
-Beide Manifeste bleiben ohne Mikrofon- und Internetberechtigung. Dieses
-erweiterte Sprachfixture wurde noch auf keinem Gerät installiert oder
-ausgeführt.
+Beide Manifeste bleiben ohne Mikrofon- und Internetberechtigung. Die späteren
+isolierten Gerätetests dieses erweiterten Fixtures stehen unten.
 
 Falls die beiden separaten Fixture-APKs später auf einem geeigneten Testgerät
 installiert werden, lautet der gezielte Aufruf (Geräteseriennummer einsetzen):
@@ -117,8 +116,7 @@ installiert werden, lautet der gezielte Aufruf (Geräteseriennummer einsetzen):
 adb -s SERIAL shell am instrument -w -r -e class de.kontrakurs.voskfixture.OfflineVoskInstrumentedTest de.kontrakurs.voskfixture.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-Dieser Aufruf setzt die gesonderte Installation voraus und wurde noch nicht
-ausgeführt. Das Modell wird dabei in ein neu angelegtes privates Cacheverzeichnis
+Dieser Aufruf setzt die gesonderte Installation voraus. Das Modell wird dabei in ein neu angelegtes privates Cacheverzeichnis
 der Fixture-App entpackt; der Test entfernt es nicht eigenmächtig.
 
 ## Isolierter Gerätetest vom 15. November 2026
@@ -143,6 +141,25 @@ der Test speist ausschließlich künstliche Stille ein. Das Ergebnis belegt die
 Modellinitialisierung und Verarbeitung dieses Testsignals auf beiden Geräten.
 Es belegt kein Sprachverständnis, keine Recorder- oder Prompteranbindung, keine
 Latenz unter Echtzeitlast und keinen sicheren Produktionsbetrieb.
+
+## Isolierter Gerätetest mit synthetischem Deutsch
+
+Die oben dokumentierten erweiterten CI-APKs mit den SHA-256-Werten
+`d927a0bc1f4835d0011f28867bdca413914c076a92b22de0fba59ff5be569aa6` und
+`b6d2cc61b5566cd7f263c06182430483355a7762a7cb558bfcbfdb4b78caffef`
+wurden anschließend getrennt auf beiden Geräten getestet. Der eine jeweilige
+Instrumentierungstest umfasst künstliche Stille und die exakte Erkennung des
+fest vorgegebenen synthetischen deutschen Satzes:
+
+- Samsung `R5CR60Q07YN`: erfolgreich, 1 Test in 9,568 Sekunden.
+- Xiaomi `HEHU4TQSINOJEQG6`: erfolgreich, 1 Test in 14,782 Sekunden.
+
+Die Xiaomi-Systemdialoge für beide Fixture-Pakete wurden gezielt bestätigt;
+eine dauerhafte Systemeinstellung wurde nicht geändert. Anschließend wurden
+beide separaten Fixture-Pakete samt ausschließlich eigenem Cache entfernt.
+KontraPrompter läuft weiter; Kamera-Verbindung und Studio wurden bestätigt.
+Dies ist kein Test einer echten Stimme, eines Live-Mikrofons, von
+Decoderfehlern oder einer Echtzeit-Recorderintegration.
 
 Der isolierte CI-Run 43673659245 zum Commit `e76fa04` war erfolgreich. Die
 Fixture-App hat 40.926.499 Bytes, SHA-256
