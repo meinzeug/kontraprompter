@@ -1,0 +1,30 @@
+<resources>
+    <string name="studio_title">Deine Studio-Skripte</string>
+    <string name="studio_eyebrow">VIDEOMAKER</string>
+    <string name="studio_description">Öffne ein Skript aus deinem Studio auf diesem Gerät.</string>
+    <string name="studio_connection_check">Studio-Verbindung wird geprüft …</string>
+    <string name="studio_sign_in_title">Mit deinem Studio verbinden</string>
+    <string name="studio_sign_in_description">Melde dich mit deinem Videomaker-Passwort an.</string>
+    <string name="studio_password">Studio-Passwort</string>
+    <string name="studio_connecting">Verbinde …</string>
+    <string name="studio_reconnect">Erneut verbinden</string>
+    <string name="studio_sign_in">Anmelden</string>
+    <string name="studio_remote_title">Web-Fernsteuerung</string>
+    <string name="studio_scripts_title">Skripte</string>
+    <string name="studio_loading">Lade …</string>
+    <string name="studio_refresh">Skripte aktualisieren</string>
+    <string name="studio_empty">Im Studio sind noch keine Skripte gespeichert.</string>
+    <string name="studio_copy_note">Beim Öffnen wird eine lokale Kopie erstellt. Änderungen werden nicht ins Studio zurückgeschrieben.</string>
+    <string name="upload_title">Video zu Videomaker</string>
+    <string name="upload_eyebrow">CLOUD-UPLOAD</string>
+    <string name="upload_description">Wähle ausdrücklich das Skript, zu dem dieses Video gehören soll.</string>
+    <string name="upload_original_note">Das Original bleibt auf diesem Gerät. Ein Cloud-Erfolg erscheint erst nach bestätigter Prüfung des Servers.</string>
+    <string name="upload_sign_in_title">Bei Videomaker anmelden</string>
+    <string name="upload_choose_script">Skript auswählen</string>
+    <string name="upload_empty">Keine Skripte vorhanden.</string>
+    <string name="upload_choose_target">Als Ziel auswählen</string>
+    <string name="upload_send">Video hochladen</string>
+    <string name="upload_cancel">Upload abbrechen</string>
+    <string name="upload_change_script">Anderes Skript wählen</string>
+    <string name="upload_checking">Uploadstatus wird geprüft …</string>
+</resources>
