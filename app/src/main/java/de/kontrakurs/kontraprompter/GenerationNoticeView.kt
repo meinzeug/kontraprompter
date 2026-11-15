@@ -11,8 +11,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -52,7 +55,11 @@ internal fun PrompterGenerationNotice(notice: GenerationNotice, compact: Boolean
         notice.messages.forEach { append(it); append(". ") }
         append("Hinweise beziehen sich auf die Erstellung und sind keine Freigabe. Details öffnen.")
     }
-    val accessible = if (compact) Modifier.semantics(mergeDescendants = true) { contentDescription = accessibilityText } else Modifier
+    val accessible = if (compact) Modifier.clearAndSetSemantics {
+        contentDescription = accessibilityText
+        role = Role.Button
+        onClick(label = "Details öffnen") { details = true; true }
+    } else Modifier
     Surface(color = Color(0xf029241c), shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Color(0xffa88041)),
         modifier = Modifier.fillMaxWidth().then(accessible).clickable { details = true }) {
         if (compact) {
