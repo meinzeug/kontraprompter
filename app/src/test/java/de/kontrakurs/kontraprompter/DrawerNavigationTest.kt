@@ -28,6 +28,15 @@ class DrawerNavigationTest {
         }
         assertFalse(mayDisconnectRemote(ready = false, pending = false, phase = "unknown"))
     }
+    @Test fun recoveryIsBoundToSessionGenerationAndBothSnapshots() {
+        val session = Any()
+        val captured = RecoverySnapshot(session, 3L, "offline", "unknown")
+        assertTrue(captured.matches(session, 3L, "offline", "unknown"))
+        assertFalse(captured.matches(Any(), 3L, "offline", "unknown"))
+        assertFalse(captured.matches(session, 4L, "offline", "unknown"))
+        assertFalse(captured.matches(session, 3L, "connected", "unknown"))
+        assertFalse(captured.matches(session, 3L, "offline", "recording"))
+    }
     @Test fun cameraCannotReplaceAnExistingSession() {
         assertFalse(mayStartCamera(sessionPresent = true))
         assertTrue(mayStartCamera(sessionPresent = false))
