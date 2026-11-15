@@ -107,7 +107,7 @@ internal fun finishCameraAdmission(state: CameraDecisionState, command: CameraCo
     val decision = state.decisions.firstOrNull { it.command.id == command.id } ?: error("Unknown command")
     check(decision.command == command && decision.result == "admitting" && decision.revision < Long.MAX_VALUE)
     return state.copy(decisions = state.decisions.map { if (it.command.id == command.id)
-        it.copy(result = if (admitted) "accepted" else "uncertain", pendingAck = true, revision = it.revision + 1) else it })
+        it.copy(result = if (!admitted) "uncertain" else if (command.type == "record_start") "enqueued" else "accepted", pendingAck = true, revision = it.revision + 1) else it })
 }
 
 /** A crash between journal and actuator is indistinguishable from partial execution. */

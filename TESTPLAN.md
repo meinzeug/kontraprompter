@@ -73,9 +73,11 @@ Die oben nicht ausdrücklich als durchgeführt genannten Tests sind weiterhin **
 ### Kamera-v4-Admission: isolierter Entwicklungsstand
 
 Nicht aktiviert: Der Journalzustand `admitting` wird vor einer LiveSession-Aktion
-persistiert; nach positiver Rückgabe folgt `accepted`, nach Fehlschlag oder
+persistiert; nach Einreihung eines Starts folgt `enqueued`, für andere positiv
+bestätigte Aktionen `accepted`, nach Fehlschlag oder
 Neustart `uncertain`. Ein ungewisses Kommando darf nicht erneut ausgeführt
-werden. STOP bleibt aufnahmegebunden und unabhängig wiederholbar. `accepted`
+werden. STOP bleibt aufnahmegebunden und unabhängig wiederholbar. `enqueued` bestätigt nur die
+Executor-Warteschlange, keinen gestarteten Recorder. `accepted`
 ist kein Nachweis einer fertigen Aufnahme. Das Web muss v4 ausdrücklich
 unterstützen; ältere Server können HTTP 400/404 liefern und dürfen deshalb
 keinen impliziten Recorder-Stopp auslösen. Die bisherigen JVM-Modelltests und

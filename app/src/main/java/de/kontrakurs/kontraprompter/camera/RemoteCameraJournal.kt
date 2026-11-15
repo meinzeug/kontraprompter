@@ -150,9 +150,10 @@ internal class RemoteCameraJournal private constructor(context: Context, private
             val cameraFrom = if (!d.has("cameraFrom") || d.isNull("cameraFrom")) null else d.getBoolean("cameraFrom")
             val command = CameraCommand(uuid(d.getString("id")), d.getString("type"), uuid(d.getString("recordingId")), project?.let(::uuid), cameraFrom)
             check(cameraJournalCommandValid(version, command))
-            val result = d.getString("result"); check(result in setOf("accepted", "rejected", "expired") || version >= 6 && result in setOf("admitting", "uncertain"))
+            val result = d.getString("result"); check(result in setOf("accepted", "rejected", "expired") || version >= 6 && result in setOf("admitting", "uncertain", "enqueued"))
             val pending = d.getBoolean("pendingAck")
             check(result != "admitting" || !pending && command.type != "record_stop")
+            check(result != "enqueued" || command.type == "record_start")
             CameraDecision(command, result, pending, d.getLong("revision").also { check(it > 0) })
         } }
         val captures = (0 until rawCaptures.length()).map { index -> rawCaptures.getJSONObject(index).let { c ->
