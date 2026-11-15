@@ -60,9 +60,7 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
     val recording: StateFlow<LocalRecording> = _recording
     private val _cameraSelection = MutableStateFlow(CameraSelection())
     val cameraSelection: StateFlow<CameraSelection> = _cameraSelection
-    private val _directPeerStopState = MutableStateFlow(DirectPeerStop.State.IDLE)
-    internal val directPeerStopState: StateFlow<DirectPeerStop.State> = _directPeerStopState
-    private var directPeerStopOwner: RtcVideo? = null
+    internal val directPeerStopState: StateFlow<DirectPeerStop.State> = ProcessDirectPeerStops.state
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     internal val pairedCapture = PairedCapture(host, lan, scope, this)
 
@@ -76,14 +74,6 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
                     val lease = if (host) RtcVideo.tryAcquireCamera() else null
                     if (host && lease == null) { lan.report("Kamera noch beschäftigt", "Die vorherige Aufnahme wird noch abgeschlossen. Bitte erneut verbinden."); null }
                     else try { RtcVideo(app, host, lan, lease, preferFrontCamera).also { created ->
-                        directPeerStopOwner = created
-                        _directPeerStopState.value = DirectPeerStop.State.IDLE
-                        created.onDirectPeerStop = { status -> synchronized(guard) {
-                            if (directPeerStopOwner === created) {
-                                _directPeerStopState.value = status
-                                if (status == DirectPeerStop.State.CLOSED || status == DirectPeerStop.State.NO_PEER || status == DirectPeerStop.State.FAILED) directPeerStopOwner = null
-                            }
-                        } }
                         created.onCameraFailure = ::cameraFailed
                         created.onCameraSelection = { front, canSwitch ->
                             synchronized(guard) { if (_video.value === created && !closed) _cameraSelection.value = CameraSelection(front = front, canSwitch = canSwitch) }

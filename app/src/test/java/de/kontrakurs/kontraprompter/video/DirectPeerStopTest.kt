@@ -49,4 +49,33 @@ class DirectPeerStopTest {
         val absent = DirectPeerStop({ task -> task(); true }, { false })
         absent.request(); assertEquals(DirectPeerStop.State.NO_PEER, absent.state())
     }
+
+    @Test fun `new pipeline cannot erase an old blocked peer close`() {
+        val tracker = DirectPeerStopTracker()
+        val old = Any(); val new = Any()
+        tracker.update(old, DirectPeerStop.State.PENDING)
+        tracker.update(new, DirectPeerStop.State.IDLE)
+        assertEquals(DirectPeerStop.State.PENDING, tracker.state.value)
+        tracker.update(new, DirectPeerStop.State.PENDING)
+        tracker.update(new, DirectPeerStop.State.CLOSED)
+        assertEquals(DirectPeerStop.State.PENDING, tracker.state.value)
+        tracker.update(old, DirectPeerStop.State.CLOSED)
+        assertEquals(DirectPeerStop.State.CLOSED, tracker.state.value)
+    }
+
+    @Test fun `failed or overflowing obligations remain uncertain`() {
+        val tracker = DirectPeerStopTracker()
+        val old = Any(); val new = Any()
+        tracker.update(old, DirectPeerStop.State.PENDING)
+        tracker.update(old, DirectPeerStop.State.FAILED)
+        tracker.update(new, DirectPeerStop.State.PENDING)
+        tracker.update(new, DirectPeerStop.State.CLOSED)
+        assertEquals(DirectPeerStop.State.FAILED, tracker.state.value)
+
+        val bounded = DirectPeerStopTracker()
+        val owners = List(33) { Any() }
+        owners.forEach { bounded.update(it, DirectPeerStop.State.PENDING) }
+        owners.forEach { bounded.update(it, DirectPeerStop.State.CLOSED) }
+        assertEquals(DirectPeerStop.State.FAILED, bounded.state.value)
+    }
 }

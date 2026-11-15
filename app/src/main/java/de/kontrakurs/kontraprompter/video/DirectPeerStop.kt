@@ -1,6 +1,8 @@
 package de.kontrakurs.kontraprompter.video
 
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /** Never declares a native close complete until the executor callback returns. */
 internal class DirectPeerStop(private val submit: (() -> Unit) -> Boolean, private val closePeer: () -> Boolean, private val onState: (State) -> Unit = {}) {
@@ -19,4 +21,37 @@ internal class DirectPeerStop(private val submit: (() -> Unit) -> Boolean, priva
         }.getOrDefault(false)
         if (!submitted && current.compareAndSet(State.PENDING, State.FAILED)) runCatching { onState(State.FAILED) }
     }
+}
+
+/** Old unresolved closes remain visible when a later session creates a new peer. */
+internal class DirectPeerStopTracker {
+    private val pending = mutableSetOf<Any>()
+    private var uncertain = false
+    private val _state = MutableStateFlow(DirectPeerStop.State.IDLE)
+    val state: StateFlow<DirectPeerStop.State> = _state
+
+    @Synchronized fun update(owner: Any, status: DirectPeerStop.State) {
+        when (status) {
+            DirectPeerStop.State.IDLE -> return
+            DirectPeerStop.State.PENDING -> {
+                if (owner !in pending && pending.size >= 32) uncertain = true else pending.add(owner)
+            }
+            DirectPeerStop.State.CLOSED, DirectPeerStop.State.NO_PEER -> if (!pending.remove(owner)) return
+            DirectPeerStop.State.FAILED -> {
+                if (!pending.remove(owner)) return
+                uncertain = true
+            }
+        }
+        _state.value = when {
+            uncertain -> DirectPeerStop.State.FAILED
+            pending.isNotEmpty() -> DirectPeerStop.State.PENDING
+            else -> status
+        }
+    }
+}
+
+internal object ProcessDirectPeerStops {
+    private val tracker = DirectPeerStopTracker()
+    val state: StateFlow<DirectPeerStop.State> = tracker.state
+    fun update(owner: Any, status: DirectPeerStop.State) = tracker.update(owner, status)
 }

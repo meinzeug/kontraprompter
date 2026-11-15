@@ -68,11 +68,12 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     private val initialPrimaryGeneration = primaryGeneration.current()
     private var factory: PeerConnectionFactory? = null
     private var peer: PeerConnection? = null
+    private val directStopOwner = Any()
     private val directPeerStop = DirectPeerStop(
         submit = { action -> runCatching { executor.execute { action() } }.isSuccess },
         // Deliberately do not dispose peer, track, camera or recorder here.
         closePeer = { peer?.let { it.close(); true } ?: false },
-        onState = { state -> onDirectPeerStop?.invoke(state) },
+        onState = { state -> ProcessDirectPeerStops.update(directStopOwner, state) },
     )
     private var source: VideoSource? = null
     private var localTrack: VideoTrack? = null
@@ -81,7 +82,6 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     private var remoteTrack: VideoTrack? = null
     @Volatile internal var onCameraFailure: ((String) -> Unit)? = null
     @Volatile internal var onCameraSelection: ((Boolean?, Boolean) -> Unit)? = null
-    @Volatile internal var onDirectPeerStop: ((DirectPeerStop.State) -> Unit)? = null
     private val sinks = mutableSetOf<VideoSink>()
     private val previewViews = mutableSetOf<VideoView>()
     private var pipelineClosed = false
