@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
+import de.kontrakurs.kontraprompter.cloud.CloudUploadState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -303,9 +304,27 @@ private fun KontraApp(activity: MainActivity) {
     }
     var cameraPermissionError by remember { mutableStateOf(false) }
     var cameraBusyError by remember { mutableStateOf(false) }
-    BackHandler(enabled = page != "roles") {
+    fun disconnectFromUi() {
+        val active = session
+        if (active == null) { page = "roles"; return }
+        if (!active.host && active.lan.state.value.ready) {
+            val paired = active.pairedCapture.state.value
+            if (!mayDisconnectRemote(ready = true, pending = paired.pending, phase = paired.phase)) {
+                android.widget.Toast.makeText(activity, "Kameraaufnahme läuft oder ihr Status ist unklar. Bitte zuerst auf der Kamera prüfen.", android.widget.Toast.LENGTH_LONG).show()
+                return
+            }
+        }
+        if (!active.closeIfIdle()) {
+            android.widget.Toast.makeText(activity, "Bitte die Aufnahme zuerst ausdrücklich stoppen und speichern lassen.", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+        session = null
+        page = "roles"
+    }
+    BackHandler(enabled = page != "roles" || session != null) {
         when (page) {
-            "connection" -> if (recording.isActive() && recording !is de.kontrakurs.kontraprompter.video.LocalRecording.Failed) session?.stopRecording() else { session?.close(); session = null; page = "roles" }
+            "roles" -> android.widget.Toast.makeText(activity, "Bitte die bestehende Verbindung vor dem Verlassen bewusst trennen.", android.widget.Toast.LENGTH_LONG).show()
+            "connection" -> disconnectFromUi()
             "help" -> page = helpReturn
             "scripts" -> page = "roles"
             "studio", "editor" -> page = "scripts"
@@ -316,8 +335,12 @@ private fun KontraApp(activity: MainActivity) {
         }
     }
     fun startHost() {
+        if (!mayStartCamera(session != null)) {
+            android.widget.Toast.makeText(activity, "Bitte die bestehende Verbindung zuerst bewusst trennen.", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
         if (!RtcVideo.cameraAvailable()) { cameraBusyError = true; return }
-        cameraBusyError = false; session?.close(); session = LiveSession(activity, true, cameraPreferFront); page = "connection"
+        cameraBusyError = false; session = LiveSession(activity, true, cameraPreferFront); page = "connection"
     }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) { cameraPermissionError = false; startHost() } else cameraPermissionError = true
@@ -438,10 +461,44 @@ private fun KontraApp(activity: MainActivity) {
         activity.window.attributes = attrs
         onDispose { activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); val a = activity.window.attributes; a.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE; activity.window.attributes = a }
     }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val drawerScope = rememberCoroutineScope()
+    val uploadState by cloud.coordinator.state.collectAsState()
+    val drawerAllowed = canShowDrawer(page, session?.host == true, uploadState is CloudUploadState.Running)
+    fun drawerAllowedNow(): Boolean = canShowDrawer(page, session?.host == true, cloud.coordinator.state.value is CloudUploadState.Running)
+    LaunchedEffect(drawerAllowed) { if (!drawerAllowed && drawerState.isOpen) drawerState.close() }
     CompositionLocalProvider(
         LocalRemoteIndicator provides if (remoteEnabled) RemoteIndicator(remoteStatus) { remoteEnabled = false; remoteStatus = "Aus" } else null,
-        LocalCameraIndicator provides session?.let { CameraIndicator(lanState.status, lanState.status == "Videoverbindung hergestellt") { page = "connection" } }
+        LocalCameraIndicator provides session?.let { CameraIndicator(lanState.status, lanState.status == "Videoverbindung hergestellt") { page = "connection" } },
+        LocalDrawerOpen provides if (drawerAllowed) ({ if (drawerAllowedNow()) drawerScope.launch { drawerState.open() } }) else null,
     ) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val expandedWindow = maxWidth >= 840.dp
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            gesturesEnabled = drawerAllowed,
+            drawerContent = {
+                ModalDrawerSheet(Modifier.widthIn(max = if (expandedWindow) 360.dp else 320.dp)) {
+                    Spacer(Modifier.height(20.dp))
+                    Text("KONTRAPROMPTER", modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp), style = MaterialTheme.typography.titleMedium)
+                    DrawerDestination.entries.forEach { destination ->
+                        NavigationDrawerItem(
+                            label = { Text(destination.label) },
+                            icon = { Text(destination.symbol, modifier = Modifier.clearAndSetSemantics {}) },
+                            selected = destination.isCurrent(page),
+                            onClick = {
+                                if (drawerAllowedNow()) {
+                                    if (destination == DrawerDestination.HELP) helpReturn = if (page == "editor") "editor" else "roles"
+                                    page = destination.route
+                                }
+                                drawerScope.launch { drawerState.close() }
+                            },
+                            modifier = Modifier.padding(horizontal = 12.dp),
+                        )
+                    }
+                }
+            },
+        ) {
     AppBackground {
         when (page) {
             "roles" -> AppPage("Bereit für deinen Auftritt.", "KONTRAPROMPTER", "Verbinde Kamera und Text – und behalte alles im Blick.") {
@@ -451,7 +508,8 @@ private fun KontraApp(activity: MainActivity) {
                 Toggle("Frontkamera verwenden (aus: Rückkamera)", cameraPreferFront) { cameraPreferFront = it; preferences.edit().putBoolean("camera_prefer_front", it).apply() }
                 Text("Die Auswahl gilt für die nächste Kamerasitzung. Fehlt die gewählte Kamera, wird die andere verwendet. Bei aktiver Aufnahme bleibt sie unverändert.", color = SoftText, style = MaterialTheme.typography.bodySmall)
                 RoleTile("Kamera", "Livebild für den Teleprompter", camera = true) {
-                    if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startHost()
+                    if (!mayStartCamera(session != null)) android.widget.Toast.makeText(activity, "Bitte die bestehende Verbindung zuerst bewusst trennen.", android.widget.Toast.LENGTH_LONG).show()
+                    else if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startHost()
                     else cameraPermission.launch(Manifest.permission.CAMERA)
                 }
                 Action("Aufnahmen") { page = "recordings" }
@@ -463,7 +521,7 @@ private fun KontraApp(activity: MainActivity) {
             }
             "help" -> HelpScreen(onBack = { page = helpReturn })
             "connection" -> session?.let { active ->
-                ConnectionScreen(active, cloud, onClose = { active.close(); session = null; page = "roles" }, onScripts = { page = "scripts" })
+                ConnectionScreen(active, cloud, onClose = { disconnectFromUi() }, onScripts = { page = "scripts" })
             } ?: Page("Nicht verbunden", "VERBINDUNG", onBack = { page = "roles" }) { Action("Zur Rollenwahl") { page = "roles" } }
             "scripts" -> Page("Deine Skripte", "TELEPROMPTER", onBack = { page = "roles" }) {
                 MainAction("Skripte aus Videomaker öffnen") { page = "studio" }
@@ -578,6 +636,8 @@ private fun KontraApp(activity: MainActivity) {
                 Action("Drehen: $textRotation°") { textRotation = (textRotation + 90) % 360 }
             }
             "prompter" -> key(selected.id) { Prompter(selected.text, selected.generationNotice, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, pairedCapture, recordingScrollSync, selected.studioProjectId != null, activity, selectedVolumeRemote, inputRefresh, { session?.pairedCapture?.toggle(selected.studioProjectId) }, { session?.pairedCapture?.request("stop") }, { session?.pairedCapture?.request("switch_camera") }, remoteActions) { playbackStatus = it } }
+        }
+    }
         }
     }
     }

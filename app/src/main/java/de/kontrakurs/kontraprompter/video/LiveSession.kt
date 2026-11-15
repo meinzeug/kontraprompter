@@ -348,6 +348,25 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
         release?.close()
     }
 
+    /** Atomically refuse a UI disconnect if a local take is active or still finalizing. */
+    internal fun closeIfIdle(): Boolean {
+        var release: RtcVideo? = null
+        var newlyClosed = false
+        val admitted = attemptIdleClose(guard, busy = { _recording.value.isActive() }) {
+            if (!closed) {
+                closed = true
+                newlyClosed = true
+                _video.value?.stopAnyBrowserPreview()
+                stopWhenStarted = true
+                release = _video.value
+                _video.value = null
+            }
+        }
+        if (!admitted) return false
+        if (newlyClosed) { lan.close(); scope.cancel(); release?.close() }
+        return true
+    }
+
     override fun close() {
         val release: RtcVideo?
         synchronized(guard) {

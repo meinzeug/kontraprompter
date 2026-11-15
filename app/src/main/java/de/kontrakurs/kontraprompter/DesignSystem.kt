@@ -32,6 +32,7 @@ data class RemoteIndicator(val status: String, val onStop: () -> Unit)
 val LocalRemoteIndicator = staticCompositionLocalOf<RemoteIndicator?> { null }
 data class CameraIndicator(val status: String, val connected: Boolean, val onShow: () -> Unit)
 val LocalCameraIndicator = staticCompositionLocalOf<CameraIndicator?> { null }
+internal val LocalDrawerOpen = staticCompositionLocalOf<(() -> Unit)?> { null }
 private val DarkColors = darkColorScheme(
     primary = Accent, onPrimary = Color(0xff24090b),
     primaryContainer = Color(0xff54292d), onPrimaryContainer = Color(0xffffdcda),
@@ -71,12 +72,17 @@ fun AppBackground(content: @Composable BoxScope.() -> Unit) {
 fun AppPage(title: String, eyebrow: String, description: String? = null, onBack: (() -> Unit)? = null, backLabel: String = "Zurück", showRemote: Boolean = true, showCamera: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
     val remote = LocalRemoteIndicator.current
     val camera = LocalCameraIndicator.current
+    val openDrawer = LocalDrawerOpen.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier.fillMaxHeight().widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 26.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (onBack != null) BackAction(onBack, label = backLabel)
+            if (onBack != null || openDrawer != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                if (onBack != null) BackAction(onBack, label = backLabel)
+                Spacer(Modifier.weight(1f))
+                if (openDrawer != null) TextButton(onClick = openDrawer, modifier = Modifier.heightIn(min = 48.dp)) { Text("Menü") }
+            }
             if (showRemote && remote != null) RemoteBanner(remote)
             if (showCamera && camera != null) CameraBanner(camera)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
