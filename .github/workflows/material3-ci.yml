@@ -18,13 +18,22 @@ jobs:
           java-version: '17'
       - name: Install Android SDK packages
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37.0" "build-tools;36.0.0"'
-      - name: Check resolved Material3 and run build, tests, lint
+      - name: Check resolved Material3 and build classpath
         shell: bash
         run: |
           set -euo pipefail
+          ./gradlew --no-daemon --max-workers=1 buildEnvironment | tee build-environment.txt
           ./gradlew --no-daemon --max-workers=1 :app:dependencyInsight --dependency androidx.compose.material3:material3-android --configuration debugRuntimeClasspath | tee material3-resolution.txt
           grep -q 'androidx.compose.material3:material3-android:1.5.0-rc01' material3-resolution.txt
-          ./gradlew --no-daemon --max-workers=1 --stacktrace :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+      - name: Assemble debug with compiler information
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --max-workers=1 --info --stacktrace :app:assembleDebug | tee build-info.txt
+      - name: Unit tests
+        run: ./gradlew --no-daemon --max-workers=1 --stacktrace :app:testDebugUnitTest
+      - name: Android lint
+        run: ./gradlew --no-daemon --max-workers=1 --stacktrace :app:lintDebug
       - name: Save resolution and reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -32,6 +41,8 @@ jobs:
           name: material3-dependency-report-${{ github.sha }}
           path: |
             material3-resolution.txt
+            build-environment.txt
+            build-info.txt
             app/build/reports/
           if-no-files-found: warn
           retention-days: 2
