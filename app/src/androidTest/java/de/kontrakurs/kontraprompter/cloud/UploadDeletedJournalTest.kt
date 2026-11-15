@@ -73,6 +73,15 @@ class UploadDeletedJournalTest : InstrumentationTestCase() {
         assertTrue(reopened.phase == "uploading" || (reopened.phase == "conflict" && reopened.conflictReason == RECORDING_DELETED))
         assertEquals(started.uploadId, reopened.uploadId)
     }
+    fun testStaleUpdateDoesNotReplaceNewJournal() = inFixture { context, _, recording, project ->
+        val old = UploadJournal.begin(context, recording, project)
+        val newer = old.copy(uploadId = id())
+        UploadJournal.write(context, newer)
+        assertFalse(UploadJournal.replaceIfUnchanged(context, recording, old, old.copy(phase = "uncertain")))
+        assertEquals(newer, UploadJournal.get(context, recording, project))
+        assertTrue(UploadJournal.replaceIfUnchanged(context, recording, newer, newer.copy(phase = "confirmed")))
+        assertEquals(newer.copy(phase = "confirmed"), UploadJournal.get(context, recording, project))
+    }
     fun testRealAndroidJsonHandlesValidAndMalformedServerResponses() {
         fun parse(s: String) = uploadConflictCode(ByteArrayInputStream(s.toByteArray(Charsets.UTF_8)))
         assertEquals(RECORDING_DELETED, parse("""{"code":"recording_deleted","error":"gelöscht"}"""))
