@@ -18,11 +18,16 @@ Widerruf gestartete Pakete lassen sich nicht zurücknehmen. Verbindungsfehler
 alter Versuche dürfen neuere Versuche nicht überschreiben. Manuelle Eingabe
 bleibt möglich und authentisiert sich unverändert mit Sitzungscode.
 
-Ein direkter Kotlin-/Compose-Compile und zwölf JVM-Tests bestanden. Drei Tests
+Ein direkter Kotlin-/Compose-Compile und 14 JVM-Tests bestanden. Drei Tests
 verwenden echten TCP-Loopback und authentisierte Kanäle: manueller Aufbau,
 Widerruf während eines unvollständigen Handshakes und Fortbestand nach späterem
-Verlust des Suchergebnisses. Weitere Tests verwenden synthetische DNS-Einträge
-und Callback-Reihenfolgen. Dies ist kein Android-Gradle-Build und kein
+Verlust des Suchergebnisses. Im manuellen Aufbau wird parallel eine andere
+Discovery-Auswahl widerrufen und ein weiterer Such-Verbindungsversuch ausgelöst;
+die manuelle Verbindung darf dadurch nicht abgebrochen werden. Weitere Tests
+verwenden synthetische DNS-Einträge und Callback-Reihenfolgen. Insbesondere
+beenden asynchroner Resolve-Fehler und Verlust einer ausgewählten Dienstinstanz
+den Ladezustand; überholte Fehler dürfen einen neueren Vorgang nicht ändern.
+Dies ist kein Android-Gradle-Build und kein
 Gerätetest; Androids konkretes DNS-SD-Cacheverhalten ist damit nicht belegt.
 Alte Einträge können sichtbar bleiben. Ein verspätetes Lost-Ereignis für einen
 identischen Dienstnamen kann insbesondere bei alten App-Versionen ein neues
