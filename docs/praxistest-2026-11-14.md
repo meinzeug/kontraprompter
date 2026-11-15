@@ -376,3 +376,9 @@ hatte die SHA-256-Summe
 Alle 21 Projekte und 33 Aufnahmen waren bei der Bestandsprüfung vorhanden; die
 vorherige APK wurde gesichert. Die Weboberfläche kann weiterhin „Debug“ im
 Downloadnamen anzeigen, obwohl die APK nicht debuggbar ist.
+
+Nach der Veröffentlichung wurden die Webbefehle für Promptertempo,
+Schriftgröße, Start und Pause erneut an das Samsung gesendet und vom Gerät
+bestätigt. Tempo und Schriftgröße wurden auf die ursprünglichen Werte
+zurückgesetzt. Dies prüft die vorhandene Prompter-Fernsteuerung; direkte
+Kamerabefehle aus dem Webdashboard sind damit nicht nachgewiesen.
