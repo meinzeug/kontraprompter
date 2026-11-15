@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="de.kontrakurs.studiohttpsfixture">
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application android:label="Temporary studio HTTPS fixture" android:allowBackup="false" android:debuggable="true" />
+    <instrumentation android:name="de.kontrakurs.kontraprompter.cloud.StudioHttpsInstrumentation" android:targetPackage="de.kontrakurs.studiohttpsfixture" />
+</manifest>
