@@ -98,6 +98,18 @@ Die exakten Modellbytes wurden vor dem Build und im Test-APK verglichen. Kein
 Instrumentierungstest wurde ausgeführt und keine App auf einem Telefon
 installiert; der bestehende KontraPrompter blieb unverändert.
 
+Der erweiterte CI-Run [43674814191](https://github.com/meinzeug/kontraprompter/actions/runs/43674814191)
+zum Quellcommit `eb82703` erzeugte das separate
+[Artefakt 14146216148](https://github.com/meinzeug/kontraprompter/actions/runs/43674814191/artifacts/14146216148).
+App-APK: 40.926.499 Bytes, SHA-256
+`d927a0bc1f4835d0011f28867bdca413914c076a92b22de0fba59ff5be569aa6`.
+Test-APK einschließlich geprüftem Modell und synthetischem Sprachasset:
+47.742.005 Bytes, SHA-256
+`b6d2cc61b5566cd7f263c06182430483355a7762a7cb558bfcbfdb4b78caffef`.
+Beide Manifeste bleiben ohne Mikrofon- und Internetberechtigung. Dieses
+erweiterte Sprachfixture wurde noch auf keinem Gerät installiert oder
+ausgeführt.
+
 Falls die beiden separaten Fixture-APKs später auf einem geeigneten Testgerät
 installiert werden, lautet der gezielte Aufruf (Geräteseriennummer einsetzen):
 
