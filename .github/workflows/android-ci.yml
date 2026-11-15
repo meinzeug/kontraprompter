@@ -1,0 +1,46 @@
+name: Android insets separated checks
+on:
+  push:
+    branches: [wip/edge-to-edge-ci-split-20261115]
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Verify candidate
+        run: |
+          test "$(git rev-parse HEAD^)" = '745fa5329dce7b021caacaf483da6d4514e84a2e'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/android-ci.yml'
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install SDK
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;35.0.0"'
+      - name: Debug and release build
+        timeout-minutes: 10
+        run: ./gradlew --no-daemon --max-workers=1 --stacktrace :app:assembleDebug :app:assembleRelease
+      - name: Debug and release tests
+        if: success()
+        timeout-minutes: 10
+        run: ./gradlew --no-daemon --max-workers=1 --stacktrace :app:test
+      - name: Full lint
+        if: success()
+        timeout-minutes: 10
+        run: ./gradlew --no-daemon --max-workers=1 --stacktrace :app:lint
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: insets-separated-${{ github.sha }}
+          path: |
+            app/build/reports/
+            app/build/outputs/apk/release/*-unsigned.apk
+          if-no-files-found: warn
+          retention-days: 2
