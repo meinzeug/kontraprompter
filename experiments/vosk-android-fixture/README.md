@@ -3,8 +3,8 @@
 Dieses eigenständige Testprojekt wird weder in KontraPrompter eingebunden noch
 auf einem Gerät installiert. Sein Manifest fordert weder Mikrofon noch
 Internet an. Der einzige Instrumentierungstest überprüft die Permissions des
-Test- und Zielpakets erneut und führt eine Sekunde künstliche 48-kHz-Mono-PCM16-
-Stille direkt durch `Recognizer.acceptWaveForm`. Er prüft JSON-Ausgabe und
+Test- und Zielpakets erneut und führt künstliche 48-kHz-Mono-PCM16-Stille sowie
+synthetisch gesprochene deutsche Wörter direkt durch `Recognizer.acceptWaveForm`. Er prüft JSON-Ausgabe und
 schließt `Recognizer` vor `Model`; kein `SpeechService`, `AudioRecord`, echte
 Aufnahme, Netzwerkzugriff oder Transkript wird verwendet. Dies belegt auch bei
 späterem Bestehen weder Sprachverständlichkeit noch Laufzeit im Recorder.
@@ -37,6 +37,22 @@ Gesamtgröße und Pfade und schreibt ausschließlich in ein neu angelegtes
 privates Cacheverzeichnis der Fixture-App. Das ausgepackte Modell benötigt
 rund 95,6 MB; dieses Testverzeichnis bleibt zunächst erhalten. Es ist keine
 Speicherbereinigung oder Deinstallation beauftragt.
+
+Der erweiterte Instrumentierungstest verarbeitet außerdem die kleine,
+eingecheckte Datei `synthetic-de-48khz-s16le.pcm`: künstliche deutsche Sprache,
+48 kHz, Mono, PCM16 little-endian, 556.732 Bytes (5,80 Sekunden), SHA-256
+`cfcfe20034a34e79326187276cd8d5225284655239d82e24f65b6d0b5d9cc311`.
+Der fest vorgegebene Text lautet „Hallo zusammen heute sprechen wir über Medien
+und Videos.“. Die Datei wurde ohne Mikrofon oder Netz mit eSpeak NG 1.52.0
+(`-v de -s 140 --stdout`) und FFmpeg 7.1.1 auf 48 kHz erzeugt, mit 0,5 Sekunden
+Stille vor und 1 Sekunde nach dem Text. `python3 reproduce-synthetic.py`
+vergleicht die unter denselben Werkzeugversionen neu erzeugten Bytes mit dem
+Asset, ohne es zu verändern. CI prüft die Größe und den SHA-256-Wert sowohl
+vor dem Build als auch in der Test-APK. Auf dem Entwicklungsrechner lieferte
+das vorhandene Linux-Vosk 0.3.45 mit dem Modell genau die vorgegebene Wortfolge;
+das Android-AAR und die Geräte wurden mit dieser Sprachdatei noch nicht
+ausgeführt. Der exakte Solltexttest misst eine einzige synthetische Stimme und
+beweist keine allgemeine Sprachqualität, Aufnahmeanbindung oder Echtzeitfähigkeit.
 
 Die Klasse `Recognizer` des geprüften AAR deklariert den nativen PCM-Rückgabewert
 als `boolean`. Die [native Vosk-C-API](https://github.com/alphacep/vosk-api/blob/master/src/vosk_api.cc)
