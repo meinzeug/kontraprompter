@@ -109,8 +109,8 @@ enthält die App-APK (41.759.012 Bytes, SHA-256
 `721ac04559a1382c57fff5af25a9c408de0aae75d9b719641fa87d226cfa9e4b`)
 und die Test-APK (47.007.205 Bytes, SHA-256
 `16161d745a60eaeb1b3694f0ce69e745130121a1eb9a639f3c7c8d5b9bf918b6`).
-Die neu zusammengestellte AAC-/Sprachpipeline wurde nicht auf Android
-ausgeführt; ihr Build beweist keine erfolgreiche Instrumentierung.
+Der Build allein beweist keine Instrumentierung; die anschließenden isolierten
+Gerätetests dieser Pipeline sind unten dokumentiert.
 
 Der isolierte [CI-Run 43675525092](https://github.com/meinzeug/kontraprompter/actions/runs/43675525092)
 zum Quellcommit `3b94ab9` baut die Fixture mit integerbasiertem JNA-Aufruf und
@@ -235,6 +235,42 @@ beide separaten Fixture-Pakete samt ausschließlich eigenem Cache entfernt.
 KontraPrompter läuft weiter; Kamera-Verbindung und Studio wurden bestätigt.
 Dies ist kein Test einer echten Stimme, eines Live-Mikrofons, von
 Decoderfehlern oder einer Echtzeit-Recorderintegration.
+
+## Isolierter Android-Test der synthetischen AAC-/Sprachpipeline
+
+Der CI-Kandidat `0a15363` mit den oben genannten APK-Hashes wurde am
+15. November 2026 auf beiden Geräten ausgeführt. Beide Fixture-Pakete waren
+vorher nicht vorhanden; beide APKs wurden vor Installation auf Hash,
+Paketname, gemeinsame v2-Signatur und fehlende `RECORD_AUDIO`-/`INTERNET`-
+Berechtigung geprüft. Modell- und künstliches PCM-Asset wurden ebenfalls
+lokal hashverifiziert. Vor dem Test zeigte die Android-AudioPolicy auf beiden
+Geräten keine geöffneten Eingänge; auf dem Samsung war „Aufnahme starten“
+sichtbar.
+
+- Samsung `R5CR60Q07YN`: 1 Instrumentierungstest in 13,927 Sekunden, erfolgreich.
+- Xiaomi `HEHU4TQSINOJEQG6`: 1 Instrumentierungstest in 23,004 Sekunden, erfolgreich.
+
+Der Test umfasste künstliche Stille und synthetisches Deutsch sowie die
+separate Pipeline mit echtem Android-AAC-Encoder, Tee, integerbasiertem
+Offline-Vosk, Wortcursor und lokalem Positionsfence. Die PCM-Hashes vor und
+nach dem Tee stimmten überein, AAC-Ausgabe war vorhanden und der Cursor
+erreichte die erwartete Endposition. Auf dem Xiaomi mussten die beiden
+eindeutig als Fixture beziehungsweise Fixture-Testpaket bezeichneten
+USB-Installationsdialoge bestätigt werden; zwei vorherige App-Installations-
+versuche liefen ohne Bestätigung ab. Keine dauerhafte Systemeinstellung wurde
+geändert.
+
+Anschließend wurden ausschließlich die zuvor nicht vorhandenen Fixture-
+Pakete samt ihrem eigenen Cache wieder entfernt. KontraPrompter blieb auf
+beiden Geräten installiert; auf dem Xiaomi wurde „Videoverbindung hergestellt“
+angezeigt, auf dem Samsung „Kamera bereit“ und „Studio: Verbunden“. Die
+lokalen, hashgeprüften APK-Kopien wurden nach Bestätigung des weiterhin
+verfügbaren CI-Artefakts entfernt.
+
+Der Test hat kein `AudioRecord` geöffnet, keine echte Stimme oder bestehende
+Aufnahme genutzt und keine Netzwerkdaten übertragen. Er beweist weder den
+realen Recorder-/Mikrofon-Lifecycle, AAC-Dekodierung und Audioqualität noch
+eine geräteübergreifende oder produktiv nutzbare Live-Sprachfolge.
 
 Der isolierte CI-Run 43673659245 zum Commit `e76fa04` war erfolgreich. Die
 Fixture-App hat 40.926.499 Bytes, SHA-256
