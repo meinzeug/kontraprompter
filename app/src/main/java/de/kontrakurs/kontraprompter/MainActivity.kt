@@ -878,7 +878,7 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
         }
         if (focusLine) Box(Modifier.align(Alignment.CenterStart).width(22.dp).height(3.dp).background(Red))
         if (remaining > 0) Text("$remaining", Modifier.align(Alignment.Center), color = Red, fontSize = 100.sp, fontWeight = FontWeight.Black)
-        if (controls) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)).padding(12.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xf022252c)).padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (controls) PrompterOverlay(Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)).padding(12.dp)) {
             if (lanState.role == "client" && lanState.ready && keyboardDescriptor != null) KeyboardRemoteReady(activity, keyboardDescriptor, keyboardConnected)
             val showCaptureControls = lanState.role == "client" && lanState.ready
             if (landscapeControls && showCaptureControls) {
