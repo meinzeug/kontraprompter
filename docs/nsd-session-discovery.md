@@ -19,16 +19,18 @@ Domainbestandteile bleiben ungültig.
 Der isolierte Arbeitsstand vergibt jeder Kamerasitzung einen neuen zufälligen,
 nicht geheimen DNS-SD-Namen. Suchergebnisse und verspätete Auflösungen sind an
 die aktuelle Auswahl gebunden; manuelle Bearbeitung widerruft die Auswahl.
-Für aufgelöste Endpunkte wird der nicht blockierende TCP-Start unter derselben
-Auswahlprüfung begonnen. Bis zur authentisierten Kanalinstallation ist der
-Socket an die Auswahl gebunden: Verlust oder Neuauswahl schließt den Socket,
-die Installation prüft die Auswahl atomar erneut. Danach gehört der Socket der
-Verbindung; ein späterer Discovery-Verlust schließt ihn nicht. Bereits vor dem
-Widerruf gestartete Pakete lassen sich nicht zurücknehmen. Verbindungsfehler
+Für aufgelöste Endpunkte wird ein regulärer `Socket` unter kurzer Auswahlprüfung
+gebunden. Das blockierende `connect` läuft außerhalb des Auswahl-Locks; Verlust
+oder Neuauswahl schließt den ausstehenden Socket. Vor dem Handshake und bei der
+Kanalinstallation wird die Auswahl erneut geprüft, letztere atomar. Ein vor
+Widerruf zugelassener Versuch kann im kleinen Zeitfenster vor dem wirksamen
+Schließen noch anlaufen; bereits gestartete Pakete lassen sich nicht zurücknehmen.
+Nach der Installation gehört der Socket der Verbindung; ein späterer
+Discovery-Verlust schließt ihn nicht. Verbindungsfehler
 alter Versuche dürfen neuere Versuche nicht überschreiben. Manuelle Eingabe
 bleibt möglich und authentisiert sich unverändert mit Sitzungscode.
 
-Ein direkter Kotlin-/Compose-Compile und 18 JVM-Tests bestanden. Drei Tests
+Ein direkter Kotlin-/Compose-Compile und 19 JVM-Tests bestanden. Drei Tests
 verwenden echten TCP-Loopback und authentisierte Kanäle: manueller Aufbau,
 Widerruf während eines unvollständigen Handshakes und Fortbestand nach späterem
 Verlust des Suchergebnisses. Im manuellen Aufbau wird parallel eine andere
@@ -37,6 +39,14 @@ die manuelle Verbindung darf dadurch nicht abgebrochen werden. Weitere Tests
 verwenden synthetische DNS-Einträge und Callback-Reihenfolgen. Insbesondere
 beenden asynchroner Resolve-Fehler und Verlust einer ausgewählten Dienstinstanz
 den Ladezustand; überholte Fehler dürfen einen neueren Vorgang nicht ändern.
+Ein echter authentisierter Loopback-Ping/Pong läuft über den regulären Socket
+auch bei wartendem Reader zeitnah durch. Ein separates JVM-Modell mit dem in
+[Androids SocketAdaptor](https://android.googlesource.com/platform/prebuilts/fullsdk/sources/+/refs/heads/androidx-constraintlayout-release/android-35/sun/nio/ch/SocketAdaptor.java)
+und [Channels](https://android.googlesource.com/platform/prebuilts/fullsdk/sources/+/refs/heads/androidx-constraintlayout-release/android-35/java/nio/channels/Channels.java)
+sichtbaren gemeinsamen Blocking-Lock zeigt, dass ein blockierter Reader das
+Schreiben bis zu einem nächsten Paket verzögern kann. Dies ist ein plausibler
+Erklärungsansatz für die auf Android beobachtete Latenz, kein Nachweis der
+konkreten Ursache auf dem Samsung.
 Ohne Antwort endet die Auflösung nach zehn Sekunden. Ein verspätetes Ergebnis
 nach dem Timeout wird verworfen. Adresse und Port werden auf dem UI-Thread nur
 unter Prüfung derselben Auswahl übernommen; erst danach endet der Ladezustand.
