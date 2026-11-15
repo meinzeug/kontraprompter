@@ -52,6 +52,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
             try {
                 initialize(context)
                 factory = PeerConnectionFactory.builder()
+                    .setOptions(PeerConnectionFactory.Options().apply { disableNetworkMonitor = true })
                     .setVideoEncoderFactory(DefaultVideoEncoderFactory(egl.eglBaseContext, true, true))
                     .setVideoDecoderFactory(DefaultVideoDecoderFactory(egl.eglBaseContext)).createPeerConnectionFactory()
                 val config = PeerConnection.RTCConfiguration(emptyList()).apply { sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN }
