@@ -203,7 +203,13 @@ class StudioClient {
                 } catch (error: IOException) {
                     if (error is UploadException) throw error
                     val status = runCatching { connection.responseCode }.getOrNull()
-                    if (status != null && status !in 200..299) throw uploadFailure(status, session, connection, entry.cameraRecordingId != null)
+                    val mapped = if (status != null && status !in 200..299) uploadFailure(status, session, connection, entry.cameraRecordingId != null) else null
+                    if (mapped != null && mapped.kind != "conflict") throw mapped
+                    // A server can reject a tombstoned ID before consuming the
+                    // body, so a reset can hide the original 409 response.
+                    if (!delivered.get() && continuation.isActive && deletedAfterInterruptedUpload(entry, session))
+                        throw UploadException(RECORDING_DELETED, RECORDING_DELETED_MESSAGE, ManualUploadSession(session))
+                    if (mapped != null) throw mapped
                     throw error
                 } finally { watchdog.shutdownNow(); active.compareAndSet(connection, null); connection.disconnect() }
             } catch (error: Exception) { if (delivered.compareAndSet(false, true) && continuation.isActive) continuation.resumeWithException(error) }
@@ -212,6 +218,20 @@ class StudioClient {
         workerStarted()
         try { worker.start() } catch (error: Exception) { workerFinished(); if (delivered.compareAndSet(false, true) && continuation.isActive) continuation.resumeWithException(error) }
     }
+
+    /** Advisory only: unknown/old servers preserve the original upload failure. */
+    private fun deletedAfterInterruptedUpload(entry: UploadEntry, session: String): Boolean = runCatching {
+        if (cookie.get() != session) return@runCatching false
+        val connection = open("/api/projects/${entry.projectId}/recordings/upload-status?recordingId=${entry.uploadId}", "GET")
+        try {
+            connection.connectTimeout = 10_000; connection.readTimeout = 10_000
+            connection.setRequestProperty("Cookie", session)
+            connection.setRequestProperty("Origin", BASE)
+            val status = connection.responseCode
+            val deleted = status == 409 && uploadConflictCode(connection.errorStream) == RECORDING_DELETED
+            deleted && cookie.get() == session
+        } finally { connection.disconnect() }
+    }.getOrDefault(false)
 
     private fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
