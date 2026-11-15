@@ -9,6 +9,25 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Preview only: owns the camera. It does not start or pretend to start an MP4 recording. */
 class RtcVideo(private val context: Context, private val host: Boolean, private val lan: LanSession, private val cameraLease: Long? = null, private val preferFrontCamera: Boolean = true) : AutoCloseable {
+    private class DirectPath(val addresses: LanSession.SocketAddresses, val interfaceName: String)
+    @Volatile private var directPath: DirectPath? = null
+
+    private fun directPathFor(addresses: LanSession.SocketAddresses): DirectPath? = runCatching {
+        val local = addresses.local
+        val remote = addresses.remote
+        if (remote !is java.net.Inet4Address || remote == local || remote.isAnyLocalAddress || remote.isLoopbackAddress || remote.isMulticastAddress) return null
+        val net = java.net.NetworkInterface.getByInetAddress(local) ?: return null
+        if (!p2pInterfaceMatches(net.name, net.isUp, net.isLoopback, local, java.util.Collections.list(net.inetAddresses))) return null
+        if (!lan.isApprovedConnection(addresses.marker)) return null
+        DirectPath(addresses, net.name)
+    }.getOrNull()
+
+    private fun directPathCurrent(path: DirectPath): Boolean = runCatching {
+        if (!lan.isApprovedConnection(path.addresses.marker)) return false
+        val net = java.net.NetworkInterface.getByInetAddress(path.addresses.local) ?: return false
+        net.name == path.interfaceName && p2pInterfaceMatches(net.name, net.isUp, net.isLoopback, path.addresses.local, java.util.Collections.list(net.inetAddresses)) &&
+            lan.isApprovedConnection(path.addresses.marker)
+    }.getOrDefault(false)
     companion object {
         @Volatile private var initialized = false
         private val cameraGate = RecordingResourceGate()
@@ -51,7 +70,16 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
         executePrimary(generation) {
             try {
                 initialize(context)
-                factory = PeerConnectionFactory.builder()
+                val addresses = lan.approvedSocketAddresses() ?: return@executePrimary
+                val direct = directPathFor(addresses)
+                if (!lan.isApprovedConnection(addresses.marker)) return@executePrimary
+                directPath = direct
+                val builder = PeerConnectionFactory.builder()
+                if (direct != null) builder.setOptions(PeerConnectionFactory.Options().apply {
+                    disableNetworkMonitor = true
+                    networkIgnoreMask = PeerConnectionFactory.Options.ADAPTER_TYPE_LOOPBACK
+                })
+                factory = builder
                     .setVideoEncoderFactory(DefaultVideoEncoderFactory(egl.eglBaseContext, true, true))
                     .setVideoDecoderFactory(DefaultVideoDecoderFactory(egl.eglBaseContext)).createPeerConnectionFactory()
                 val config = PeerConnection.RTCConfiguration(emptyList()).apply { sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN }
@@ -91,6 +119,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     private fun observer(generation: Long) = object : PeerConnection.Observer {
         override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) = executePrimary(generation) {
+            directPath?.let { if (!directPathCurrent(it)) { lan.report("Videoverbindung unterbrochen", "Direktverbindung hat sich geändert."); return@executePrimary } }
             when (state) {
                 PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> lan.report("Videoverbindung hergestellt")
                 PeerConnection.IceConnectionState.FAILED -> lan.report("Videoverbindung fehlgeschlagen", "Gleiches lokales Netz prüfen; Hotspot oder WLAN kann Geräte isolieren.")
@@ -101,7 +130,11 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
         override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) = Unit
         override fun onIceCandidate(c: IceCandidate) = executePrimary(generation) {
-            lan.send("ice", JSONObject().put("mid", c.sdpMid).put("line", c.sdpMLineIndex).put("candidate", c.sdp).toString())
+            val payload = JSONObject().put("mid", c.sdpMid).put("line", c.sdpMLineIndex).put("candidate", c.sdp).toString()
+            val direct = directPath
+            if (direct == null) lan.send("ice", payload)
+            else if (directPathCurrent(direct) && p2pCandidateMatches(c.sdp, direct.addresses.local))
+                lan.sendOnApprovedConnection(direct.addresses.marker, "ice", payload)
         }
         override fun onIceCandidatesRemoved(c: Array<out IceCandidate>) = Unit
         override fun onAddStream(stream: MediaStream) = Unit
@@ -125,12 +158,14 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
         val generation = primaryGeneration.current()
         executePrimary(generation) {
             if (!lan.state.value.ready) return@executePrimary
+            directPath?.let { if (!directPathCurrent(it)) { lan.report("Videoverbindung unterbrochen", "Direktverbindung hat sich geändert."); return@executePrimary } }
             try {
                 when (type) {
                     "sdp" -> {
                         val json = JSONObject(value)
                         val kind = when (json.getString("type")) { "offer" -> SessionDescription.Type.OFFER; "answer" -> SessionDescription.Type.ANSWER; else -> error("Ungültiger SDP-Typ") }
                         if ((host && kind != SessionDescription.Type.ANSWER) || (!host && kind != SessionDescription.Type.OFFER)) error("Unerwarteter SDP-Typ")
+                        if (directPath != null && !p2pDescriptionSafe(json.getString("sdp"))) error("Ungültige Direktverbindungsbeschreibung")
                         peer?.setRemoteDescription(object : SimpleSdpObserver({ error -> reportSdpFailure(generation, error) }) {
                             override fun onSetSuccess() = executePrimary(generation) {
                                 remoteDescriptionSet = true
@@ -142,6 +177,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
                     "ice" -> {
                         val j = JSONObject(value)
                         val candidate = IceCandidate(j.optString("mid", ""), j.getInt("line"), j.getString("candidate"))
+                        directPath?.let { if (!p2pCandidateMatches(candidate.sdp, it.addresses.remote)) return@executePrimary }
                         if (remoteDescriptionSet) peer?.addIceCandidate(candidate) else if (pendingCandidates.size < 256) pendingCandidates.add(candidate) else error("Zu viele ICE-Kandidaten")
                     }
                 }
@@ -150,9 +186,13 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     }
     private fun createDescriptionObserver(generation: Long) = object : SimpleSdpObserver({ error -> reportSdpFailure(generation, error) }) {
         override fun onCreateSuccess(description: SessionDescription) = executePrimary(generation) {
+            directPath?.let { if (!directPathCurrent(it) || !p2pDescriptionSafe(description.description)) { lan.report("Videofehler", "Ungültige Direktverbindungsbeschreibung"); return@executePrimary } }
             peer?.setLocalDescription(object : SimpleSdpObserver({ error -> reportSdpFailure(generation, error) }) {
                 override fun onSetSuccess() = executePrimary(generation) {
-                    lan.send("sdp", JSONObject().put("type", description.type.canonicalForm()).put("sdp", description.description).toString())
+                    val payload = JSONObject().put("type", description.type.canonicalForm()).put("sdp", description.description).toString()
+                    val direct = directPath
+                    if (direct == null) lan.send("sdp", payload)
+                    else if (directPathCurrent(direct)) lan.sendOnApprovedConnection(direct.addresses.marker, "sdp", payload)
                 }
             }, description)
         }
@@ -207,7 +247,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
             executor.execute { action(if (closed.get() || !host) null else localTrack, egl.eglBaseContext) }
         }.isSuccess
     }
-    internal fun browserPreviewAvailable(): Boolean = host && !closed.get() && cameraFrameAvailable && browserPreviewSafety.mayStart()
+    internal fun browserPreviewAvailable(): Boolean = host && !closed.get() && directPath == null && cameraFrameAvailable && browserPreviewSafety.mayStart()
 
     /** All peer operations run on the camera owner executor; closing this peer never closes the track. */
     internal fun startBrowserPreview(id: String, offer: String, permitted: () -> Boolean, emit: (String, String, String?, Int?) -> Unit) = execute {
