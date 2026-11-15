@@ -39,3 +39,25 @@ in derselben atomaren Zustandsquelle entschieden werden. Ein auf dem anderen
 Gerät eingetretener, noch nicht zugestellter Verlust kann dort nicht
 rückwirkend bekannt sein. Transkripte dürfen nicht über den bestehenden
 unverschlüsselten LAN-Kanal gesendet werden. Der Abzweig bleibt deaktiviert.
+
+Ein optionaler `SpeechLocalDeliveryFence` verbindet im WIP ein Abonnement mit
+einem einmaligen lokalen CAS-Zustand. Er bindet Kanalobjekt, Aufnahme,
+Skriptfassung und Audio-Generation; bei erfasstem Queueverlust, Tee-Disable,
+Generationswechsel oder Abonnementende setzt der Producer denselben Zustand
+auf ein vorab angelegtes Stoppobjekt. Positionsübernahme konkurriert auf
+demselben atomaren Wert und kann einen bereits gestoppten Zustand nicht wieder
+aktivieren. Audioseitig werden weder UI-Callbacks noch Allokationen im
+Invalidierungspfad ausgeführt. Für eine neue Epoche ist ein neues Abonnement
+mit neuem Fence erforderlich. Ein Rückgabewert von `apply` ist selbst kein
+UI-Auftrag: Die spätere Oberfläche muss weiterhin den aktuellen Zustand
+rendern und darf ein zuvor entnommenes Ergebnis nicht verzögert anwenden.
+
+Die lokale Reihenfolge wird am atomaren Fence-Übergang entschieden, nicht
+behauptet als zeitgleicher System- oder Netzwerkvorgang. Zwischen dem
+Erkennen eines nicht verfügbaren Analyse-Locks und dem Ausführen dieses
+Übergangs können andere Threads bereits einen Positionszustand committen;
+ein solcher früher Commit wird durch den anschließenden Stoppzustand nicht
+zum späteren neuen Ergebnis. Eine Ende-zu-Ende-Garantie für bereits auf dem
+anderen Gerät zugestellte Positionen besteht nicht; eine noch nicht übertragene
+Verlustmeldung kann der Prompter nicht kennen. Echter Kanal-/Skript-Nachweis,
+UI-Lifecycle und geräteübergreifende Tests fehlen. Die Funktion bleibt aus.

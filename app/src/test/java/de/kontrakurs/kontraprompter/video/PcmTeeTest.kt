@@ -88,4 +88,46 @@ class PcmTeeTest {
             assertFalse(analysis.isAlive); assertEquals(false, result.get())
         } finally { lost.countDown(); analysis.join(2000); tee.close() }
     }
+
+    @Test fun `loss and generation change atomically stop local position fence`() {
+        val tee = PcmTee(); val channel = Any(); val generation = tee.generation
+        val fence = SpeechLocalDeliveryFence(channel, "take", "script", generation, 100, 0)
+        val sub = tee.subscribe(1, fence)
+        tee.publish("take", generation, 0, 1, 48_000, byteArrayOf(1, 2), 2)
+        tee.publish("take", generation, 1, 1, 48_000, byteArrayOf(3, 4), 2)
+        assertEquals(1L, sub.dropped); assertNull(fence.positionOrNull())
+        assertFalse(fence.apply(channel, "take", "script", generation, 1, 2)); tee.close()
+
+        val other = PcmTee(); val scope = SpeechLocalDeliveryFence(channel, "take", "script", other.generation, 100, 0)
+        other.subscribe(2, scope); other.invalidate()
+        assertNull(scope.positionOrNull()); assertFalse(scope.apply(channel, "take", "script", 0, 1, 2)); other.close()
+    }
+
+    @Test fun `local fence checks all scope fields and rejects replay and seek-era results`() {
+        val tee = PcmTee(); val channel = Any(); val generation = tee.generation
+        val old = SpeechLocalDeliveryFence(channel, "take", "script", generation, 20, 0); tee.subscribe(2, old)
+        assertFalse(old.apply(Any(), "take", "script", generation, 1, 2))
+        assertFalse(old.apply(channel, "other", "script", generation, 1, 2))
+        assertFalse(old.apply(channel, "take", "other", generation, 1, 2))
+        assertFalse(old.apply(channel, "take", "script", generation + 1, 1, 2))
+        assertFalse(old.apply(channel, "take", "script", generation, 1, 21))
+        assertTrue(old.apply(channel, "take", "script", generation, 1, 2))
+        assertFalse(old.apply(channel, "take", "script", generation, 1, 3))
+        tee.invalidate(); assertFalse(old.apply(channel, "take", "script", generation, 2, 3)); assertNull(old.positionOrNull())
+        tee.close()
+    }
+
+    @Test(timeout = 5000) fun `position commit racing loss cannot reactivate stopped fence`() {
+        repeat(300) {
+            val tee = PcmTee(); val channel = Any(); val generation = tee.generation
+            val fence = SpeechLocalDeliveryFence(channel, "take", "script", generation, 20, 0)
+            tee.subscribe(1, fence); tee.publish("take", generation, 0, 1, 48_000, byteArrayOf(1, 2), 2)
+            val start = CountDownLatch(1); val done = CountDownLatch(2)
+            val apply = Thread { try { start.await(); fence.apply(channel, "take", "script", generation, 1, 2) } finally { done.countDown() } }
+            val loss = Thread { try { start.await(); tee.publish("take", generation, 1, 1, 48_000, byteArrayOf(3, 4), 2) } finally { done.countDown() } }
+            apply.isDaemon = true; loss.isDaemon = true; apply.start(); loss.start(); start.countDown()
+            assertTrue(done.await(2, TimeUnit.SECONDS)); assertNull(fence.positionOrNull())
+            assertFalse(fence.apply(channel, "take", "script", generation, 2, 3)); tee.close()
+        }
+    }
 }

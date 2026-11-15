@@ -146,9 +146,9 @@ internal class RtcMp4Recorder(
     /** Stop accepting new camera/audio samples without closing the MP4. */
     override fun pause(): Boolean = synchronized(pauseLock) {
         if (!configured.get() || !firstMedia.get() || stopRequested.get() || finished.get()) return false
-        val changed = pauseTimeline?.pause(System.nanoTime()) == true
-        if (changed) audioTap?.invalidate()
-        changed
+        // Conservatively stop speech before the recorder pause can take effect.
+        audioTap?.invalidate()
+        pauseTimeline?.pause(System.nanoTime()) == true
     }
 
     override fun resume(): Boolean = synchronized(pauseLock) {
@@ -160,9 +160,8 @@ internal class RtcMp4Recorder(
         val now = SystemClock.elapsedRealtime()
         lastVideoAtMs.set(now); lastAudioAtMs.set(now)
         lastEncodedVideoMs.set(now); lastEncodedAudioMs.set(now)
-        val changed = pauseTimeline?.resume(System.nanoTime()) == true
-        if (changed) audioTap?.invalidate()
-        changed
+        audioTap?.invalidate()
+        pauseTimeline?.resume(System.nanoTime()) == true
     }
 
     override fun close() { stop() }
@@ -381,8 +380,9 @@ internal class RtcMp4Recorder(
     private fun requestStop(value: StopReason) {
         synchronized(pauseLock) {
             if (value == StopReason.ERROR) reason.set(value)
-            if (!stopRequested.compareAndSet(false, true)) return
+            if (stopRequested.get()) return
             audioTap?.invalidate()
+            if (!stopRequested.compareAndSet(false, true)) return
             if (value != StopReason.ERROR) reason.compareAndSet(StopReason.USER, value)
         }
         control.execute { finalizeRecording() }

@@ -20,22 +20,35 @@ internal class PcmTee : AutoCloseable {
     @Volatile private var closed = false
     val generation: Long get() = if (exhausted.get()) Long.MIN_VALUE else epoch.get()
     /** A malformed or failed analysis path stays unavailable until a fresh tee is created. */
-    fun disable() { exhausted.set(true) }
+    fun disable() { exhausted.set(true); invalidateFences(listeners.get()) }
+
+    private fun invalidateFences(snapshot: Array<Subscription>) {
+        var index = 0
+        while (index < snapshot.size) { snapshot[index].invalidateFence(); index++ }
+    }
 
     /** The analysis side must discard results after this epoch changes. */
     fun invalidate() {
+        invalidateFences(listeners.get())
         while (true) {
             val current = epoch.get()
-            if (current == Long.MAX_VALUE) { exhausted.set(true); return }
-            if (epoch.compareAndSet(current, current + 1)) return
+            if (current == Long.MAX_VALUE) { disable(); return }
+            if (epoch.compareAndSet(current, current + 1)) break
         }
+        // Include a subscription that raced the generation transition.
+        invalidateFences(listeners.get())
     }
 
     /** Slot storage is allocated here, never in the recorder's audio loop. */
-    fun subscribe(capacity: Int = 8): Subscription = synchronized(ownerLock) {
+    fun subscribe(capacity: Int = 8, fence: SpeechLocalDeliveryFence? = null): Subscription = synchronized(ownerLock) {
         require(capacity in 1..16)
+        val before = epoch.get()
         val old = listeners.get(); check(!closed && !exhausted.get() && old.size < 2) { "Audioanalyse nicht verfügbar" }
-        Subscription(capacity, { if (exhausted.get()) Long.MIN_VALUE else epoch.get() }) { remove(it) }.also { listeners.set(old + it) }
+        check(fence == null || fence.matchesGeneration(before)) { "Audioepoche stimmt nicht" }
+        Subscription(capacity, fence, { if (exhausted.get()) Long.MIN_VALUE else epoch.get() }) { remove(it) }.also {
+            listeners.set(old + it)
+            if (exhausted.get() || epoch.get() != before) it.invalidateFence()
+        }
     }
     private fun remove(subscription: Subscription) = synchronized(ownerLock) {
         listeners.set(listeners.get().filterNot { it === subscription }.toTypedArray())
@@ -61,7 +74,7 @@ internal class PcmTee : AutoCloseable {
         snapshot.forEach { it.close() }
     }
 
-    internal class Subscription(capacity: Int, private val currentGeneration: () -> Long,
+    internal class Subscription(capacity: Int, private val fence: SpeechLocalDeliveryFence?, private val currentGeneration: () -> Long,
                                 private val remove: (Subscription) -> Unit) : AutoCloseable {
         private class Slot {
             val bytes = ByteArray(8192)
@@ -73,17 +86,19 @@ internal class PcmTee : AutoCloseable {
         private val lost = AtomicLong()
         private var head = 0; private var size = 0; @Volatile private var closed = false
         val dropped: Long get() = lost.get()
+        internal fun invalidateFence() { fence?.invalidate() }
+        private fun markLoss() { invalidateFence(); lost.incrementAndGet() }
         /** A snapshot check only; UI delivery still requires its own atomic fence. */
         fun isCurrent(block: PcmBlock): Boolean = !closed && lost.get() == 0L && block.generation == currentGeneration()
 
         internal fun offer(recordingId: String, generation: Long, firstSample: Long, captureTimeNs: Long,
                            sampleRate: Int, bytes: ByteArray, length: Int) {
-            if (!lock.tryLock()) { lost.incrementAndGet(); return }
+            if (!lock.tryLock()) { markLoss(); return }
             try {
                 if (closed || lost.get() != 0L || generation != currentGeneration()) return
                 while (size > 0 && slots[head].generation != currentGeneration()) { head = (head + 1) % slots.size; size-- }
                 if (length !in 2..minOf(bytes.size, 8192) || length % 2 != 0 || firstSample < 0 || captureTimeNs < 0 || sampleRate != 48_000 || size == slots.size) {
-                    lost.incrementAndGet(); return
+                    markLoss(); return
                 }
                 val slot = slots[(head + size) % slots.size]
                 System.arraycopy(bytes, 0, slot.bytes, 0, length)
@@ -104,6 +119,7 @@ internal class PcmTee : AutoCloseable {
             block
         }
         override fun close() {
+            invalidateFence()
             lock.withLock { closed = true; size = 0 }
             remove(this)
         }

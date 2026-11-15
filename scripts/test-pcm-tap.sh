@@ -17,14 +17,15 @@ hamcrest=$(find_one "$cache/org.hamcrest/hamcrest-core/1.3/**/*.jar")
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/kp-pcm-tap.XXXXXXXX")
 trap 'rm -rf -- "$temporary"' EXIT
 src="$root/app/src/main/java/de/kontrakurs/kontraprompter/video/PcmTee.kt"
+fence="$root/app/src/main/java/de/kontrakurs/kontraprompter/video/SpeechLocalDeliveryFence.kt"
 tests="$root/app/src/test/java/de/kontrakurs/kontraprompter/video/PcmTeeTest.kt"
 java -XX:ActiveProcessorCount=1 -Xmx160m -cp "$compiler:$stdlib:$script:$reflect:$daemon:$coroutines:$annotations" \
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect -classpath "$stdlib:$annotations:$junit:$hamcrest" \
-  -d "$temporary" "$src" "$tests"
+  -d "$temporary" "$src" "$fence" "$tests"
 java -Xmx64m -cp "$temporary:$stdlib:$junit:$hamcrest" org.junit.runner.JUnitCore de.kontrakurs.kontraprompter.video.PcmTeeTest
 python3 - "$temporary" <<'PY'
 import re,subprocess,sys
-for name,method in [('de.kontrakurs.kontraprompter.video.PcmTee','publish'),('de.kontrakurs.kontraprompter.video.PcmTee$Subscription','offer')]:
+for name,method in [('de.kontrakurs.kontraprompter.video.PcmTee','publish'),('de.kontrakurs.kontraprompter.video.PcmTee$Subscription','offer'),('de.kontrakurs.kontraprompter.video.PcmTee$Subscription','markLoss'),('de.kontrakurs.kontraprompter.video.SpeechLocalDeliveryFence','invalidate')]:
     text=subprocess.check_output(['javap','-c','-p','-classpath',sys.argv[1],name],text=True)
     match=re.search(r'^  (?:public|private).*\b'+method+r'(?:\$[\w]+)?\([^\n]*\);\n(.*?)(?=^  (?:public|private|protected)|\Z)',text,re.M|re.S)
     if not match: raise SystemExit('PCM hot-path bytecode missing: '+name+'.'+method)
