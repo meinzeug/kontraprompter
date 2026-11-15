@@ -109,6 +109,9 @@ class MainActivity : ComponentActivity() {
     internal fun clearShutterKeys() = shutterKeys.clear()
     internal fun clearShutterKeysForDevice(deviceId: Int) = shutterKeys.clearDevice(deviceId)
 
+    // ComponentActivity's inherited dispatch is required for unhandled keys;
+    // lint reports its restricted internal declaration even on this super call.
+    @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val handler = shutterHandler
         val device = event.device
@@ -192,7 +195,7 @@ private fun KontraApp(activity: MainActivity) {
             fun dispatch(gesture: ShutterGesture, context: ShutterContext) {
                 val now = current.pairedCapture.state.value
                 val input = InputDevice.getDevice(context.deviceId)
-                val deviceCurrent = input != null && input.isExternal && !input.isVirtual && input.descriptor == context.descriptor
+                val deviceCurrent = Build.VERSION.SDK_INT >= 29 && input != null && input.isExternal && !input.isVirtual && input.descriptor == context.descriptor
                 if ((context.keyboardBased && !activity.keyboardRemoteMarkerCurrent(context.descriptor, context.keyboardEpoch)) ||
                     !shutterContextCurrent(context, now.phase, now.recordingId, now.pending, current.lan.isApprovedConnection(context.link.state), deviceCurrent)) {
                     current.pairedCapture.triggerUnavailable(); return
@@ -208,7 +211,7 @@ private fun KontraApp(activity: MainActivity) {
                             val state = current.pairedCapture.state.value
                             val device = InputDevice.getDevice(context.deviceId)
                             (!context.keyboardBased || activity.keyboardRemoteMarkerCurrent(context.descriptor, context.keyboardEpoch)) && shutterContextCurrent(context, state.phase, state.recordingId, state.pending, current.lan.isApprovedConnection(context.link.state),
-                                device != null && device.isExternal && !device.isVirtual && device.descriptor == context.descriptor)
+                                Build.VERSION.SDK_INT >= 29 && device != null && device.isExternal && !device.isVirtual && device.descriptor == context.descriptor)
                         }
                         try {
                             if (withTimeoutOrNull(2_000) { remoteActions.send(event); event.completed.await(); true } != true)

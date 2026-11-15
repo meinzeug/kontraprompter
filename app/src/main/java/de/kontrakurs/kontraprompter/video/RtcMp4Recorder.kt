@@ -200,10 +200,12 @@ internal class RtcMp4Recorder(
                 if (!info.isEncoder || info.supportedTypes.none { it.equals("video/avc", true) }) false
                 else runCatching {
                     val caps = info.getCapabilitiesForType("video/avc")
-                    caps.colorFormats.contains(MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface) && caps.videoCapabilities.areSizeAndRateSupported(w, h, VIDEO_FPS.toDouble())
+                    caps.colorFormats.contains(MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface) &&
+                        supportsVideo(caps.videoCapabilities) { it.areSizeAndRateSupported(w, h, VIDEO_FPS.toDouble()) }
                 }.getOrDefault(false)
             } ?: error("Kein passender H.264-Oberflächenencoder für diese Kameraauflösung")
             val videoCaps = selected.getCapabilitiesForType("video/avc").videoCapabilities
+                ?: error("H.264-Encoder meldet keine Videofähigkeiten")
             val videoFormat = MediaFormat.createVideoFormat("video/avc", w, h).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
                 setInteger(MediaFormat.KEY_BIT_RATE, VIDEO_BITRATE.coerceIn(videoCaps.bitrateRange.lower, videoCaps.bitrateRange.upper))
@@ -225,6 +227,9 @@ internal class RtcMp4Recorder(
             audio.configure(audioFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE); audio.start()
             val minimum = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
             check(minimum > 0) { "Mikrofonformat wird nicht unterstützt" }
+            if (app.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                throw SecurityException("Mikrofonberechtigung fehlt")
+            }
             val recorder = AudioRecord.Builder()
                 .setAudioSource(MediaRecorder.AudioSource.CAMCORDER)
                 .setAudioFormat(AudioFormat.Builder().setSampleRate(SAMPLE_RATE).setChannelMask(AudioFormat.CHANNEL_IN_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())

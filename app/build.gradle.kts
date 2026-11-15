@@ -2,13 +2,12 @@ import org.gradle.api.tasks.testing.Test
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "de.kontrakurs.kontraprompter"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig {
         applicationId = "de.kontrakurs.kontraprompter"
         minSdk = 26
@@ -19,7 +18,6 @@ android {
     buildFeatures { compose = true }
     packaging { jniLibs { useLegacyPackaging = true } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
-    kotlinOptions { jvmTarget = "17" }
 }
 
 // The JVM tests load the real test JSON implementation in an isolated classloader;
@@ -33,9 +31,10 @@ tasks.withType<Test>().configureEach {
 dependencies {
     jsonUnitTestRuntime("org.json:json:20240303")
     implementation("io.github.webrtc-sdk:android:150.7871.04")
-    implementation(platform("androidx.compose:compose-bom:2025.08.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.activity:activity-compose:1.10.1")
-    implementation("androidx.compose.material3:material3")
+    // Explicit release candidate: public Material Expressive APIs are not in stable 1.4.0.
+    implementation("androidx.compose.material3:material3:1.5.0-rc01")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.2")
