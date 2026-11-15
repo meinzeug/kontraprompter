@@ -10,8 +10,8 @@ nötigen Änderungen an Compose-BOM und Buildwerkzeugen sind gesondert im
 Dokument `material3-expressive-deps-wip.md` festgehalten.
 
 Typografie, Formen und `LocalKontraSpacing` bieten ein gemeinsames Fundament
-für die spätere Seitenmigration. Drei Compose-Vorschauen zeigen Hell, Dunkel
-und größere Schrift. `KontraVideoOverlay` stellt weiß beschriftbare, dunkle
+für die spätere Seitenmigration. Compose-Vorschauen zeigen Hell, Dunkel,
+200 Prozent Schrift sowie kompakte und breite Fenster. `KontraVideoOverlay` stellt weiß beschriftbare, dunkle
 Flächen für beliebige Videobilder bereit; der vorhandene Livebildpfad wird
 dadurch nicht verändert.
 
