@@ -3,8 +3,8 @@
 This isolated dependency step updates the Compose BOM from 2025.08.00 to
 2026.09.00 and explicitly selects Material 3 1.5.0-rc01. The latter is a
 release candidate, not a stable release, and requires compatibility and device
-review before release. AGP, Gradle, Kotlin, and the Compose compiler remain
-unchanged. No screen or app theme is changed in this commit.
+review before release. The dependency change and the required toolchain
+migration are separate commits. No screen or app theme is changed here.
 
 The corresponding Android sources published by Google contain public
 `MaterialExpressiveTheme` and `MotionScheme.expressive()` APIs. Actual runtime
@@ -24,6 +24,15 @@ the subsequent unit tests and lint were not run. Kotlin/compiler compatibility
 and runtime behavior therefore remain unverified. The source experiment must
 not be integrated or released in this state. Do not suppress the AAR metadata
 checks; a separately reviewed toolchain migration is required for this version.
+
+The subsequent isolated migration uses AGP 9.1.1, Gradle 9.3.1 and compileSdk
+37; minSdk 26 and targetSdk 36 remain unchanged. AGP 9's built-in Kotlin
+replaces the Android Kotlin plugin, and the obsolete `android.kotlinOptions`
+block is removed; JVM target continues to follow Java target 17. The Compose
+compiler plugin remains explicitly at 2.2.20 pending compatibility testing.
+The Gradle wrapper jar is checked against Gradle's published 9.3.1 checksum,
+and the distribution checksum is pinned in wrapper properties. Build, tests,
+lint, Kotlin/plugin resolution and runtime compatibility remain to be verified.
 
 The source jar `material3-android-1.5.0-rc01-sources.jar` downloaded from
 Google Maven had SHA-256

@@ -2,13 +2,12 @@ import org.gradle.api.tasks.testing.Test
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "de.kontrakurs.kontraprompter"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig {
         applicationId = "de.kontrakurs.kontraprompter"
         minSdk = 26
@@ -19,7 +18,6 @@ android {
     buildFeatures { compose = true }
     packaging { jniLibs { useLegacyPackaging = true } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
-    kotlinOptions { jvmTarget = "17" }
 }
 
 // The JVM tests load the real test JSON implementation in an isolated classloader;
