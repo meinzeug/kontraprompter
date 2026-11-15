@@ -10,7 +10,8 @@ class DirectPeerStopTest {
         val queue = mutableListOf<() -> Unit>()
         var closes = 0
         var recording = true
-        val stop = DirectPeerStop({ task -> queue.add(task); true }, { closes++ })
+        val states = mutableListOf<DirectPeerStop.State>()
+        val stop = DirectPeerStop({ task -> queue.add(task); true }, { closes++; true }, { states.add(it) })
         stop.request(); stop.request()
         assertEquals(DirectPeerStop.State.PENDING, stop.state())
         assertEquals(1, queue.size)
@@ -18,6 +19,7 @@ class DirectPeerStopTest {
         queue.single().invoke()
         assertEquals(DirectPeerStop.State.CLOSED, stop.state())
         assertEquals(1, closes)
+        assertEquals(listOf(DirectPeerStop.State.PENDING, DirectPeerStop.State.CLOSED), states)
         assertTrue(recording)
         recording = false
         assertFalse(recording)
@@ -26,7 +28,7 @@ class DirectPeerStopTest {
     @Test fun `blocked native close never reports completion`() {
         val entered = CountDownLatch(1); val release = CountDownLatch(1); val done = CountDownLatch(1)
         val stop = DirectPeerStop({ task -> Thread { try { task() } finally { done.countDown() } }.start(); true }, {
-            entered.countDown(); check(release.await(5, TimeUnit.SECONDS))
+            entered.countDown(); check(release.await(5, TimeUnit.SECONDS)); true
         })
         try {
             stop.request(); assertTrue(entered.await(2, TimeUnit.SECONDS))
@@ -38,9 +40,13 @@ class DirectPeerStopTest {
     }
 
     @Test fun `submission or native failure is not successful close`() {
-        val notSubmitted = DirectPeerStop({ false }, {})
+        val states = mutableListOf<DirectPeerStop.State>()
+        val notSubmitted = DirectPeerStop({ false }, { true }, { states.add(it) })
         notSubmitted.request(); assertEquals(DirectPeerStop.State.FAILED, notSubmitted.state())
+        assertEquals(listOf(DirectPeerStop.State.PENDING, DirectPeerStop.State.FAILED), states)
         val failed = DirectPeerStop({ task -> task(); true }, { error("synthetic close failure") })
         failed.request(); assertEquals(DirectPeerStop.State.FAILED, failed.state())
+        val absent = DirectPeerStop({ task -> task(); true }, { false })
+        absent.request(); assertEquals(DirectPeerStop.State.NO_PEER, absent.state())
     }
 }

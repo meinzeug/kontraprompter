@@ -8,8 +8,8 @@ internal fun p2pInterfaceMatches(name: String?, up: Boolean, loopback: Boolean, 
     up && !loopback && name != null && (name == "p2p0" || name.matches(Regex("p2p-[A-Za-z0-9_.-]{1,48}"))) &&
         local is Inet4Address && !local.isAnyLocalAddress && !local.isLoopbackAddress && !local.isMulticastAddress && local in addresses
 
-internal fun isProvenDefaultWifi(interfaceName: String?, defaultInterface: String?, wifi: Boolean, vpn: Boolean, internet: Boolean, local: InetAddress, defaultAddresses: Collection<InetAddress>): Boolean =
-    interfaceName != null && interfaceName == defaultInterface && wifi && !vpn && internet && local in defaultAddresses
+internal fun isMatchingOrdinaryWifi(interfaceName: String?, networkInterface: String?, wifi: Boolean, vpn: Boolean, ordinaryWifiType: Boolean, local: InetAddress, networkAddresses: Collection<InetAddress>): Boolean =
+    interfaceName != null && interfaceName == networkInterface && wifi && !vpn && ordinaryWifiType && local in networkAddresses
 
 /** Only literal IPv4 host candidates matching the authenticated socket peer. */
 internal fun p2pCandidateMatches(candidate: String, expected: InetAddress): Boolean {

@@ -17,6 +17,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
         data object Unknown : RouteDecision
     }
 
+    @Suppress("DEPRECATION") // TYPE_WIFI excludes a system-reported WIFI_P2P network on API 26+.
     private fun routeFor(addresses: LanSession.SocketAddresses): RouteDecision = runCatching {
         val local = addresses.local
         val remote = addresses.remote
@@ -27,15 +28,18 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
             if (!lan.isApprovedConnection(addresses.marker)) return RouteDecision.Unknown
             return RouteDecision.Direct(DirectPath(addresses, net.name))
         }
-        // The old mode is permitted only for the Android-reported default Wi-Fi
-        // with Internet capability and this exact socket address/interface.
+        // Match the actual socket against Android Wi-Fi networks, independent of
+        // default Internet routing. Multiple or unverifiable matches fail closed.
         val manager = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return RouteDecision.Unknown
-        val network = manager.activeNetwork ?: return RouteDecision.Unknown
-        val caps = manager.getNetworkCapabilities(network) ?: return RouteDecision.Unknown
-        val properties = manager.getLinkProperties(network) ?: return RouteDecision.Unknown
-        if (!isProvenDefaultWifi(net.name, properties.interfaceName, caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI),
-                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN), caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET),
-                local, properties.linkAddresses.map { it.address }) || manager.activeNetwork != network || !lan.isApprovedConnection(addresses.marker)) return RouteDecision.Unknown
+        fun matchesWifi(network: android.net.Network): Boolean {
+            val caps = manager.getNetworkCapabilities(network) ?: return false
+            val properties = manager.getLinkProperties(network) ?: return false
+            return isMatchingOrdinaryWifi(net.name, properties.interfaceName, caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI),
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN), manager.getNetworkInfo(network)?.type == android.net.ConnectivityManager.TYPE_WIFI,
+                local, properties.linkAddresses.map { it.address })
+        }
+        val matches = manager.allNetworks.filter(::matchesWifi)
+        if (matches.size != 1 || !matchesWifi(matches.single()) || !manager.allNetworks.contains(matches.single()) || !lan.isApprovedConnection(addresses.marker)) return RouteDecision.Unknown
         RouteDecision.NormalWifi
     }.getOrDefault(RouteDecision.Unknown)
 
@@ -67,7 +71,8 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     private val directPeerStop = DirectPeerStop(
         submit = { action -> runCatching { executor.execute { action() } }.isSuccess },
         // Deliberately do not dispose peer, track, camera or recorder here.
-        closePeer = { peer?.close() },
+        closePeer = { peer?.let { it.close(); true } ?: false },
+        onState = { state -> onDirectPeerStop?.invoke(state) },
     )
     private var source: VideoSource? = null
     private var localTrack: VideoTrack? = null
@@ -76,6 +81,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     private var remoteTrack: VideoTrack? = null
     @Volatile internal var onCameraFailure: ((String) -> Unit)? = null
     @Volatile internal var onCameraSelection: ((Boolean?, Boolean) -> Unit)? = null
+    @Volatile internal var onDirectPeerStop: ((DirectPeerStop.State) -> Unit)? = null
     private val sinks = mutableSetOf<VideoSink>()
     private val previewViews = mutableSetOf<VideoView>()
     private var pipelineClosed = false

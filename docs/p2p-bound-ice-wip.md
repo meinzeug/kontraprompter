@@ -4,11 +4,14 @@ Dieser WIP ist kein Produktionsnachweis. Nur ein bereits authentisierter und
 beidseitig bestätigter Kanal kann einen Snapshot seiner Socket-Endpunkte liefern.
 Die lokale IPv4-Adresse muss auf einem aktiven Interface mit dem beobachteten
 Namen `p2p0` oder `p2p-*` liegen; der Kanal wird nach der Interfaceabfrage erneut
-geprüft. Der bisherige WLAN-Pfad gilt nur, wenn Android das aktive Defaultnetz
-als WLAN mit Internetfähigkeit meldet und dessen Interface und Adresse zum
-Socket passen. Unklarer Zustand und nicht einordenbare P2P-Interfaces melden
-einen Fehler. Offline-/VPN-/Ethernet-Sonderfälle sind deshalb noch nicht
-kompatibel nachgewiesen und bleiben ein Freigabeblocker.
+geprüft. Der bisherige WLAN-Pfad gilt nur bei genau einem Android-Netz mit
+passendem Socket-Interface und Adresse, Wi-Fi-Transport und dem normalen
+`TYPE_WIFI` (nicht `TYPE_WIFI_P2P`). Internetfähigkeit oder Defaultnetz werden
+nicht vorausgesetzt. Fehlende/mehrdeutige Netzinformationen und nicht einordenbare
+P2P-Interfaces melden einen Fehler. Offline-WLAN, Mobilfunk-Default, VPN und
+Ethernet sind noch nicht auf Geräten getestet; `getNetworkInfo()`/`getAllNetworks()`
+sind veraltet und können eingeschränkte Daten liefern. Das bleibt ein
+Kompatibilitäts- und Freigabeblocker.
 Die Namen sind eine Herstellerheuristik, kein Beleg einer Android-P2P-Gruppe.
 
 Nur in diesem Pfad wird `disableNetworkMonitor` gesetzt und die Upstream-
@@ -28,14 +31,15 @@ Vor einer Freigabe sind unter anderem unabhängiger SDP-/ICE-/Kanal-Racereview,
 Netzwechsel-/VPN-/Interface- und native Sockettests, Android-Build und zwei
 echte Gerätetests nötig. Während aktiver Aufnahme darf die Fehlerbehandlung weder
 Recorder noch lokales Original beenden. Keine Tests dürfen Credentials oder
-Adresswerte in Logs ausgeben.
+Adresswerte in Logs ausgeben; native WebRTC-Diagnosen müssen gesondert geprüft werden.
 
 Bei erkannter Trennung invalidiert der P2P-Pfad die Callbackgeneration und
 reiht ein `PeerConnection.close()` auf dem Videoexecutor ein. Er ruft dabei weder
 `dispose()` noch einen Recorder- oder Kamerastopp auf. Hängt der Executor oder
 der native Aufruf, ist das Ende der Medienübertragung nicht bestätigt; ein
 Interfaceverlust ohne passenden Callback ist ebenfalls noch nicht aktiv
-überwacht. Ein sofortiger oder garantierter Medienabbruch wird nicht behauptet.
+überwacht. Die Oberfläche zeigt ausstehend, nicht bestätigt oder lediglich den
+zurückgekehrten Aufruf; sie behauptet keinen garantierten Medienabbruch.
 Die Unabhängigkeit des nativen Peer-Close vom aktiven Recorder muss auf echter
 Hardware nachgewiesen werden.
 

@@ -102,6 +102,7 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
         CameraConnectionScreen(session, state, video, cloud, onClose)
         return
     }
+    val directPeerStop by session.directPeerStopState.collectAsState()
     // A discovered endpoint is session-bound and must not survive recreation
     // without its in-memory discovery selection.
     var address by remember(session) { mutableStateOf("") }
@@ -127,6 +128,7 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
         onBack = onClose, backLabel = "Trennen", showCamera = false
     ) {
         CameraConnectionStatus(state.status, detail = state.rttMs?.let { "Signalisierungs-RTT: $it ms · keine Bildlatenz" }, error = state.error)
+        DirectPeerStopNotice(directPeerStop)
         if (video != null && session.host) {
             Text("Kameravorschau", style = MaterialTheme.typography.titleMedium)
             Box(Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(22.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
@@ -249,6 +251,7 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
     val context = LocalContext.current
     val recording by session.recording.collectAsState()
     val cameraSelection by session.cameraSelection.collectAsState()
+    val directPeerStop by session.directPeerStopState.collectAsState()
     var permissionMessage by remember { mutableStateOf<String?>(null) }
     val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -300,6 +303,7 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
                 error = state.error,
                 detail = if (state.authenticated && state.remoteName.isNotBlank()) "Anzeigegerät: ${state.remoteName}" else null,
             )
+            DirectPeerStopNotice(directPeerStop)
             if (!state.authenticated && state.token.isNotEmpty()) {
                 CameraConnectionCard {
                     Text("Mit Teleprompter verbinden", style = MaterialTheme.typography.titleMedium)

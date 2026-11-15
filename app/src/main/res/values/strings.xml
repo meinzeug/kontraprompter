@@ -1,4 +1,8 @@
 <resources>
+    <string name="direct_peer_stop_pending">Videopfad wird beendet. Die Beendigung ist noch nicht bestätigt; bitte Kamerastatus prüfen.</string>
+    <string name="direct_peer_stop_called">Der Beendigungsaufruf für den Videopfad ist zurückgekehrt. Bitte Kamerastatus prüfen.</string>
+    <string name="direct_peer_stop_no_peer">Kein Videopfad zum Beenden vorhanden. Bitte Kamerastatus prüfen.</string>
+    <string name="direct_peer_stop_failed">Ende des Videopfads nicht bestätigt. Bitte Kamerastatus prüfen.</string>
     <string name="wifi_direct_title">Kamera nicht erreichbar? Wi-Fi Direct</string>
     <string name="wifi_direct_expanded">Aufgeklappt</string>
     <string name="wifi_direct_collapsed">Zugeklappt</string>

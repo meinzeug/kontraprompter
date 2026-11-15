@@ -31,14 +31,14 @@ class P2pIcePolicyTest {
         assertFalse(p2pCandidateMatches(candidate + "\n", local))
     }
 
-    @Test fun `normal mode requires the actual default non-vpn wifi address and interface`() {
-        assertTrue(isProvenDefaultWifi("wlan0", "wlan0", true, false, true, local, listOf(local)))
-        assertFalse(isProvenDefaultWifi("p2p0", "wlan0", true, false, true, local, listOf(local)))
-        assertFalse(isProvenDefaultWifi("wlan0", "wlan0", true, true, true, local, listOf(local)))
-        assertFalse(isProvenDefaultWifi("wlan0", "wlan0", true, false, false, local, listOf(local)))
-        assertFalse(isProvenDefaultWifi("wlan0", "wlan0", false, false, true, local, listOf(local)))
-        assertFalse(isProvenDefaultWifi("wlan0", "wlan0", true, false, true, local, listOf(peer)))
-        assertFalse(isProvenDefaultWifi(null, null, true, false, true, local, listOf(local)))
+    @Test fun `normal mode requires matching ordinary wifi address and interface`() {
+        assertTrue(isMatchingOrdinaryWifi("wlan0", "wlan0", true, false, true, local, listOf(local)))
+        assertFalse(isMatchingOrdinaryWifi("p2p0", "wlan0", true, false, true, local, listOf(local)))
+        assertFalse(isMatchingOrdinaryWifi("wlan0", "wlan0", true, true, true, local, listOf(local)))
+        assertFalse(isMatchingOrdinaryWifi("wlan0", "wlan0", true, false, false, local, listOf(local)))
+        assertFalse(isMatchingOrdinaryWifi("wlan0", "wlan0", false, false, true, local, listOf(local)))
+        assertFalse(isMatchingOrdinaryWifi("wlan0", "wlan0", true, false, true, local, listOf(peer)))
+        assertFalse(isMatchingOrdinaryWifi(null, null, true, false, true, local, listOf(local)))
     }
 
     @Test fun `sdp cannot bypass candidate filtering or leak connection addresses`() {
