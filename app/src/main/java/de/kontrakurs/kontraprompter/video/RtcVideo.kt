@@ -63,6 +63,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
                     val enumerator: CameraEnumerator = if (Camera2Enumerator.isSupported(context)) Camera2Enumerator(context) else Camera1Enumerator(false)
                     val name = chooseCamera(enumerator.deviceNames.toList(), preferFrontCamera, enumerator::isFrontFacing, enumerator::isBackFacing) ?: error("Keine Kamera verfügbar")
                     onCameraSelection?.invoke(if (enumerator.isFrontFacing(name)) true else if (enumerator.isBackFacing(name)) false else null, enumerator.deviceNames.any { enumerator.isFrontFacing(it) } && enumerator.deviceNames.any { enumerator.isBackFacing(it) })
+                    if (captureProfile.fixedFps && enumerator !is Camera2Enumerator) error("Feste Bildrate ist auf diesem Gerät im Testmodus nicht verfügbar")
                     camera = if (captureProfile.fixedFps && enumerator is Camera2Enumerator) {
                         // Isolated diagnostic build only. The selected AE range still requires device verification.
                         KpExperimentalCamera2Capturer(context, name, cameraEvents(), 20)

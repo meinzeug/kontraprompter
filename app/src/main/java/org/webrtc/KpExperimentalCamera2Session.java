@@ -70,6 +70,7 @@ class KpExperimentalCamera2Session implements CameraSession {
   // State
   private SessionState state = SessionState.RUNNING;
   private boolean firstFrameReported;
+  private boolean startupReported;
 
   // Used only for stats. Only used on the camera thread.
   private final long constructionTimeNs; // Construction time of this class.
@@ -96,7 +97,7 @@ class KpExperimentalCamera2Session implements CameraSession {
     @Override
     public void onDisconnected(CameraDevice camera) {
       checkIsOnCameraThread();
-      final boolean startFailure = (captureSession == null) && (state != SessionState.STOPPED);
+      final boolean startFailure = !startupReported && (state != SessionState.STOPPED);
       state = SessionState.STOPPED;
       stopInternal();
       if (startFailure) {
@@ -115,16 +116,17 @@ class KpExperimentalCamera2Session implements CameraSession {
     @Override
     public void onOpened(CameraDevice camera) {
       checkIsOnCameraThread();
+      if (state == SessionState.STOPPED) { camera.close(); return; }
 
       Logging.d(TAG, "Camera opened.");
       cameraDevice = camera;
 
-      surfaceTextureHelper.setTextureSize(captureFormat.width, captureFormat.height);
-      surface = new Surface(surfaceTextureHelper.getSurfaceTexture());
       try {
+        surfaceTextureHelper.setTextureSize(captureFormat.width, captureFormat.height);
+        surface = new Surface(surfaceTextureHelper.getSurfaceTexture());
         camera.createCaptureSession(
             Arrays.asList(surface), new CaptureSessionCallback(), cameraThreadHandler);
-      } catch (CameraAccessException e) {
+      } catch (CameraAccessException | RuntimeException e) {
         reportError("Failed to create capture session. " + e);
         return;
       }
@@ -144,12 +146,14 @@ class KpExperimentalCamera2Session implements CameraSession {
     public void onConfigureFailed(CameraCaptureSession session) {
       checkIsOnCameraThread();
       session.close();
+      if (state == SessionState.STOPPED) return;
       reportError("Failed to configure capture session.");
     }
 
     @Override
     public void onConfigured(CameraCaptureSession session) {
       checkIsOnCameraThread();
+      if (state == SessionState.STOPPED) { session.close(); return; }
       Logging.d(TAG, "Camera capture session configured.");
       captureSession = session;
       try {
@@ -175,11 +179,12 @@ class KpExperimentalCamera2Session implements CameraSession {
         captureRequestBuilder.addTarget(surface);
         session.setRepeatingRequest(
             captureRequestBuilder.build(), new CameraCaptureCallback(), cameraThreadHandler);
-      } catch (CameraAccessException e) {
+      } catch (CameraAccessException | RuntimeException e) {
         reportError("Failed to start capture request. " + e);
         return;
       }
 
+      try {
       surfaceTextureHelper.startListening((VideoFrame frame) -> {
         checkIsOnCameraThread();
 
@@ -207,7 +212,12 @@ class KpExperimentalCamera2Session implements CameraSession {
         events.onFrameCaptured(KpExperimentalCamera2Session.this, modifiedFrame);
         modifiedFrame.release();
       });
+      } catch (RuntimeException e) {
+        reportError("Failed to start camera frame listener. " + e);
+        return;
+      }
       Logging.d(TAG, "Camera device successfully started.");
+      startupReported = true;
       callback.onDone(KpExperimentalCamera2Session.this);
     }
 
@@ -305,7 +315,7 @@ class KpExperimentalCamera2Session implements CameraSession {
 
     try {
       cameraCharacteristics = cameraManager.getCameraCharacteristics(cameraId);
-    } catch (CameraAccessException | IllegalArgumentException e) {
+    } catch (CameraAccessException | RuntimeException e) {
       reportError("getCameraCharacteristics(): " + e.getMessage());
       return;
     }
@@ -328,6 +338,10 @@ class KpExperimentalCamera2Session implements CameraSession {
 
     Range<Integer>[] fpsRanges =
         cameraCharacteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
+    if (fpsRanges == null || fpsRanges.length == 0) {
+      reportError("Camera has no available frame-rate ranges.");
+      return;
+    }
     fpsUnitFactor = Camera2Enumerator.getFpsUnitFactor(fpsRanges);
     List<CaptureFormat.FramerateRange> framerateRanges =
         Camera2Enumerator.convertFramerates(fpsRanges, fpsUnitFactor);
@@ -340,8 +354,11 @@ class KpExperimentalCamera2Session implements CameraSession {
       return;
     }
 
-    final CaptureFormat.FramerateRange bestFpsRange = KpFixedFpsSelector.select(framerateRanges, minimumFps,
-        CameraEnumerationAndroid.getClosestSupportedFramerateRange(framerateRanges, framerate));
+    final CaptureFormat.FramerateRange bestFpsRange = KpFixedFpsSelector.select(framerateRanges, minimumFps);
+    if (bestFpsRange == null) {
+      reportError("Feste Bildrate wird von dieser Kamera nicht unterstützt.");
+      return;
+    }
 
     final Size bestSize = CameraEnumerationAndroid.getClosestSupportedSize(sizes, width, height);
     CameraEnumerationAndroid.reportCameraResolution(camera2ResolutionHistogram, bestSize);
@@ -401,9 +418,10 @@ class KpExperimentalCamera2Session implements CameraSession {
 
   private void reportError(String error) {
     checkIsOnCameraThread();
+    if (state == SessionState.STOPPED) return;
     Logging.e(TAG, "Error: " + error);
 
-    final boolean startFailure = (captureSession == null) && (state != SessionState.STOPPED);
+    final boolean startFailure = !startupReported && (state != SessionState.STOPPED);
     state = SessionState.STOPPED;
     stopInternal();
     if (startFailure) {
