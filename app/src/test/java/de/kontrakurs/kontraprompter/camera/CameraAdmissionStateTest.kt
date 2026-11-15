@@ -24,7 +24,7 @@ class CameraAdmissionStateTest {
     @Test fun admissionAndFailureAreDistinguishedAndLateAcksCannotEraseRevision() {
         val command = start()
         val pending = decideCameraCommand(CameraDecisionState(), command, false, true, twoPhase = true).state
-        for ((admitted,result) in listOf(true to "accepted",false to "uncertain")) {
+        for ((admitted,result) in listOf(true to "enqueued",false to "uncertain")) {
             val finished = finishCameraAdmission(pending, command, admitted)
             assertEquals(result, finished.decisions.single().result)
             assertTrue(finished.decisions.single().pendingAck)
