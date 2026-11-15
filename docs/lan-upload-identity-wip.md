@@ -1,0 +1,7 @@
+# LAN-Aufnahmeidentität beim Vollupload – WIP
+
+Dieser separate Android-WIP ergänzt für lokale `LAN`- und `LAN_UNASSIGNED`-Aufnahmen ausschließlich den HTTPS-Header `X-Lan-Recording-Id` mit der unveränderlichen Original-Aufnahme-ID. Das vorhandene Uploadjournal-Format bleibt unverändert; vor dem Netzaufruf werden kanonische IDs und die bestehende deterministische Bindung von Aufnahme und Zielprojekt zur Upload-ID geprüft. Eine projektgebundene LAN-Aufnahme wird bei abweichendem Zielprojekt vor dem Senden abgewiesen. `WEB` und `MANUAL` senden diesen Header nicht und behalten ihre bisherigen speziellen Regeln.
+
+Ein älterer Server ignoriert diesen zusätzlichen Header; der neue Serververtrag ist ebenfalls isolierter WIP. Die Identität ist eine Angabe des angemeldeten Clients, kein kryptografischer Gerätenachweis. Der Header enthält weder Passwort noch Skripttext und wird nicht über den Telefon-zu-Telefon-LAN-Kanal geschickt. Bestehende Session-, Retry- und Uploadbeleg-Prüfungen bleiben relevant; das lokale Original wird dadurch nicht gelöscht.
+
+Gezielte JVM-Tests mit synthetischen Daten prüfen Herkunft, einen Test-HTTP-Header, deterministische Wiederholung, falsche IDs/Projekte sowie bestehende SessionCookie-Regeln. Sie prüfen kein Android-AtomicFile-Uploadjournal, keinen kompletten Android-Build, keinen echten App-Netzupload und keinen Lauf auf Smartphones. Der WIP ist nicht in main integriert, nicht ausgerollt und aktiviert keinen Live-Upload.

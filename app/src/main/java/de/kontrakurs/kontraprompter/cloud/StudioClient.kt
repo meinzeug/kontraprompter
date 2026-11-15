@@ -133,6 +133,7 @@ class StudioClient {
                 check(entry.recordingId == recording.id && entry.size == recording.bytes && entry.sha256 == recording.sha256)
                 check(entry.cameraRecordingId == cameraClaimRecordingId(recording.origin, recording.id, recording.projectId, entry.projectId))
                 check(UUID.fromString(entry.projectId).toString() == entry.projectId && UUID.fromString(entry.uploadId).toString() == entry.uploadId)
+                val lanRecordingId = lanUploadRecordingId(recording.origin, recording.id, recording.projectId, entry.projectId, entry.uploadId)
                 val before = MessageDigest.getInstance("SHA-256")
                 recording.file.inputStream().buffered().use { source ->
                     val block = ByteArray(256 * 1024)
@@ -158,6 +159,7 @@ class StudioClient {
                     connection.setRequestProperty("Origin", BASE)
                     connection.setRequestProperty("Content-Type", "video/mp4")
                     connection.setRequestProperty("X-Recording-Id", entry.uploadId)
+                    applyLanUploadIdentity(connection, lanRecordingId)
                     connection.setRequestProperty("X-Content-SHA256", entry.sha256)
                     entry.cameraRecordingId?.let { connection.setRequestProperty("X-Camera-Recording-Id", it) }
                     connection.doOutput = true
