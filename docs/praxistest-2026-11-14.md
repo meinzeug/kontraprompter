@@ -165,6 +165,22 @@ Korrektur für beide zulässigen Schreibweisen ist separat im Test; der erneute
 Gerätetest steht aus. Die zuvor veröffentlichte Release-Version wurde auf
 beiden Geräten wiederhergestellt und die manuelle Verbindung eingerichtet.
 
+Eine anschließende Android-Diagnose zeigte den konkreten Ablehnungsgrund:
+Samsung lieferte den Resolve-Diensttyp mit einem zusätzlichen führenden Punkt;
+Dienstname, IPv4-Adresse und Port waren vorhanden. Mit einem dafür angepassten
+Testkandidaten bestanden 192 CI-Tests. Auf den Telefonen wurden drei neue
+Kamerasitzungen nacheinander jeweils über die Suche mit aktuellem Port gefunden,
+gegenseitig bestätigt und als Videoverbindung hergestellt. Eine nachfolgende
+Aufnahme wurde gespeichert und zum Server übertragen.
+
+Dabei stieg die angezeigte Signalisierungs-Roundtripzeit zeitweise auf etwa
+fünf Sekunden und ein Pausen-/Fortsetzungszustand erschien verzögert, während
+ein gleichzeitiger ICMP-Ping etwa zwei bis drei Millisekunden benötigte. Der
+Kandidat wurde wegen dieser Steuerungsverzögerung nicht veröffentlicht. Der
+normale Release-Stand wurde wiederhergestellt; danach lag seine angezeigte
+Signalisierungszeit bei etwa 50 ms. Die Ursache im neuen Socket-Pfad wird
+getrennt untersucht.
+
 Mit der wiederhergestellten Release-APK wurde eine weitere Kontrollaufnahme am
 Samsung gestartet, pausiert, fortgesetzt und gestoppt. Das Xiaomi meldete die
 lokale Speicherung. Nach erneuter Anmeldung der Kamera meldete die App den
