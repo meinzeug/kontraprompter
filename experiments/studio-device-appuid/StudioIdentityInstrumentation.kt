@@ -6,6 +6,7 @@ import android.os.Bundle
 import java.io.File
 import java.security.KeyStore
 import java.util.UUID
+import org.json.JSONObject
 
 /** Separate fixture package and UID; never touches the KontraPrompter package. */
 class StudioIdentityInstrumentation : Instrumentation() {
@@ -15,8 +16,13 @@ class StudioIdentityInstrumentation : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         var identityId: String? = null
+        var ownKeyAttempted = false
         var outcome = Activity.RESULT_CANCELED
+        var lock: FixtureExclusiveLock? = null
         try {
+            // Exclusive across processes of this fixture UID. A concurrent run
+            // fails closed before it inspects or modifies the test identity.
+            lock = checkNotNull(FixtureExclusiveLock.tryAcquire(File(targetContext.filesDir,"studio-identity-test.lock"))) { "Fixture already running" }
             val keys = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             if (arguments.getString("mode") == "check") {
                 val id = checkNotNull(arguments.getString("identityId"))
@@ -24,7 +30,7 @@ class StudioIdentityInstrumentation : Instrumentation() {
                 val alias = "videomaker-studio-device-v1-$id"
                 result.putBoolean("alias_present",keys.containsAlias(alias))
                 result.putBoolean("marker_present",File(targetContext.filesDir,"studio-device-auth/identity.json").exists())
-                finish(Activity.RESULT_OK,result)
+                outcome = Activity.RESULT_OK
                 return
             }
             check(arguments.getString("mode") == "run")
@@ -36,6 +42,11 @@ class StudioIdentityInstrumentation : Instrumentation() {
                         sendStatus(0,Bundle().apply { putString("test_identity_id",marker.id) })
                     }
                     underlying.write(marker)
+                }
+                override fun createKey(id: String): StudioIdentityKey {
+                    check(id == identityId && !underlying.hasAnyDeviceKey())
+                    ownKeyAttempted = true
+                    return underlying.createKey(id)
                 }
             }
             val first = StudioDeviceIdentity(observed)
@@ -66,13 +77,21 @@ class StudioIdentityInstrumentation : Instrumentation() {
                     require(UUID.fromString(id).toString() == id)
                     val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
                     val alias = "videomaker-studio-device-v1-$id"
-                    if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)
+                    if (ownKeyAttempted && keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)
                     check(!keyStore.containsAlias(alias))
                     val dir = File(targetContext.filesDir,"studio-device-auth")
-                    for (name in listOf("identity.json","identity.json.bak","identity.json.new")) {
-                        val item = File(dir,name)
-                        if (item.exists()) check(item.isFile && item.delete())
+                    val allowed = setOf("identity.json","identity.json.bak","identity.json.new")
+                    if (dir.exists()) check(dir.isDirectory && checkNotNull(dir.list()).all { it in allowed })
+                    val markers = listOf("identity.json","identity.json.bak","identity.json.new").map { File(dir,it) }.filter { it.exists() }
+                    // Validate every survivor before deleting any, so an
+                    // ambiguous file always leaves all markers for review.
+                    val owners = markers.map { item ->
+                        check(item.isFile && item.length() <= 4096)
+                        val marker = JSONObject(item.readText(Charsets.UTF_8))
+                        FixtureMarkerOwner(item.name,marker.getString("id"),marker.getInt("version"))
                     }
+                    check(fixtureMarkersOwned(id,owners))
+                    for (item in markers) check(item.delete())
                     if (dir.exists()) check(dir.isDirectory && dir.delete())
                     result.putBoolean("fixture_cleanup_ok",true)
                 } catch (error: Throwable) {
@@ -80,8 +99,12 @@ class StudioIdentityInstrumentation : Instrumentation() {
                     outcome = Activity.RESULT_CANCELED
                 }
             }
-            // The CHECK mode already finished above and intentionally changes nothing.
-            if (arguments.getString("mode") != "check") finish(outcome,result)
+            try { lock?.close() } catch (error: Throwable) {
+                result.putString("lock_cleanup_error",error.javaClass.simpleName)
+                outcome = Activity.RESULT_CANCELED
+            }
+            // Includes failed CHECK calls: no instrumentation request hangs.
+            finish(outcome,result)
         }
     }
 }

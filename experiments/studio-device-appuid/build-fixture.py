@@ -35,7 +35,7 @@ subprocess.run(['java','-Xmx160m','-XX:ActiveProcessorCount=1','-cp',os.pathsep.
  'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-language-version','2.0','-api-version','2.0',
  '-no-stdlib','-no-reflect','-classpath',os.pathsep.join([stdlib,android]),'-d',str(classes),
  *[str(source/name) for name in ('StudioDeviceTranscript.kt','StudioDeviceIdentity.kt','AndroidStudioIdentityStore.kt')],
- str(fixture/'StudioIdentityInstrumentation.kt')],check=True,timeout=120)
+ str(fixture/'StudioIdentityInstrumentation.kt'),str(fixture/'FixtureOwnership.kt')],check=True,timeout=120)
 code=out/'code.jar';subprocess.run(['jar','cf',str(code),'-C',str(classes),'.'],check=True,timeout=20)
 env={**os.environ,'JAVA_TOOL_OPTIONS':'-Xmx192m -XX:ActiveProcessorCount=1'}
 result=subprocess.run([str(build/'d8'),'--min-api','26','--lib',android,'--output',str(dex),str(code),stdlib],
