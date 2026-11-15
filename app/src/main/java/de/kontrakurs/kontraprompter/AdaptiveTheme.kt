@@ -3,7 +3,8 @@ package de.kontrakurs.kontraprompter
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -84,6 +85,12 @@ internal fun KontraAdaptiveTheme(
         else -> fallbackLight
     }
     CompositionLocalProvider(LocalKontraSpacing provides KontraSpacing()) {
-        MaterialTheme(colorScheme = colors, typography = adaptiveTypography, shapes = adaptiveShapes, content = content)
+        MaterialExpressiveTheme(
+            colorScheme = colors,
+            motionScheme = MotionScheme.expressive(),
+            typography = adaptiveTypography,
+            shapes = adaptiveShapes,
+            content = content,
+        )
     }
 }

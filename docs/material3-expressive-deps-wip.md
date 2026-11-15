@@ -31,8 +31,18 @@ replaces the Android Kotlin plugin, and the obsolete `android.kotlinOptions`
 block is removed; JVM target continues to follow Java target 17. The Compose
 compiler plugin remains explicitly at 2.2.20 pending compatibility testing.
 The Gradle wrapper jar is checked against Gradle's published 9.3.1 checksum,
-and the distribution checksum is pinned in wrapper properties. Build, tests,
-lint, Kotlin/plugin resolution and runtime compatibility remain to be verified.
+and the distribution checksum is pinned in wrapper properties.
+
+GitHub Actions run 43696964747 used the same source tree as commit c93e92e,
+plus only its CI workflow. Debug assembly succeeded, 224 JVM tests passed and
+lint reported zero errors and 24 warnings. Buildscript resolution selected
+Kotlin Gradle Plugin 2.2.20 (up from AGP's 2.2.10 default), and build logs
+showed both the Kotlin compiler and Compose compiler plugin at 2.2.20. This is
+build-time evidence, not a device or runtime compatibility test. Recorder
+selection now rejects missing video capabilities; microphone permission is
+rechecked at AudioRecord creation. The required superclass key dispatch has
+one narrowly scoped lint suppression. Source/release review and actual
+camera, recording, remote-control and accessibility tests remain necessary.
 
 The source jar `material3-android-1.5.0-rc01-sources.jar` downloaded from
 Google Maven had SHA-256
