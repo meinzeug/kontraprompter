@@ -9,6 +9,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,6 +23,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,6 +38,8 @@ data class RemoteIndicator(val status: String, val onStop: () -> Unit)
 val LocalRemoteIndicator = staticCompositionLocalOf<RemoteIndicator?> { null }
 data class CameraIndicator(val status: String, val connected: Boolean, val onShow: () -> Unit)
 val LocalCameraIndicator = staticCompositionLocalOf<CameraIndicator?> { null }
+internal data class AppMenuItem(val label: String, val selected: Boolean = false, val onClick: () -> Unit)
+internal val LocalAppMenu = staticCompositionLocalOf<List<AppMenuItem>> { emptyList() }
 private val DarkColors = darkColorScheme(
     primary = Accent, onPrimary = Color(0xff24090b),
     primaryContainer = Color(0xff54292d), onPrimaryContainer = Color(0xffffdcda),
@@ -71,12 +79,36 @@ fun AppBackground(content: @Composable BoxScope.() -> Unit) {
 fun AppPage(title: String, eyebrow: String, description: String? = null, onBack: (() -> Unit)? = null, backLabel: String = "Zurück", showRemote: Boolean = true, showCamera: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
     val remote = LocalRemoteIndicator.current
     val camera = LocalCameraIndicator.current
+    val menu = LocalAppMenu.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier.fillMaxHeight().widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 26.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (onBack != null) BackAction(onBack, label = backLabel)
+            if (onBack != null || menu.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (onBack != null) BackAction(onBack, label = backLabel)
+                    Spacer(Modifier.weight(1f))
+                    if (menu.isNotEmpty()) {
+                        var expanded by remember { mutableStateOf(false) }
+                        Box {
+                            TextButton(onClick = { expanded = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Menü") }
+                            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                                menu.forEach { item ->
+                                    DropdownMenuItem(
+                                        text = { Text(item.label) },
+                                        onClick = { expanded = false; item.onClick() },
+                                        modifier = Modifier.heightIn(min = 48.dp).semantics {
+                                            if (item.selected) stateDescription = "Aktuelle Seite"
+                                        },
+                                        trailingIcon = if (item.selected) ({ Text("✓") }) else null,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             if (showRemote && remote != null) RemoteBanner(remote)
             if (showCamera && camera != null) CameraBanner(camera)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

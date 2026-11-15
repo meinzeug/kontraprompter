@@ -150,6 +150,7 @@ private fun KontraApp(activity: MainActivity) {
     val selected = scripts.find { it.id == selectedId } ?: scripts.first()
     var page by rememberSaveable { mutableStateOf("roles") }
     var helpReturn by rememberSaveable { mutableStateOf("roles") }
+    var settingsReturn by rememberSaveable { mutableStateOf("editor") }
     var session by remember { mutableStateOf<LiveSession?>(null) }
     LaunchedEffect(page) { if (page == "roles") cameraPreferFront = preferences.getBoolean("camera_prefer_front", true) }
     val cloud: CloudUploadViewModel = viewModel()
@@ -308,7 +309,9 @@ private fun KontraApp(activity: MainActivity) {
             "studio", "editor" -> page = "scripts"
             "recordings" -> page = "roles"
             "upload" -> page = "recordings"
-            "settings", "calibration", "prompter" -> page = "editor"
+            "settings", "settings_text", "settings_video", "settings_remote", "settings_display" -> page = settingsBackPage(page, settingsReturn)
+            "camera_setup" -> page = "roles"
+            "calibration", "prompter" -> page = "editor"
             else -> page = "roles"
         }
     }
@@ -437,7 +440,22 @@ private fun KontraApp(activity: MainActivity) {
     }
     CompositionLocalProvider(
         LocalRemoteIndicator provides if (remoteEnabled) RemoteIndicator(remoteStatus) { remoteEnabled = false; remoteStatus = "Aus" } else null,
-        LocalCameraIndicator provides session?.let { CameraIndicator(lanState.status, lanState.status == "Videoverbindung hergestellt") { page = "connection" } }
+        LocalCameraIndicator provides session?.let { CameraIndicator(lanState.status, lanState.status == "Videoverbindung hergestellt") { page = "connection" } },
+        LocalAppMenu provides if (showAppMenu(page, session?.host == true)) listOf(
+            AppMenuItem("Start", page == "roles") { page = "roles" },
+            AppMenuItem("Skripte", page == "scripts" || page == "editor") { page = "scripts" },
+            AppMenuItem(if (session == null) "Kamera verbinden" else "Verbindung anzeigen") {
+                if (session == null) session = LiveSession(activity, false)
+                page = "connection"
+            },
+            AppMenuItem("Videomaker", page == "studio") { page = "studio" },
+            AppMenuItem("Aufnahmen", page == "recordings") { page = "recordings" },
+            AppMenuItem("Einstellungen", page.startsWith("settings")) {
+                if (!page.startsWith("settings")) settingsReturn = if (page == "editor") "editor" else "roles"
+                page = "settings"
+            },
+            AppMenuItem("Hilfe & Aufbau", page == "help") { if (page != "help") { helpReturn = if (page == "editor") "editor" else "roles"; page = "help" } },
+        ) else emptyList(),
     ) {
     AppBackground {
         when (page) {
@@ -445,12 +463,11 @@ private fun KontraApp(activity: MainActivity) {
                 Spacer(Modifier.height(8.dp))
                 Text("Dieses Gerät verwenden als", style = MaterialTheme.typography.titleMedium, color = SoftText)
                 RoleTile("Teleprompter", "Skripte lesen und fernsteuern", camera = false) { page = "scripts" }
-                Toggle("Frontkamera verwenden (aus: Rückkamera)", cameraPreferFront) { cameraPreferFront = it; preferences.edit().putBoolean("camera_prefer_front", it).apply() }
-                Text("Die Auswahl gilt für die nächste Kamerasitzung. Fehlt die gewählte Kamera, wird die andere verwendet. Bei aktiver Aufnahme bleibt sie unverändert.", color = SoftText, style = MaterialTheme.typography.bodySmall)
                 RoleTile("Kamera", "Livebild für den Teleprompter", camera = true) {
                     if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startHost()
                     else cameraPermission.launch(Manifest.permission.CAMERA)
                 }
+                Action("Kamera vorbereiten") { page = "camera_setup" }
                 Action("Aufnahmen") { page = "recordings" }
                 Action("Hilfe & Aufbau") { helpReturn = "roles"; page = "help" }
                 if (cameraPermissionError) Text("Für die Kamera-Vorschau ist die Kameraerlaubnis erforderlich.", color = Color(0xffff7777))
@@ -459,6 +476,16 @@ private fun KontraApp(activity: MainActivity) {
                 Text("Live-Vorschau zwischen zwei Geräten. Aufnahmen mit Ton bleiben zunächst auf dem Kameragerät.", color = SoftText, style = MaterialTheme.typography.bodySmall)
             }
             "help" -> HelpScreen(onBack = { page = helpReturn })
+            "camera_setup" -> Page("Kamera vorbereiten", "KAMERAGERÄT", onBack = { page = "roles" }) {
+                Toggle("Frontkamera verwenden (aus: Rückkamera)", cameraPreferFront) { cameraPreferFront = it; preferences.edit().putBoolean("camera_prefer_front", it).apply() }
+                Text("Die Auswahl gilt für die nächste Kamerasitzung. Fehlt die gewählte Kamera, wird die andere verwendet. Bei aktiver Aufnahme bleibt sie unverändert.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                MainAction("Kamera starten") {
+                    if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startHost()
+                    else cameraPermission.launch(Manifest.permission.CAMERA)
+                }
+                if (cameraPermissionError) Text("Für die Kamera-Vorschau ist die Kameraerlaubnis erforderlich.", color = Color(0xffff7777))
+                if (cameraBusyError) Text("Die vorherige Aufnahme oder Kamera wird noch abgeschlossen. Bitte erneut versuchen.", color = Color(0xffffcd8a))
+            }
             "connection" -> session?.let { active ->
                 ConnectionScreen(active, cloud, onClose = { active.close(); session = null; page = "roles" }, onScripts = { page = "scripts" })
             } ?: Page("Nicht verbunden", "VERBINDUNG", onBack = { page = "roles" }) { Action("Zur Rollenwahl") { page = "roles" } }
@@ -514,25 +541,34 @@ private fun KontraApp(activity: MainActivity) {
                 OutlinedTextField(value = selected.text, onValueChange = { update(selected.copy(text = it)) }, label = { Text("Skripttext") }, modifier = Modifier.fillMaxWidth().height(260.dp))
                 MainAction("Teleprompter öffnen") { page = "prompter" }
                 Action("TXT oder Markdown importieren") { importer.launch(arrayOf("text/*", "application/octet-stream")) }
-                Action("Einstellungen") { page = "settings" }
+                Action("Einstellungen") { settingsReturn = "editor"; page = "settings" }
                 Action("Spiegelung kalibrieren") { page = "calibration" }
                 Action("Hilfe & Aufbau") { helpReturn = "editor"; page = "help" }
             }
-            "settings" -> Page("Einstellungen", "TELEPROMPTER", onBack = { page = "editor" }) {
-                Text("Text und Tempo", style = MaterialTheme.typography.titleLarge)
+            "settings" -> Page("Einstellungen", "KONTRAPROMPTER", onBack = { page = settingsReturn }) {
+                ScriptTile("Text und Tempo", "Schriftgröße, Geschwindigkeit und Textbreite") { page = "settings_text" }
+                ScriptTile("Kamerabild", "Spiegelung, Ausschnitt und Helligkeit der Vorschau") { page = "settings_video" }
+                ScriptTile("Fernbedienung & Aufnahme", "Bluetooth-Auslöser und Synchronisierung") { page = "settings_remote" }
+                ScriptTile("Anzeige & Spiegelung", "Leselinie, Textspiegelung und Countdown") { page = "settings_display" }
+            }
+            "settings_text" -> Page("Text und Tempo", "EINSTELLUNGEN", onBack = { page = "settings" }) {
                 SettingSlider("Schriftgröße", fontSize, 20f..100f, "${fontSize.toInt()} sp") { fontSize = it }
                 SettingSlider("Scrolltempo", speed, 5f..160f, "${speed.toInt()} dp/s") { speed = it }
                 SettingSlider("Textbreite", width, .35f..1f, "${(width * 100).toInt()} %") { width = it }
                 SettingSlider("Zeilenabstand", lineSpacing, 1f..2f, "${(lineSpacing * 100).toInt()} %") { lineSpacing = it }
                 SettingSlider("Texthintergrund", backgroundOpacity, 0f..1f, "${(backgroundOpacity * 100).toInt()} %") { backgroundOpacity = it }
                 SettingSlider("Displayhelligkeit", brightness, .05f..1f, "${(brightness * 100).toInt()} %") { brightness = it }
-                Text("Kamerabild", style = MaterialTheme.typography.titleLarge)
+            }
+            "settings_video" -> Page("Kamerabild", "EINSTELLUNGEN", onBack = { page = "settings" }) {
                 Toggle("Video horizontal spiegeln", videoH) { videoH = it }
                 Toggle("Video vertikal spiegeln", videoV) { videoV = it }
                 Toggle("Video füllt Bild (Beschnitt)", videoFill) { videoFill = it }
                 Action("Video drehen: $videoRotation°") { videoRotation = (videoRotation + 90) % 360 }
                 SettingSlider("Video-Deckkraft", videoOpacity, 0f..1f, "${(videoOpacity * 100).toInt()} %") { videoOpacity = it }
                 SettingSlider("Video-Helligkeit", videoBrightness, 0f..1f, "${(videoBrightness * 100).toInt()} %") { videoBrightness = it }
+                Text("Fit zeigt das ganze Bild mit möglichen Balken. Fill füllt die Fläche und kann das Bild beschneiden.", color = Color.LightGray)
+            }
+            "settings_remote" -> Page("Fernbedienung & Aufnahme", "EINSTELLUNGEN", onBack = { page = "settings" }) {
                 Toggle("Aufnahme und Teleprompter synchron", recordingScrollSync) { recordingScrollSync = it; preferences.edit().putBoolean("recording_scroll_sync", it).apply() }
                 Text("Bei bestätigter Aufnahme startet oder pausiert der Text automatisch. Bei Stopp bleibt er stehen.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 Text("Bluetooth-Auslöser", style = MaterialTheme.typography.titleLarge)
@@ -554,7 +590,8 @@ private fun KontraApp(activity: MainActivity) {
                     }
                     QuietAction("Geräteliste aktualisieren") { inputRefresh++ }
                 } else Text("Externe Auslöser werden ab Android 10 unterstützt.", color = SoftText)
-                Text("Anzeige und Spiegelung", style = MaterialTheme.typography.titleLarge)
+            }
+            "settings_display" -> Page("Anzeige & Spiegelung", "EINSTELLUNGEN", onBack = { page = "settings" }) {
                 Toggle("Text horizontal spiegeln", textH) { textH = it }
                 Toggle("Text vertikal spiegeln", textV) { textV = it }
                 Toggle("Fettschrift", bold) { bold = it }
@@ -562,8 +599,6 @@ private fun KontraApp(activity: MainActivity) {
                 Toggle("Bildschirm eingeschaltet lassen", keepAwake) { keepAwake = it }
                 Action("Text drehen: $textRotation°") { textRotation = (textRotation + 90) % 360 }
                 Action("Countdown: $countdown Sekunden") { countdown = when (countdown) { 3 -> 5; 5 -> 10; else -> 3 } }
-                Text("Fit zeigt das ganze Bild mit möglichen Balken. Fill füllt die Fläche und kann das Bild beschneiden.", color = Color.LightGray)
-                Action("Zurück zum Editor") { page = "editor" }
             }
             "calibration" -> Page("Spiegelung kalibrieren", "AM SPIEGELGLAS", onBack = { page = "editor" }) {
                 Text("Prüfe die Lesbarkeit im tatsächlichen Aufbau. Glas und Geräteausrichtung können unterschiedliche Einstellungen erfordern.")

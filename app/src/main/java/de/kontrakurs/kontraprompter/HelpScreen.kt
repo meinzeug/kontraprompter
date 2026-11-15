@@ -46,16 +46,16 @@ internal fun HelpScreen(onBack: () -> Unit) {
         }
         HelpSection("Skript und Studio") {
             HelpParagraph("Auf dem Samsung unter „Skripte aus Videomaker öffnen“ anmelden und ein Skript auswählen. Eine Kopie wird auf dem Gerät geöffnet; lokale Änderungen werden nicht ins Studio zurückgeschrieben.")
-            HelpParagraph("Tempo, Schriftgröße und Spiegelung findest du in den Einstellungen. Mit „Start“ und „Pause“ steuerst du den Text; „Anfang“ setzt ihn zurück. Das Studio-Dashboard kann nach ausdrücklicher Aktivierung den Teleprompter steuern.")
+            HelpParagraph("Im Menü findest du Skripte, Verbindung, Videomaker, Aufnahmen und Einstellungen. Tempo und Schriftgröße stehen unter „Text und Tempo“, die Textspiegelung unter „Anzeige & Spiegelung“. Mit „Start“ und „Pause“ steuerst du den Text; „Anfang“ setzt ihn zurück. Das Studio-Dashboard kann nach ausdrücklicher Aktivierung den Teleprompter steuern.")
             HelpParagraph("Die Studio-Anmeldung wird nicht dauerhaft gespeichert. Nach einem App-Neustart oder Sitzungsablauf kann eine erneute Anmeldung nötig sein.")
         }
         HelpSection("Aufnahme bedienen") {
             HelpParagraph("Im verbundenen Prompter startet „Aufnahme starten“ die Kameraaufnahme. Die Mikrofonfreigabe muss auf dem Xiaomi erteilt sein. Mit derselben Taste pausierst du und setzt fort; „Stopp“ beendet und speichert das Video.")
             HelpParagraph("Auf dem Xiaomi zeigt der Aufnahmestatus, ob Video und Ton laufen, pausieren oder gespeichert werden. Bei Verbindungsverlust läuft eine bereits gestartete Aufnahme weiter. Die App muss für die Kamerasitzung im Vordergrund bleiben.")
-            HelpParagraph("Optional kannst du in den Einstellungen „Aufnahme und Teleprompter synchron“ aktivieren. Der Text startet oder pausiert dann mit der bestätigten Aufnahme; beim Stopp bleibt er stehen.")
+            HelpParagraph("Optional kannst du unter „Einstellungen“ → „Fernbedienung & Aufnahme“ die Synchronisierung aktivieren. Der Text startet oder pausiert dann mit der bestätigten Aufnahme; beim Stopp bleibt er stehen.")
         }
         HelpSection("Bluetooth-Auslöser") {
-            HelpParagraph("Den Auslöser zuerst in den Android-Bluetooth-Einstellungen mit dem Samsung koppeln. Ab Android 10 wird der ITFIT Selfie P007 unterstützt; andere externe Auslöser können in den App-Einstellungen ausgewählt werden.")
+            HelpParagraph("Den Auslöser zuerst in den Android-Bluetooth-Einstellungen mit dem Samsung koppeln. Ab Android 10 wird der ITFIT Selfie P007 unterstützt; andere externe Auslöser lassen sich unter „Einstellungen“ → „Fernbedienung & Aufnahme“ auswählen.")
             HelpParagraph("Vor der Aufnahme startet ein kurzer Druck die Kamera. Während der Aufnahme pausiert oder startet ein kurzer Druck nur den Teleprompter. Ein schneller Doppeldruck pausiert oder setzt die Aufnahme fort. Zum endgültigen Beenden „Stopp“ in der App verwenden.")
             HelpParagraph("Für Enter, Leertaste oder Steuerkreuz-Mitte zuerst im Prompter „Enter-Auslöser nicht bereit – aktivieren“ auswählen. Nur solange die Taste den Eingabefokus hält, ist der Auslöser bereit. Nach Fokusverlust, verdeckten Bedienelementen, Geräte- oder Verbindungswechsel erneut aktivieren. Ohne Bereitschaft die Bildschirmtasten verwenden.")
             HelpParagraph("Senden verschiedene Tasten desselben Geräts kurz hintereinander unterschiedliche Tastentypen, kann die zweite Eingabe zum Schutz vor Doppelaktionen verworfen werden.")
