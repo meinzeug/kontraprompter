@@ -38,3 +38,13 @@ The source jar `material3-android-1.5.0-rc01-sources.jar` downloaded from
 Google Maven had SHA-256
 `0e9c5b37e75203b44b4987b3ccc0db41637303103ca21739691d7533cbe7cbb1`.
 Source API presence is not proof that the app can compile or run with it.
+
+## Verified toolchain step
+
+The later CI run 43696964747 passed debug assembly, all 224 JVM tests and
+`lintDebug` with zero errors (24 warnings). The resolved Kotlin Gradle plugin,
+Kotlin compiler and Compose compiler plugin are 2.2.20. The tested source
+tree was subsequently integrated as `3c0fe64`; the earlier failure above
+records the unmodified-toolchain experiment, not the current build result.
+The app has not yet been reinstalled or tested on devices with this toolchain;
+the Expressive theme and individual screen migration are separate work.
