@@ -78,4 +78,30 @@ class RawFrameFanoutTest {
         assertFalse(callback.isAlive); assertFalse(stop.isAlive); assertFalse(close.isAlive)
         assertFalse(source.attach(Any(), {}, {}))
     }
+
+    @Test fun `close withdraws subscriber before failure callback and notifies only once`() {
+        val source = RawFrameFanout<Int>()
+        val failureEntered = CountDownLatch(1)
+        val releaseFailure = CountDownLatch(1)
+        val deliveries = AtomicInteger()
+        val failures = AtomicInteger()
+        assertTrue(source.attach(Any(), { deliveries.incrementAndGet() }, {
+            failures.incrementAndGet()
+            failureEntered.countDown()
+            check(releaseFailure.await(5, TimeUnit.SECONDS))
+        }))
+        val first = Thread { source.close() }
+        val second = Thread { source.close() }
+        first.start()
+        try {
+            assertTrue(failureEntered.await(5, TimeUnit.SECONDS))
+            source.deliver(1)
+            second.start(); second.join(5000)
+            assertEquals(0, deliveries.get())
+            assertEquals(1, failures.get())
+        } finally { releaseFailure.countDown(); first.join(5000); second.join(5000) }
+        assertFalse(first.isAlive); assertFalse(second.isAlive)
+        source.close()
+        assertEquals(1, failures.get())
+    }
 }
