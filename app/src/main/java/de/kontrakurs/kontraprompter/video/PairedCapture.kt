@@ -32,6 +32,7 @@ internal class PairedCapture(
     private var pendingId: String? = null
     private var pendingAction: String? = null
     private var statusQueryAttempts = 0
+    private var commandTimedOut = false
     private var timeout: Job? = null
     private val handled = PairedCommandLedger()
     private val _state = MutableStateFlow(PairedCaptureState())
@@ -55,7 +56,7 @@ internal class PairedCapture(
     }
 
     fun disconnected() = synchronized(lock) {
-        pendingId = null; pendingAction = null; statusQueryAttempts = 0; timeout?.cancel(); timeout = null; lastRevision = -1L
+        pendingId = null; pendingAction = null; statusQueryAttempts = 0; commandTimedOut = false; timeout?.cancel(); timeout = null; lastRevision = -1L
         _state.value = PairedCaptureState(message = PAIRED_DISCONNECTED_MESSAGE)
     }
 
@@ -89,7 +90,7 @@ internal class PairedCapture(
         val recordingId = if (action == "start" || action == "switch_camera") UUID.randomUUID().toString() else snapshot.recordingId ?: return false
         val project = if (action == "start" && projectId != null) canonicalUuid(projectId) ?: return false else null
         val message = JSONObject().put("request", requestId).put("action", action).put("recording", recordingId).apply { if (project != null) put("project", project); if (action == "switch_camera") put("cameraFront", snapshot.cameraFront) }.toString()
-        pendingId = requestId; pendingAction = action; statusQueryAttempts = 0
+        pendingId = requestId; pendingAction = action; statusQueryAttempts = 0; commandTimedOut = false
         _state.value = snapshot.copy(pending = true, message = null)
         val sent = if (binding == null) lan.send("capture_command", message)
             else lan.sendOnApprovedConnection(binding.connection, "capture_command", message)
@@ -100,6 +101,7 @@ internal class PairedCapture(
             delay(8_000)
             synchronized(lock) {
                 if (pendingId == requestId) {
+                    commandTimedOut = true
                     // Sending is asynchronous: even a status query after timeout may
                     // overtake an unsent start. Keep that start fenced until its ACK
                     // and a later, correlated status arrive, or the session is reset.
@@ -161,7 +163,10 @@ internal class PairedCapture(
                         // Admission is not completion. Ask for a snapshot tied to
                         // this request after receiving its acknowledgement.
                         if (pendingAction == "start" && !accepted) _state.value = _state.value.copy(message = "Befehl wurde von der Kamera nicht angenommen.")
-                        if (statusQueryAttempts == 0) requestPendingStatus(request)
+                        if (statusQueryAttempts == 0) {
+                            requestPendingStatus(request)
+                            if (pendingAction == "start" && commandTimedOut) scheduleLateStatusRetry(request)
+                        }
                     } else {
                         pendingId = null; pendingAction = null; statusQueryAttempts = 0; timeout?.cancel(); timeout = null
                         _state.value = _state.value.copy(pending = false, message = if (accepted) null else "Befehl wurde von der Kamera nicht angenommen.")
@@ -207,6 +212,18 @@ internal class PairedCapture(
         statusQueryAttempts++
         if (!lan.send("capture_query", JSONObject().put("request", request).toString())) {
             _state.value = _state.value.copy(message = START_STATUS_SEND_FAILED_MESSAGE)
+        }
+    }
+
+    // A late ACK arrived after the original timeout. Give its first status query
+    // one bounded retry even though the command's original timer already fired.
+    private fun scheduleLateStatusRetry(request: String) {
+        timeout = scope.launch {
+            delay(8_000)
+            synchronized(lock) {
+                if (pendingId == request && pendingAction == "start" && statusQueryAttempts in 1 until MAX_STATUS_QUERY_ATTEMPTS)
+                    requestPendingStatus(request)
+            }
         }
     }
 

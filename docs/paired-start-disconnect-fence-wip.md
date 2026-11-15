@@ -11,6 +11,8 @@ ACKs ohne echtes JSON-Boolean werden ignoriert.
 Bleibt nach einem gültigen ACK die korrelierte Antwort aus, fordert der Timeout
 sie einmal erneut innerhalb derselben Gesamtgrenze an. Ohne ACK erfolgt keine
 korrelierte Wiederholung, da eine Statusabfrage den Start überholen könnte.
+Trifft das ACK erst nach diesem Timeout ein, erhält die anschließende korrelierte
+Abfrage einen eigenen einmaligen Folgetimer innerhalb derselben Gesamtgrenze.
 
 Bleibt das ACK aus, bleibt der Start auch nach acht Sekunden gesperrt. Ein
 ungekorrelierter Status nach dem Timeout beweist nicht, dass der asynchron
