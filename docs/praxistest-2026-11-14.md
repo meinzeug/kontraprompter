@@ -184,3 +184,31 @@ authentifizierter HTTPS-Download hatte dieselbe SHA-256-Summe wie die auf
 beiden Geräten installierte Datei. Alle 21 Projekte und 24 Aufnahmen der
 Serverprüfung waren vorhanden. Die Beschriftung der Weboberfläche kann bis zum
 separaten Web-Update weiterhin „Debug“ anzeigen.
+
+## Rohbild-Kandidat: 720p-Gerätetest
+
+Ein weiterer, nicht veröffentlichter Kandidat versorgte den Recorder direkt
+mit Kamerabildern vor der WebRTC-Anpassung. Sein vollständiger CI-Lauf bestand
+mit 179 Tests. Auf Xiaomi und Samsung wurden Kopplung, Aufnahmestart, Pause,
+Fortsetzen und Stopp geprüft. Die Verbindung blieb während der Aufnahme laut
+Gerätestatus hergestellt; wegen der dunklen Kameraszene wurde Bewegung in der
+Vorschau nicht zuverlässig beurteilt. Die Akkutemperatur des Xiaomi betrug
+während der Stichproben 29 °C, der gemeldete Thermalstatus war 0.
+
+Die fertiggestellte Datei enthält H.264 mit 720 × 1280 Pixeln und AAC mit
+48 kHz. Video und Ton ließen sich vollständig dekodieren. Das über den
+Android-Dateidialog exportierte Original
+`/sdcard/Download/KontraPrompter-eaf1f03b.mp4` und die Serverdatei waren je
+49.550.977 Bytes groß und hatten dieselbe SHA-256-Summe
+`e5a4465b4fd4940009a65d1f7fb0d556f23d5e69a28a514b1d42d5d6c7a25e01`.
+Die Datei war etwa 100,2 Sekunden lang; Ton- und Videospur hatten nahezu
+identische Laufzeiten. Die Sprachverständlichkeit wurde nicht abgehört.
+
+Die 1.419 Videobilder entsprechen etwa 14,2 Bildern pro Sekunde und liegen
+unter der angefragten Rate von 20. Der Median und das 95. Perzentil der
+Bildabstände lagen bei 70,6 ms; es gab keine Lücke über 150 ms. Der Raum war
+sehr dunkel; ob Belichtung, Kamerakonfiguration oder Verarbeitung die Rate
+begrenzt, ist ungeklärt. Ein aussagekräftiger Vergleich mit guter Beleuchtung
+und getrennten Messungen von Kameraeingang und Encoderausgabe steht noch aus.
+Der Kandidat wurde deshalb nicht veröffentlicht. Auf beiden Geräten wurde
+anschließend wieder die oben dokumentierte Release-APK installiert.
