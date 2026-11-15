@@ -1,0 +1,29 @@
+name: Isolated Vosk Android fixture
+on:
+  push:
+    branches: ["wip/speech-pcm-fixture-20261115"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build separate app and instrumentation APK without model
+        run: ./gradlew -p experiments/vosk-android-fixture :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=2
+      - name: Inspect pinned Android libraries and fixture APKs
+        run: python3 experiments/vosk-android-fixture/check-artifacts.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vosk-offline-fixture-${{ github.sha }}
+          path: |
+            experiments/vosk-android-fixture/app/build/outputs/apk/debug/*.apk
+            experiments/vosk-android-fixture/app/build/outputs/apk/androidTest/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
