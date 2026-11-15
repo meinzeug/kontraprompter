@@ -69,3 +69,15 @@
 7. Verweigerte Berechtigungen, Rotation, Standby, Hintergrundbetrieb, knappes Speicherangebot, Mikrofon-/Kamerabelegung, Akku und Temperatur prüfen.
 
 Die oben nicht ausdrücklich als durchgeführt genannten Tests sind weiterhin **offen**. Vorschau, lokale Kopplung, lokale Aufnahme und manueller Cloud-Upload sind experimentell implementiert. Die Dashboard-Fernsteuerung und Webvorschau bleiben bis zur Prüfung ihrer Freigabeblocker gesperrt; automatischer Reconnect und Hotspot fehlen noch.
+
+### Kamera-v4-Admission: isolierter Entwicklungsstand
+
+Nicht aktiviert: Der Journalzustand `admitting` wird vor einer LiveSession-Aktion
+persistiert; nach positiver Rückgabe folgt `accepted`, nach Fehlschlag oder
+Neustart `uncertain`. Ein ungewisses Kommando darf nicht erneut ausgeführt
+werden. STOP bleibt aufnahmegebunden und unabhängig wiederholbar. `accepted`
+ist kein Nachweis einer fertigen Aufnahme. Das Web muss v4 ausdrücklich
+unterstützen; ältere Server können HTTP 400/404 liefern und dürfen deshalb
+keinen impliziten Recorder-Stopp auslösen. Die bisherigen JVM-Modelltests und
+Statushelfer ersetzen keine Prüfung von AtomicFile-Schreibfehlern, echtem
+Controller-/Lifecycle-Verhalten, HTTP-Mischversionen oder laufenden Aufnahmen.

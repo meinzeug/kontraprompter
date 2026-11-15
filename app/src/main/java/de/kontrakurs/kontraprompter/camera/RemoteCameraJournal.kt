@@ -28,7 +28,7 @@ internal class RemoteCameraJournal private constructor(context: Context, private
         catch (error: org.json.JSONException) { throw CameraIdentityRecoveryRequiredException() }
         catch (error: IllegalStateException) { throw CameraIdentityRecoveryRequiredException() }
         catch (error: IllegalArgumentException) { throw CameraIdentityRecoveryRequiredException() }
-        val recovered = reconcile(recoverCameraCaptures(current), app)
+        val recovered = reconcile(recoverCameraCaptures(recoverCameraAdmissions(current)), app)
         if (recovered != current) commit(recovered)
     }
 
@@ -50,9 +50,14 @@ internal class RemoteCameraJournal private constructor(context: Context, private
 
     @Synchronized fun decide(command: CameraCommand, expired: Boolean, canStart: Boolean, canPause: Boolean = false, canResume: Boolean = false, canSwitch: Boolean = false): CameraDecisionOutcome {
         check(!broken)
-        val outcome = decideCameraCommand(current, command, expired, canStart, canPause, canResume, canSwitch)
+        val outcome = decideCameraCommand(current, command, expired, canStart, canPause, canResume, canSwitch, twoPhase = true)
         commit(outcome.state)
         return outcome
+    }
+
+    @Synchronized fun finishAdmission(command: CameraCommand, admitted: Boolean) {
+        check(!broken)
+        commit(finishCameraAdmission(current, command, admitted))
     }
 
     @Synchronized fun capture(recordingId: String, phase: String) {
@@ -134,7 +139,7 @@ internal class RemoteCameraJournal private constructor(context: Context, private
             result.toString()
         }
         val root = JSONObject(text)
-        val version = root.getInt("version"); check(version in 1..5)
+        val version = root.getInt("version"); check(version in 1..6)
         val rawSequence = if (root.has("sequence")) root.get("sequence") else 0
         check(rawSequence is Int || rawSequence is Long)
         val sequence = (rawSequence as Number).toLong(); check(sequence in 0..MAX_CAMERA_SEQUENCE)
@@ -145,8 +150,10 @@ internal class RemoteCameraJournal private constructor(context: Context, private
             val cameraFrom = if (!d.has("cameraFrom") || d.isNull("cameraFrom")) null else d.getBoolean("cameraFrom")
             val command = CameraCommand(uuid(d.getString("id")), d.getString("type"), uuid(d.getString("recordingId")), project?.let(::uuid), cameraFrom)
             check(cameraJournalCommandValid(version, command))
-            val result = d.getString("result"); check(result in setOf("accepted", "rejected", "expired"))
-            CameraDecision(command, result, d.getBoolean("pendingAck"), d.getLong("revision").also { check(it > 0) })
+            val result = d.getString("result"); check(result in setOf("accepted", "rejected", "expired") || version >= 6 && result in setOf("admitting", "uncertain"))
+            val pending = d.getBoolean("pendingAck")
+            check(result != "admitting" || !pending && command.type != "record_stop")
+            CameraDecision(command, result, pending, d.getLong("revision").also { check(it > 0) })
         } }
         val captures = (0 until rawCaptures.length()).map { index -> rawCaptures.getJSONObject(index).let { c ->
             val phase = c.getString("phase").also { check(it in allowedCapturePhases) }
@@ -160,7 +167,7 @@ internal class RemoteCameraJournal private constructor(context: Context, private
         check(decisions.map { it.command.id }.toSet().size == decisions.size)
         check(captures.map { it.recordingId }.toSet().size == captures.size)
         check(cameraJournalQuarantinesValid(version, captures))
-        return CameraDecisionState(decisions, captures, sequence)
+        return CameraDecisionState(decisions, captures, sequence, version)
     }
 
     /** Reconcile a finalized local file before declaring an interrupted capture failed. */

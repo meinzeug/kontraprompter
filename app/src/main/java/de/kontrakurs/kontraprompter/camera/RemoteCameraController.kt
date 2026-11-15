@@ -112,15 +112,20 @@ internal class RemoteCameraController private constructor(private val journal: R
                 throw error
             }
             when (outcome.action) {
-                "start" -> {
-                    if (!session.startRecording(command.recordingId, command.projectId)) {
-                        withContext(Dispatchers.IO) { journal.capture(command.recordingId, "error") }
-                    }
-                }
                 "stop" -> session.stopRecording(command.recordingId)
-                "pause" -> session.pauseRemoteRecording(command.recordingId, checkNotNull(command.projectId))
-                "resume" -> session.resumeRemoteRecording(command.recordingId, checkNotNull(command.projectId))
-                "switch" -> session.switchRemoteCamera(command.cameraFrom!!)
+                "start", "pause", "resume", "switch" -> {
+                    // A false return, exception, timeout, or process death is not proof
+                    // that an actuator had no effect. Never repeat that command.
+                    val admitted = try {
+                        when (outcome.action) {
+                            "start" -> session.startRecording(command.recordingId, command.projectId)
+                            "pause" -> session.pauseRemoteRecording(command.recordingId, checkNotNull(command.projectId))
+                            "resume" -> session.resumeRemoteRecording(command.recordingId, checkNotNull(command.projectId))
+                            else -> session.switchRemoteCamera(command.cameraFrom!!).success
+                        }
+                    } catch (_: Exception) { false }
+                    withContext(Dispatchers.IO) { journal.finishAdmission(command, admitted) }
+                }
             }
             outcome
         }
