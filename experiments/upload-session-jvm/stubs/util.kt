@@ -3,13 +3,14 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.CountDownLatch
-object FixtureHooks { var beforeConfirmed:CountDownLatch?=null; var continueConfirmed:CountDownLatch?=null;var onConfirmedCommit:(()->Unit)?=null }
+object FixtureHooks { var beforeConfirmed:CountDownLatch?=null; var continueConfirmed:CountDownLatch?=null;var onConfirmedCommit:(()->Unit)?=null;var beforeConflict:CountDownLatch?=null;var continueConflict:CountDownLatch?=null;var onConflictCommit:(()->Unit)?=null }
 class AtomicFile(private val base:File) {
  fun openRead()=FileInputStream(base)
  fun startWrite()=FileOutputStream(File(base.path+".new"))
  fun finishWrite(out:FileOutputStream){
   out.close(); val tmp=File(base.path+".new")
   if(tmp.readText().contains("\"phase\":\"confirmed\"")){FixtureHooks.beforeConfirmed?.countDown();FixtureHooks.continueConfirmed?.await();FixtureHooks.onConfirmedCommit?.invoke()}
+  if(tmp.readText().contains("\"conflictReason\":\"recording_deleted\"")){FixtureHooks.beforeConflict?.countDown();FixtureHooks.continueConflict?.await();FixtureHooks.onConflictCommit?.invoke()}
   check(tmp.renameTo(base))
  }
  fun failWrite(out:FileOutputStream){out.close();File(base.path+".new").delete()}

@@ -31,3 +31,5 @@ session_during_confirmed_journal outcome=confirmed journal=confirmed reason=none
 Damit belegen die Host-Mocks die oben genannten Wege unter einem Prozess; sie ersetzen keine instrumentierten Android- oder Gerätesystemtests.
 
 Ein zusätzlicher Fall `journal_changed_before_receipt` verändert während des pausierten 200-Receipts ausschließlich den synthetischen Journalwert `uploadId`. Auf `66f45c3` wurde die Änderung zwar erkannt (`outcome=uncertain`), aber anschließend durch die alte Journalversion überschrieben (`journal_mutation overwritten=true`). Die lokale Videodatei bleibt erhalten. Dieses Testinterleaving simuliert einen anderen Schreiber bzw. eine Beschädigung und belegt keine solche konkurrierende Änderung auf einem Gerät.
+
+Der nachträglich ergänzte Fall `session_during_conflict_journal` pausiert zusätzlich das Speichern eines Löschkonflikts. Auf `66f45c3` zeigte der Test `session_at_conflict_commit=original`: Der parallel gestartete Login wurde bis nach dem Abschluss serialisiert. Die zusätzliche Ausgabespalte `session_at_conflict_commit` fehlte in den oben protokollierten früheren Läufen.
