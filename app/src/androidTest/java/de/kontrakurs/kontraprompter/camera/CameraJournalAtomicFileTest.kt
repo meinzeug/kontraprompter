@@ -2,6 +2,12 @@ package de.kontrakurs.kontraprompter.camera
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.ComponentName
+import android.content.Intent
+import android.content.ServiceConnection
+import android.os.IBinder
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import android.test.InstrumentationTestCase
 import android.util.AtomicFile
 import java.io.File
@@ -68,5 +74,28 @@ class CameraJournalAtomicFileTest : InstrumentationTestCase() {
         } finally { assertTrue(dir.setWritable(true, true)) }
         val recovered = newJournal(context, device).snapshot()
         assertTrue(recovered.decisions.isEmpty() || recovered.decisions.single().result == "uncertain")
+    }
+    fun testKilledSeparateFixtureProcessRecoversAdmissionAsUncertain() = inFixture { context, files, device ->
+        initialized(context, files, device)
+        val command = CameraCommand(freshId(), "record_start", freshId(), freshId())
+        val connected = CountDownLatch(1); val disconnected = CountDownLatch(1)
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, service: IBinder) { connected.countDown() }
+            override fun onServiceDisconnected(name: ComponentName) { disconnected.countDown() }
+        }
+        val intent = Intent(context, FixtureJournalProcess::class.java).putExtra("folder", files.name)
+            .putExtra("device", device).putExtra("command", command.id)
+            .putExtra("recording", command.recordingId).putExtra("project", command.projectId)
+        assertTrue(context.bindService(intent, connection, Context.BIND_AUTO_CREATE))
+        try {
+            assertTrue("fixture subprocess did not connect", connected.await(15, TimeUnit.SECONDS))
+            val pid = File(files, "fixture-pid").readText().toInt()
+            assertTrue(pid > 0 && pid != android.os.Process.myPid())
+            android.os.Process.killProcess(pid) // same fixture UID; never the real app
+            assertTrue("fixture subprocess did not disconnect", disconnected.await(15, TimeUnit.SECONDS))
+            val reopened = newJournal(context, device)
+            assertEquals("uncertain", reopened.snapshot().decisions.single().result)
+            assertNull(reopened.decide(command, expired = false, canStart = true).action)
+        } finally { context.unbindService(connection) }
     }
 }
