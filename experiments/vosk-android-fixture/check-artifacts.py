@@ -39,6 +39,19 @@ for apk in apks:
         print(f"{apk.name}: bytes={apk.stat().st_size}, sha256={hashlib.file_digest(f, 'sha256').hexdigest()}")
     print(f"{apk.name}: microphone and Internet permissions absent")
 
+app_badging = subprocess.check_output([aapts[-1], "dump", "badging", str(apks[0])], text=True)
+test_badging = subprocess.check_output([aapts[-1], "dump", "badging", str(apks[1])], text=True)
+test_manifest = subprocess.check_output([aapts[-1], "dump", "xmltree", str(apks[1]), "AndroidManifest.xml"], text=True)
+if "package: name='de.kontrakurs.voskfixture'" not in app_badging:
+    raise SystemExit("unexpected fixture application ID")
+if "package: name='de.kontrakurs.voskfixture.test'" not in test_badging:
+    raise SystemExit("unexpected instrumentation application ID")
+if "androidx.test.runner.AndroidJUnitRunner" not in test_manifest or "de.kontrakurs.voskfixture" not in test_manifest:
+    raise SystemExit("unexpected instrumentation runner or target")
+print("fixture package: de.kontrakurs.voskfixture")
+print("test package: de.kontrakurs.voskfixture.test")
+print("instrumentation: androidx.test.runner.AndroidJUnitRunner")
+
 with zipfile.ZipFile(apks[0]) as apk:
     names = set(apk.namelist())
     for abi in ("arm64-v8a", "armeabi-v7a", "x86", "x86_64"):

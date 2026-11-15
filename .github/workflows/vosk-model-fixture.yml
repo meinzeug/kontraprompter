@@ -1,0 +1,43 @@
+name: Isolated Vosk fixture with verified model
+on:
+  push:
+    branches: ["wip/speech-pcm-fixture-20261115"]
+    paths:
+      - '.github/workflows/vosk-model-fixture.yml'
+      - 'experiments/vosk-android-fixture/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-model-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download model to isolated runner and verify before use
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset_dir=experiments/vosk-android-fixture/app/src/androidTest/assets
+          mkdir -p "$asset_dir"
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --max-filesize 46499967 --max-time 300 \
+            --output "$asset_dir/vosk-model-small-de-0.15.zip" https://alphacephei.com/vosk/models/vosk-model-small-de-0.15.zip
+          python3 experiments/vosk-android-fixture/check-model-asset.py "$asset_dir/vosk-model-small-de-0.15.zip"
+      - name: Build separate app and test APK with model
+        run: ./gradlew -p experiments/vosk-android-fixture :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=2
+      - name: Verify APK permissions, ABIs, model bytes and runner
+        run: |
+          python3 experiments/vosk-android-fixture/check-artifacts.py
+          python3 experiments/vosk-android-fixture/check-model-asset.py --apk experiments/vosk-android-fixture/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vosk-offline-model-fixture-${{ github.sha }}
+          path: |
+            experiments/vosk-android-fixture/app/build/outputs/apk/debug/*.apk
+            experiments/vosk-android-fixture/app/build/outputs/apk/androidTest/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7

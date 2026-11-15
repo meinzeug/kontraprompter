@@ -61,6 +61,16 @@ die vier nativen ABI-Paare sowie die abwesenden Mikrofon-/Internetpermissions in
 den APK-Manifests. Die fertigen APK-Dateien sind nur kurzlebige CI-Artefakte,
 keine KontraPrompter-Releases.
 
+Der separate Workflow `.github/workflows/vosk-model-fixture.yml` lädt das
+Modell ausschließlich auf den isolierten CI-Runner, prüft vor dem Build Größe
+und SHA-256 und prüft nach dem Build die exakten Modellbytes in der Test-APK.
+Er baut dieselbe separate Fixture-App und eine Test-APK inklusive Modell; ein
+Smartphone wird auch dabei nicht installiert oder gesteuert. Die CI-Prüfung
+vergleicht zusätzlich die Paketnamen `de.kontrakurs.voskfixture` und
+`de.kontrakurs.voskfixture.test` sowie den Runner
+`androidx.test.runner.AndroidJUnitRunner`. KontraPrompter selbst ist ein anderes
+Paket und wird von diesem Build nicht verändert.
+
 Der isolierte CI-Run 43673659245 zum Commit `e76fa04` war erfolgreich. Die
 Fixture-App hat 40.926.499 Bytes, SHA-256
 `fb6e0f0a2efca4d92a41f1873f2a3e91cee35f90d8f1bab0a6612088b7e1ef28`;
