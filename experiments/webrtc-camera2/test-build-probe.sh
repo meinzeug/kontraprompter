@@ -34,7 +34,7 @@ javac -J-Xmx256m --release 17 -cp "$test_dir/webrtc.jar:$sdkjar:$annotation" -d 
   "$test_dir/generated/org/webrtc/KpExperimentalCamera2Session.java" \
   "$test_dir/generated/org/webrtc/KpExperimentalCamera2Capturer.java" "$here/KpFixedFpsSelector.java"
 javap -c -p -cp "$test_dir/classes:$test_dir/webrtc.jar" org.webrtc.KpExperimentalCamera2Session > "$test_dir/session-bytecode.txt"
-rg -Fq 'KpFixedFpsSelector.select' "$test_dir/session-bytecode.txt"
+grep -Fq 'KpFixedFpsSelector.select' "$test_dir/session-bytecode.txt"
 javac -J-Xmx128m --release 17 -cp "$test_dir/classes:$test_dir/webrtc.jar:$junit:$hamcrest" -d "$test_dir/tests" "$here/KpFixedFpsSelectorTest.java"
 java -Xmx96m -cp "$test_dir/tests:$test_dir/classes:$test_dir/webrtc.jar:$junit:$hamcrest" org.junit.runner.JUnitCore org.webrtc.KpFixedFpsSelectorTest
 python3 - "$test_dir/webrtc.jar" "$test_dir/classes" <<'PY'
