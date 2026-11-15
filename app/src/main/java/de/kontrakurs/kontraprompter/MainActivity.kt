@@ -36,8 +36,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -641,6 +644,24 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
     }
     LaunchedEffect(scroll.value) { savePosition(scroll.value) }
     val transform = LayerTransform(horizontal, vertical, rotation)
+    var statusDetails by remember { mutableStateOf(false) }
+    val isCameraClient = lanState.role == "client"
+    val capturePhase = when (pairedCapture.phase) {
+        "idle" -> "Kamera bereit"
+        "preparing" -> "Aufnahme startet …"
+        "recording" -> "Aufnahme läuft"
+        "paused" -> "Aufnahme pausiert"
+        "finalizing" -> "Aufnahme wird gespeichert …"
+        "ready" -> "Aufnahme lokal gespeichert"
+        "partial" -> "Teilaufnahme lokal gespeichert"
+        "failed" -> "Aufnahme fehlgeschlagen"
+        else -> "Kamerastatus wird ermittelt …"
+    }
+    val showCameraStatus = controls || lanState.error != null || (isCameraClient && (
+        pairedCapture.cameraError != null || pairedCapture.message != null || pairedCapture.pending ||
+            pairedCapture.phase in setOf("failed", "partial") ||
+            (lanState.ready && (keyboardDescriptor != null || pairedCapture.phase in setOf("preparing", "recording", "paused", "finalizing", "ready")))
+        ))
     Box(Modifier.fillMaxSize().background(Color.Black).clickable { controls = !controls }) {
         if (video != null) LivePreview(video, videoH, videoV, videoRotation, videoFill, videoOpacity, Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().graphicsLayer { scaleX = transform.scaleX; scaleY = transform.scaleY; rotationZ = transform.rotation.toFloat() }, contentAlignment = Alignment.TopCenter) {
@@ -650,39 +671,45 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
                 Spacer(Modifier.height(400.dp))
             }
         }
-        if (controls || remote != null || notice?.needsAttention() == true || (lanState.role == "client" && lanState.ready && (keyboardDescriptor != null || pairedCapture.phase in setOf("preparing", "recording", "paused", "finalizing")))) Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (remote != null) RemoteBanner(remote)
-            notice?.let { PrompterGenerationNotice(it) }
-            if (lanState.role == "client" && lanState.ready) {
-                val phase = when (pairedCapture.phase) {
-                    "idle" -> "Kamera bereit"
-                    "preparing" -> "Aufnahme startet …"
-                    "recording" -> "Aufnahme läuft"
-                    "paused" -> "Aufnahme pausiert"
-                    "finalizing" -> "Aufnahme wird gespeichert …"
-                    "ready" -> "Aufnahme lokal gespeichert"
-                    "partial" -> "Teilaufnahme lokal gespeichert"
-                    "failed" -> "Aufnahme fehlgeschlagen"
-                    else -> "Kamerastatus wird ermittelt …"
+        if (showCameraStatus || remote != null || notice?.needsAttention() == true) Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Put recording/connection errors first when vertical space is scarce.
+            if (showCameraStatus) {
+                val warnings = buildList {
+                    if (lanState.error != null) add("Verbindungsfehler")
+                    if (isCameraClient && pairedCapture.cameraError != null) add("Kamerafehler")
+                    if (isCameraClient && pairedCapture.message != null) add("Kamerahinweis")
+                    if (isCameraClient && !lanState.ready && pairedCapture.pending) add("Befehl ausstehend")
+                    if (isCameraClient && !lanState.ready && pairedCapture.phase == "failed") add("Letzter Aufnahmestatus: Fehler")
+                    if (isCameraClient && !lanState.ready && pairedCapture.phase == "partial") add("Letzter Aufnahmestatus: Teilaufnahme")
+                    if (isCameraClient && lanState.ready && keyboardDescriptor != null && !controls) add("Enter-Auslöser nicht bereit")
                 }
-                Text(phase + if (pairedCapture.pending) " · Befehl ausstehend" else "", modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xe6202329)).padding(horizontal = 14.dp, vertical = 9.dp), color = if (pairedCapture.phase == "recording") Color(0xffffb2b2) else Color.White, style = MaterialTheme.typography.labelMedium)
-                if (keyboardDescriptor != null && !controls) Text("Enter-Auslöser nicht bereit · Anzeige antippen und aktivieren", modifier = Modifier.background(Color(0xe6202329)).padding(10.dp), color = Color.White, style = MaterialTheme.typography.labelMedium)
-                if (controls) Text(if (cloudProjectLinked) "Studio-Skript zugeordnet · Speicherung auf der Kamera" else "Lokales Skript · Aufnahme bleibt zunächst auf der Kamera", modifier = Modifier.background(Color(0xe6202329)).padding(horizontal = 10.dp, vertical = 5.dp), color = Color.White, style = MaterialTheme.typography.bodySmall)
-                pairedCapture.message?.let { Text(it, modifier = Modifier.background(Color(0xe6202329)).padding(10.dp), color = Color.White, style = MaterialTheme.typography.bodySmall) }
-                if (controls) Text(when {
-                    pairedCapture.cameraSwitching -> "Kamera wird gewechselt …"
-                    pairedCapture.phase in setOf("preparing", "recording", "paused", "finalizing") -> "Kamerawechsel während Aufnahme gesperrt"
-                    pairedCapture.cameraFront == true -> "Frontkamera"
-                    pairedCapture.cameraFront == false -> "Rückkamera"
-                    else -> "Kamerastatus wird ermittelt …"
-                }, modifier = Modifier.background(Color(0xe6202329)).padding(horizontal = 10.dp, vertical = 5.dp), color = Color.White, style = MaterialTheme.typography.bodySmall)
-                pairedCapture.cameraError?.let { Text(it, modifier = Modifier.background(Color(0xe6202329)).padding(10.dp), color = Color.White, style = MaterialTheme.typography.bodySmall) }
+                val primary = if (isCameraClient && lanState.ready) capturePhase + (if (pairedCapture.pending) " · Befehl ausstehend" else "")
+                    else if (lanState.role.isEmpty()) "Offline-Prompter" else lanState.status
+                val hasError = lanState.error != null || (isCameraClient && (pairedCapture.cameraError != null || pairedCapture.phase == "failed"))
+                val accessibleStatus = buildString {
+                    append(primary)
+                    lanState.error?.let { append(". Verbindungsfehler: "); append(it) }
+                    if (isCameraClient) {
+                        pairedCapture.cameraError?.let { append(". Kamerafehler: "); append(it) }
+                        pairedCapture.message?.let { append(". Kamerahinweis: "); append(it) }
+                        if (!lanState.ready && pairedCapture.pending) append(". Befehl ausstehend")
+                        if (!lanState.ready && pairedCapture.phase in setOf("failed", "partial")) { append(". Letzter Aufnahmestatus: "); append(capturePhase) }
+                        if (lanState.ready && keyboardDescriptor != null && !controls) append(". Enter-Auslöser nicht bereit. Anzeige antippen und aktivieren")
+                    }
+                    append(". Details öffnen")
+                }
+                Surface(onClick = { statusDetails = true }, modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = accessibleStatus }, shape = RoundedCornerShape(14.dp), color = Color(0xe6202329)) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text(primary, color = if (isCameraClient && lanState.ready && pairedCapture.phase == "recording") Color(0xffffb2b2) else Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+                            if (warnings.isNotEmpty()) Text(if (hasError) "Fehler · Details öffnen" else "Hinweis · Details öffnen", color = Color(0xffffc7a8), style = MaterialTheme.typography.labelMedium)
+                        }
+                        Text("Details", color = SoftText, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
-            if (controls) Text(
-                if (lanState.role.isEmpty()) "Offline-Prompter" else lanState.status + (lanState.rttMs?.let { " · RTT $it ms" } ?: ""),
-                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xe6202329)).padding(horizontal = 14.dp, vertical = 9.dp),
-                color = Color.White, style = MaterialTheme.typography.labelMedium
-            )
+            if (remote != null) RemoteBanner(remote)
+            notice?.let { PrompterGenerationNotice(it, compact = true) }
         }
         if (focusLine) Box(Modifier.align(Alignment.CenterStart).width(22.dp).height(3.dp).background(Red))
         if (remaining > 0) Text("$remaining", Modifier.align(Alignment.Center), color = Red, fontSize = 100.sp, fontWeight = FontWeight.Black)
@@ -705,4 +732,30 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
           }
         }
     }
+    if (statusDetails) AlertDialog(
+        onDismissRequest = { statusDetails = false },
+        title = { Text("Kamera und Verbindung") },
+        text = {
+            Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (lanState.role.isEmpty()) "Offline-Prompter" else lanState.status + (lanState.rttMs?.let { " · RTT $it ms" } ?: ""))
+                lanState.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (isCameraClient && lanState.ready) {
+                    Text(capturePhase + (if (pairedCapture.pending) " · Befehl ausstehend" else ""))
+                    Text(if (cloudProjectLinked) "Studio-Skript zugeordnet · Speicherung auf der Kamera" else "Lokales Skript · Aufnahme bleibt zunächst auf der Kamera")
+                    Text(when {
+                        pairedCapture.cameraSwitching -> "Kamera wird gewechselt …"
+                        pairedCapture.phase in setOf("preparing", "recording", "paused", "finalizing") -> "Kamerawechsel während Aufnahme gesperrt"
+                        pairedCapture.cameraFront == true -> "Frontkamera"
+                        pairedCapture.cameraFront == false -> "Rückkamera"
+                        else -> "Kamerastatus wird ermittelt …"
+                    })
+                    if (keyboardDescriptor != null && !controls) Text("Enter-Auslöser nicht bereit · Anzeige antippen und aktivieren")
+                }
+                if (isCameraClient && !lanState.ready && pairedCapture.phase in setOf("failed", "partial")) Text("Letzter Aufnahmestatus: $capturePhase")
+                pairedCapture.message?.let { Text(it) }
+                pairedCapture.cameraError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = { TextButton(onClick = { statusDetails = false }) { Text("Schließen") } },
+    )
 }
