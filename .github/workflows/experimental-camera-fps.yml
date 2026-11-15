@@ -1,0 +1,44 @@
+name: Experimental Camera2 FPS candidate
+
+on:
+  push:
+    branches:
+      - wip/camera-fps-integration-20261115
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK packages
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;35.0.0"'
+      - name: Test and build experimental debug APK
+        run: |
+          ./gradlew --no-daemon --max-workers=1 :app:testDebugUnitTest :app:assembleDebug -PexperimentalFixedCameraFps=true -PframeDiagnostics=true
+          grep -F 'EXPERIMENTAL_FIXED_CAMERA_FPS = true' app/build/generated/source/buildConfig/debug/de/kontrakurs/kontraprompter/BuildConfig.java
+          grep -F 'FRAME_RATE_DIAGNOSTICS = true' app/build/generated/source/buildConfig/debug/de/kontrakurs/kontraprompter/BuildConfig.java
+          bash experiments/webrtc-camera2/test-build-probe.sh
+          sha256sum app/build/outputs/apk/debug/app-debug.apk
+      - name: Verify release flags remain disabled
+        run: |
+          ./gradlew --no-daemon --max-workers=1 :app:generateReleaseBuildConfig -PexperimentalFixedCameraFps=true -PframeDiagnostics=true
+          grep -F 'EXPERIMENTAL_FIXED_CAMERA_FPS = false' app/build/generated/source/buildConfig/release/de/kontrakurs/kontraprompter/BuildConfig.java
+          grep -F 'FRAME_RATE_DIAGNOSTICS = false' app/build/generated/source/buildConfig/release/de/kontrakurs/kontraprompter/BuildConfig.java
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: experimental-camera-fps-${{ github.sha }}
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: error
+          retention-days: 2

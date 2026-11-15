@@ -1,6 +1,7 @@
 package de.kontrakurs.kontraprompter.video
 
 import android.content.Context
+import de.kontrakurs.kontraprompter.BuildConfig
 import de.kontrakurs.kontraprompter.network.LanSession
 import org.json.JSONObject
 import org.webrtc.*
@@ -61,7 +62,10 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
                     val enumerator: CameraEnumerator = if (Camera2Enumerator.isSupported(context)) Camera2Enumerator(context) else Camera1Enumerator(false)
                     val name = chooseCamera(enumerator.deviceNames.toList(), preferFrontCamera, enumerator::isFrontFacing, enumerator::isBackFacing) ?: error("Keine Kamera verfügbar")
                     onCameraSelection?.invoke(if (enumerator.isFrontFacing(name)) true else if (enumerator.isBackFacing(name)) false else null, enumerator.deviceNames.any { enumerator.isFrontFacing(it) } && enumerator.deviceNames.any { enumerator.isBackFacing(it) })
-                    camera = enumerator.createCapturer(name, cameraEvents()) ?: error("Kamera konnte nicht geöffnet werden")
+                    camera = if (BuildConfig.DEBUG && BuildConfig.EXPERIMENTAL_FIXED_CAMERA_FPS && enumerator is Camera2Enumerator) {
+                        // Isolated diagnostic build only. The selected AE range still requires device verification.
+                        KpExperimentalCamera2Capturer(context, name, cameraEvents(), 20)
+                    } else enumerator.createCapturer(name, cameraEvents()) ?: error("Kamera konnte nicht geöffnet werden")
                     textureHelper = SurfaceTextureHelper.create("KontraCamera", egl.eglBaseContext) ?: error("Kameraoberfläche nicht verfügbar")
                     source = factory!!.createVideoSource(false)
                     val upstream = source!!.capturerObserver
