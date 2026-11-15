@@ -83,3 +83,19 @@ unterstützen; ältere Server können HTTP 400/404 liefern und dürfen deshalb
 keinen impliziten Recorder-Stopp auslösen. Die bisherigen JVM-Modelltests und
 Statushelfer ersetzen keine Prüfung von AtomicFile-Schreibfehlern, echtem
 Controller-/Lifecycle-Verhalten, HTTP-Mischversionen oder laufenden Aufnahmen.
+
+### Separates Journal-/Recorder-Testpaket (Entwurf)
+
+Der Branch `wip/camera-journal-events-test-20261115` baut die Debug-App mit
+Application-ID-Suffix `.journalfixture`; seine Instrumentierung verwendet
+nur ein eigenes, zufällig benanntes Verzeichnis im Cache dieser Test-App.
+Die Android-Tests öffnen das echte `RemoteCameraJournal` erneut, unterbrechen
+einen echten AtomicFile-Schreibvorgang vor `finishWrite` und simulieren einen
+Schreibfehler durch Schreibschutz des synthetischen Journalverzeichnisses.
+Die JVM-Tests rufen den echten LiveSession-Recorder-Ereignishandler mit
+synthetischen zugehörigen und fremden Ereignissen auf. Die Ereignisse stammen
+nicht von einem laufenden Codec; das Schließen eines unvollständigen Streams
+ist noch kein tatsächliches Töten eines Android-Prozesses. Ein erfolgreicher
+Build alleine beweist keines dieser Laufzeitverhalten. Die Instrumentierung
+darf nur mit expliziter Testpaket-/Datentrennung und nach Gerätefreigabe
+laufen; reguläre App-Daten und Aufnahmen sind nicht zu verändern.
