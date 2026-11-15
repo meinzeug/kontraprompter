@@ -9,13 +9,17 @@ plugins {
 android {
     namespace = "de.kontrakurs.kontraprompter"
     compileSdk = 36
+    useLibrary("android.test.runner")
+    useLibrary("android.test.base")
     defaultConfig {
         applicationId = "de.kontrakurs.kontraprompter"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "android.test.InstrumentationTestRunner"
     }
+    buildTypes { getByName("debug") { applicationIdSuffix = ".uploadfixture" } }
     buildFeatures { compose = true }
     packaging { jniLibs { useLegacyPackaging = true } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

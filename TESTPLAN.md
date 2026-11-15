@@ -98,3 +98,12 @@ Sitzungswechseln derselben Clientinstanz serialisiert. Ein langsamer
 Dateisystem-Fsync kann Login/Logout während dieser kurzen kritischen Sektion
 verzögern. Android-AtomicFile-Bestandstests und reale Geräteprüfung fehlen bis
 zu gesondertem Nachweis; keine Produktivfreigabe allein durch JVM-Tests.
+
+### Getrennte Android-Uploadjournal-Fixture
+
+Der Testbranch `wip/upload-deleted-journal-fixture-20261115` verwendet nur das
+separate Paket `.uploadfixture` und zufällige Cache-Dateien. Er prüft alte
+Version-1-Journale mit zufälliger Upload-ID, erneutes Öffnen des dauerhaft
+gespeicherten Löschgrunds, abweichende Zielprojekte, beschädigte/fehlende
+optionale Felder, einen simulierten AtomicFile-Schreibfehler sowie den echten
+Android-JSON-Parser. Ein Build allein belegt keine Geräteausführung.
