@@ -71,6 +71,7 @@ class PairedRecordingControlTest {
         fun disconnect() { setField(lan, "channel", null); setField(lan, "connected", AtomicBoolean(false)) }
         fun setClosed() { setField(session, "closed", true) }
         fun setWebExclusive() { setField(session, "remoteExclusive", true) }
+        fun setActiveProject(projectId: String?) { setField(session, "activeRecordingProjectId", projectId) }
         fun close() = scope.cancel()
         private fun setField(target: Any, name: String, value: Any?) { target.javaClass.getDeclaredField(name).apply { isAccessible = true }.set(target, value) }
     }
@@ -240,4 +241,17 @@ class PairedRecordingControlTest {
             } finally { f.close() }
         }
     }
+
+    @Test fun `web pause and resume recheck admitted recording project under the session guard`() {
+        val f = Fixture(); val id = UUID.randomUUID().toString(); val project = UUID.randomUUID().toString(); val wrong = UUID.randomUUID().toString()
+        try {
+            f.setWebExclusive(); f.setActiveProject(project); f.state.value = LocalRecording.Recording(id)
+            assertFalse(f.session.pauseRemoteRecording(id, wrong)); assertEquals(0, f.control.pauses)
+            assertTrue(f.session.pauseRemoteRecording(id, project)); assertEquals(1, f.control.pauses)
+            assertFalse(f.session.resumeRemoteRecording(id, wrong)); assertEquals(0, f.control.resumes)
+            assertTrue(f.session.resumeRemoteRecording(id, project)); assertEquals(1, f.control.resumes)
+            assertTrue(f.session.stopRecording(id)); assertEquals(1, f.control.stops)
+        } finally { f.close() }
+    }
+
 }

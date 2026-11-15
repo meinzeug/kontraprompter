@@ -19,7 +19,9 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import de.kontrakurs.kontraprompter.video.SavedRecording
-import de.kontrakurs.kontraprompter.camera.CameraCommand
+import de.kontrakurs.kontraprompter.camera.decodeCameraPollResponse
+import de.kontrakurs.kontraprompter.camera.throwIfCameraPollUnavailable
+import de.kontrakurs.kontraprompter.camera.CameraProtocolException
 import de.kontrakurs.kontraprompter.camera.CameraPollRequest
 import de.kontrakurs.kontraprompter.camera.CameraPollResponse
 import de.kontrakurs.kontraprompter.camera.CameraLateReportConflictException
@@ -281,7 +283,7 @@ class StudioClient {
             val ack = JSONArray().apply { request.acknowledgements.forEach { put(JSONObject().put("id", it.id).put("result", it.result)) } }
             val name = android.os.Build.MODEL.filter { it.code >= 32 && it.code != 127 }.take(80).ifBlank { "Android-Kamera" }
             val body = JSONObject().put("id", sessionId).put("sequence", request.sequence).put("name", name)
-                .put("capability", "remote-record-v2").put("phase", request.report.phase)
+                .put("capability", "remote-record-v4").put("phase", request.report.phase)
                 .put("paused", request.report.paused ?: JSONObject.NULL)
                 .put("cameraFront", request.report.cameraFront ?: JSONObject.NULL).put("cameraCanSwitch", request.report.cameraCanSwitch)
                 .put("recordingId", request.report.recordingId ?: JSONObject.NULL).put("projectId", request.report.projectId ?: JSONObject.NULL)
@@ -301,6 +303,7 @@ class StudioClient {
             val code = connection.responseCode
             if (code == 403 && ticket != null) throw CameraDeviceTicketException("Kameraticket abgelaufen. Geräteanmeldung wird erneuert.")
             if (code == 401 || code == 403) { cookie.invalidate(session); throw IllegalStateException("Sitzung abgelaufen. Bitte erneut anmelden.") }
+            throwIfCameraPollUnavailable(code)
             if (code == 429 || code in 500..599) throw IOException("Kamerafernsteuerung ist vorübergehend nicht erreichbar (HTTP $code).")
             if (code == 409 && ticket != null && isLateReportConflict(connection, sessionId, request)) {
                 check(cookie.get() == session) { "Studio-Sitzung hat sich geändert. Bitte erneut verbinden." }
@@ -309,19 +312,13 @@ class StudioClient {
             check(code == 200) { "Kamerafernsteuerung ist nicht erreichbar (HTTP $code)." }
             val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
                 val result = StringBuilder(); val block = CharArray(1024)
-                while (true) { val count = input.read(block); if (count < 0) break; check(result.length + count <= 16_384); result.append(block, 0, count) }
+                while (true) { val count = input.read(block); if (count < 0) break; if (result.length + count > 16_384) throw CameraProtocolException("Kameraantwort ist zu groß."); result.append(block, 0, count) }
                 result.toString()
             }
-            val commands = JSONObject(text).getJSONArray("commands")
             check(cookie.get() == session) { "Studio-Sitzung hat sich geändert." }
-            check(commands.length() <= 1)
-            if (commands.length() == 0) return CameraPollResponse(null, 0)
-            val item = commands.getJSONObject(0)
-            val project = if (item.isNull("projectId")) null else item.getString("projectId")
-            val from = if (!item.has("cameraFrom") || item.isNull("cameraFrom")) null else item.getBoolean("cameraFrom")
-            val command = CameraCommand(item.getString("id"), item.getString("type"), item.getString("recordingId"), project, from)
-            val remaining = item.getLong("remainingMs"); check(remaining in 0..10_000)
-            return CameraPollResponse(command, remaining)
+            val parsed = decodeCameraPollResponse(text)
+            check(cookie.get() == session) { "Studio-Sitzung hat sich geändert." }
+            return parsed
         } finally { connection.disconnect() }
     }
 
@@ -386,6 +383,7 @@ class StudioClient {
             val status = connection.responseCode
             if (status == 401 || status == 403) { cookie.invalidate(session); throw IllegalStateException("Sitzung abgelaufen. Bitte erneut anmelden.") }
             if (status == 409) throw CameraProtocolConflictException("Kameragerät konnte nicht zugeordnet werden (HTTP 409).")
+            throwIfCameraPollUnavailable(status)
             if (status == 429 || status in 500..599) throw IOException("Kameraanmeldung ist vorübergehend nicht erreichbar (HTTP $status).")
             check(status == 200 || status == 201) { "Kameraanmeldung fehlgeschlagen (HTTP $status)." }
             val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->

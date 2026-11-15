@@ -52,6 +52,8 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
     private var stopWhenStarted = false
     private var pendingCameraFailure: String? = null
     private var remoteExclusive = false
+    // Owned by guard and set atomically with Preparing. Never inferred from a wire message.
+    private var activeRecordingProjectId: String? = null
     private var recorder: RecordingControl? = null
     val lan = LanSession(context)
     private val _video = MutableStateFlow<RtcVideo?>(null)
@@ -147,6 +149,7 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
                     current = candidate
                     stopWhenStarted = false
                     pendingCameraFailure = null
+                    activeRecordingProjectId = projectId
                     _recording.value = LocalRecording.Preparing(id)
                     true
                 }
@@ -243,13 +246,14 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
     fun pauseRecording(recordingId: String? = null): Boolean = pauseRecordingOwned(recordingId, remote = false, marker = null)
 
     /** Dashboard owner may control only its matching recording. */
-    fun pauseRemoteRecording(recordingId: String): Boolean = pauseRecordingOwned(recordingId, remote = true, marker = null)
+    fun pauseRemoteRecording(recordingId: String, projectId: String): Boolean = pauseRecordingOwned(recordingId, remote = true, marker = null, expectedProjectId = projectId)
 
     internal fun pausePairedRecording(marker: Any, recordingId: String): Boolean = pauseRecordingOwned(recordingId, remote = false, marker = marker)
 
-    private fun pauseRecordingOwned(recordingId: String?, remote: Boolean, marker: Any?): Boolean = synchronized(guard) {
+    private fun pauseRecordingOwned(recordingId: String?, remote: Boolean, marker: Any?, expectedProjectId: String? = null): Boolean = synchronized(guard) {
         val current = _recording.value as? LocalRecording.Recording ?: return false
         if (!recordingControlAllowed(remoteExclusive, remote, current.id, recordingId)) return false
+        if (remote && !remoteProjectMatches(activeRecordingProjectId, expectedProjectId)) return false
         val capture = recorder ?: return false
         if (marker != null && (closed || disconnected || lan.admitOnApprovedConnection(marker) { true } != true)) return false
         if (!capture.pause()) return false
@@ -259,13 +263,14 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
 
     fun resumeRecording(recordingId: String? = null): Boolean = resumeRecordingOwned(recordingId, remote = false, marker = null)
 
-    fun resumeRemoteRecording(recordingId: String): Boolean = resumeRecordingOwned(recordingId, remote = true, marker = null)
+    fun resumeRemoteRecording(recordingId: String, projectId: String): Boolean = resumeRecordingOwned(recordingId, remote = true, marker = null, expectedProjectId = projectId)
 
     internal fun resumePairedRecording(marker: Any, recordingId: String): Boolean = resumeRecordingOwned(recordingId, remote = false, marker = marker)
 
-    private fun resumeRecordingOwned(recordingId: String?, remote: Boolean, marker: Any?): Boolean = synchronized(guard) {
+    private fun resumeRecordingOwned(recordingId: String?, remote: Boolean, marker: Any?, expectedProjectId: String? = null): Boolean = synchronized(guard) {
         val current = _recording.value as? LocalRecording.Paused ?: return false
         if (!recordingControlAllowed(remoteExclusive, remote, current.id, recordingId)) return false
+        if (remote && !remoteProjectMatches(activeRecordingProjectId, expectedProjectId)) return false
         val capture = recorder ?: return false
         if (marker != null && (closed || disconnected || lan.admitOnApprovedConnection(marker) { true } != true)) return false
         if (!capture.resume()) return false

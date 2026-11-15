@@ -6,21 +6,22 @@ import java.util.UUID
 internal data class CameraCommand(val id: String, val type: String, val recordingId: String, val projectId: String?, val cameraFrom: Boolean? = null)
 internal data class CameraDecision(val command: CameraCommand, val result: String, val pendingAck: Boolean, val revision: Long = 1)
 internal data class CameraCapture(val recordingId: String, val projectId: String?, val phase: String, val reportedPhase: String? = null, val sizeBytes: Long? = null, val sha256: String? = null, val quarantinedPhase: String? = null)
-internal data class CameraDecisionState(val decisions: List<CameraDecision> = emptyList(), val captures: List<CameraCapture> = emptyList(), val sequence: Long = 0)
+internal data class CameraDecisionState(val decisions: List<CameraDecision> = emptyList(), val captures: List<CameraCapture> = emptyList(), val sequence: Long = 0, val formatVersion: Int = 1)
 internal data class CameraDecisionOutcome(val state: CameraDecisionState, val result: String, val action: String?)
 
 private val activeCapturePhases = setOf("accepted", "preparing", "recording", "finalizing", "recovering")
 internal val allowedCapturePhases = activeCapturePhases + setOf("ready", "partial", "error")
 internal const val MAX_CAMERA_DECISIONS = 10_000
 internal const val MAX_CAMERA_SEQUENCE = 9_007_199_254_740_991L
-internal fun cameraJournalVersion(state: CameraDecisionState): Int = when {
+internal fun cameraJournalVersion(state: CameraDecisionState): Int = maxOf(state.formatVersion, when {
+    state.decisions.any { it.command.type in setOf("record_pause", "record_resume") && it.command.projectId != null } -> 5
     state.decisions.any { it.command.type == "camera_switch" } -> 4
     state.decisions.any { it.command.type in setOf("record_pause", "record_resume") } -> 3
     state.captures.any { it.quarantinedPhase != null } -> 2
     else -> 1
-}
+})
 internal fun cameraJournalQuarantinesValid(version: Int, captures: List<CameraCapture>): Boolean {
-    if (version !in 1..4 || version == 2 && captures.none { it.quarantinedPhase != null }) return false
+    if (version !in 1..6 || version == 2 && captures.none { it.quarantinedPhase != null }) return false
     return captures.all { capture ->
         val phase = capture.quarantinedPhase
         phase == null || (version >= 2 && phase == capture.phase && capture.projectId != null && capture.reportedPhase != phase &&
@@ -42,11 +43,23 @@ internal fun reserveCameraSequence(state: CameraDecisionState): CameraDecisionSt
 
 private fun canonicalUuid(value: String): Boolean = runCatching { UUID.fromString(value).toString() == value }.getOrDefault(false)
 
+/** Old null-project decisions remain readable but can never authorize a new command. */
+internal fun cameraJournalCommandValid(version: Int, command: CameraCommand): Boolean {
+    val project = command.projectId; val from = command.cameraFrom
+    return when (command.type) {
+        "record_start" -> project != null && from == null
+        "record_stop" -> project == null && from == null
+        "record_pause", "record_resume" -> version >= 3 && from == null && (project == null || version >= 5)
+        "camera_switch" -> version >= 4 && project == null && command.recordingId == command.id && from != null
+        else -> false
+    }
+}
+
 /** A caller persists [CameraDecisionOutcome.state] before ACK or executing [CameraDecisionOutcome.action]. */
-internal fun decideCameraCommand(state: CameraDecisionState, command: CameraCommand, expired: Boolean, canStart: Boolean, canPause: Boolean = false, canResume: Boolean = false, canSwitch: Boolean = false): CameraDecisionOutcome {
+internal fun decideCameraCommand(state: CameraDecisionState, command: CameraCommand, expired: Boolean, canStart: Boolean, canPause: Boolean = false, canResume: Boolean = false, canSwitch: Boolean = false, twoPhase: Boolean = false): CameraDecisionOutcome {
     require(canonicalUuid(command.id) && canonicalUuid(command.recordingId))
     require(command.type in setOf("record_start", "record_stop", "record_pause", "record_resume", "camera_switch"))
-    require(if (command.type == "record_start") command.projectId != null && canonicalUuid(command.projectId) else command.projectId == null)
+    require(if (command.type in setOf("record_start", "record_pause", "record_resume")) command.projectId != null && canonicalUuid(command.projectId) else command.projectId == null)
     require(if (command.type == "camera_switch") command.recordingId == command.id && command.cameraFrom != null else command.cameraFrom == null)
     state.decisions.firstOrNull { it.command.id == command.id }?.let { previous ->
         check(previous.command == command) { "A command ID was reused for different data" }
@@ -56,6 +69,8 @@ internal fun decideCameraCommand(state: CameraDecisionState, command: CameraComm
             val renewed = decideCameraCommand(state.copy(decisions = state.decisions.filterNot { it.command.id == command.id }), command, false, canStart)
             return renewed.copy(state = renewed.state.copy(decisions = renewed.state.decisions.map { if (it.command.id == command.id) it.copy(revision = previous.revision + 1) else it }))
         }
+        // An in-flight command never acquires an ACK or a second actuator call.
+        if (previous.result == "admitting") return CameraDecisionOutcome(state, previous.result, null)
         val repeatStop = previous.result == "accepted" && command.type == "record_stop" &&
             state.captures.any { it.recordingId == command.recordingId && it.phase in activeCapturePhases }
         return CameraDecisionOutcome(state.copy(decisions = state.decisions.map { if (it.command.id == command.id) it.copy(pendingAck = true, revision = previous.revision + 1) else it }), previous.result, if (repeatStop) "stop" else null)
@@ -67,8 +82,8 @@ internal fun decideCameraCommand(state: CameraDecisionState, command: CameraComm
     val eligible = when (command.type) {
         "record_start" -> canStart && state.decisions.size < MAX_CAMERA_DECISIONS - 1 && capture == null &&
             state.captures.none { it.phase in activeCapturePhases || it.reportedPhase != it.phase || it.quarantinedPhase != null }
-        "record_pause" -> capture?.phase == "recording" && capture.projectId != null && canPause
-        "record_resume" -> capture?.phase == "recording" && capture.projectId != null && canResume
+        "record_pause" -> capture?.phase == "recording" && capture.projectId == command.projectId && canPause
+        "record_resume" -> capture?.phase == "recording" && capture.projectId == command.projectId && canResume
         "camera_switch" -> canSwitch && state.captures.none { it.phase in activeCapturePhases || it.reportedPhase != it.phase || it.quarantinedPhase != null }
         else -> capture != null
     }
@@ -81,8 +96,27 @@ internal fun decideCameraCommand(state: CameraDecisionState, command: CameraComm
         else -> if (capture!!.phase in activeCapturePhases) "stop" else null
     }
     val captures = if (action == "start") state.captures + CameraCapture(command.recordingId, command.projectId!!, "accepted") else state.captures
-    return CameraDecisionOutcome(state.copy(decisions = state.decisions + CameraDecision(command, result, true), captures = captures), result, action)
+    val admitting = twoPhase && action != null && action != "stop"
+    val initialResult = if (admitting) "admitting" else result
+    return CameraDecisionOutcome(state.copy(decisions = state.decisions + CameraDecision(command, initialResult, !admitting), captures = captures,
+        formatVersion = if (admitting) maxOf(state.formatVersion, 6) else state.formatVersion), initialResult, action)
 }
+
+/** Admission is durable before ACK; a failed/ambiguous actuator call is never retried. */
+internal fun finishCameraAdmission(state: CameraDecisionState, command: CameraCommand, admitted: Boolean): CameraDecisionState {
+    val decision = state.decisions.firstOrNull { it.command.id == command.id } ?: error("Unknown command")
+    check(decision.command == command && decision.result == "admitting" && decision.revision < Long.MAX_VALUE)
+    return state.copy(decisions = state.decisions.map { if (it.command.id == command.id)
+        it.copy(result = if (!admitted) "uncertain" else if (command.type == "record_start") "enqueued" else "accepted", pendingAck = true, revision = it.revision + 1) else it })
+}
+
+/** A crash between journal and actuator is indistinguishable from partial execution. */
+internal fun recoverCameraAdmissions(state: CameraDecisionState): CameraDecisionState = state.copy(
+    decisions = state.decisions.map { if (it.result == "admitting") {
+        check(it.revision < Long.MAX_VALUE)
+        it.copy(result = "uncertain", pendingAck = true, revision = it.revision + 1)
+    } else it }
+)
 
 /** After a process restart no in-memory recorder can be assumed to be alive. */
 internal fun recoverCameraCaptures(state: CameraDecisionState): CameraDecisionState = state.copy(
