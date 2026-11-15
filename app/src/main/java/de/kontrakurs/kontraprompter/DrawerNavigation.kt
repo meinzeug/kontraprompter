@@ -28,3 +28,13 @@ internal data class RecoverySnapshot<T : Any, L, P>(val session: T, val generati
     fun matches(current: T?, currentGeneration: Long, currentLan: L, currentPaired: P): Boolean =
         session === current && generation == currentGeneration && lan == currentLan && paired == currentPaired
 }
+
+/** Avoid mutual help/settings return loops when moving directly between them. */
+internal fun drawerReturnOrigin(target: DrawerDestination, current: String, helpReturn: String, settingsReturn: String): String {
+    val candidate = when {
+        target == DrawerDestination.HELP && current == "settings" -> settingsReturn
+        target == DrawerDestination.SETTINGS && current == "help" -> helpReturn
+        else -> current
+    }
+    return candidate.takeIf { it in setOf("roles", "scripts", "editor", "studio", "recordings", "calibration") } ?: "roles"
+}

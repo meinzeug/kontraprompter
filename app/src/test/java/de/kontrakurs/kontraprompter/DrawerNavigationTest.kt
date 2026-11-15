@@ -19,6 +19,13 @@ class DrawerNavigationTest {
         assertFalse(targets.contains("connection"))
         assertFalse(targets.contains("upload"))
     }
+    @Test fun settingsAndHelpCannotCreateBackLoops() {
+        assertEquals("editor", drawerReturnOrigin(DrawerDestination.HELP, "settings", "roles", "editor"))
+        assertEquals("editor", drawerReturnOrigin(DrawerDestination.SETTINGS, "help", "editor", "roles"))
+        assertEquals("roles", drawerReturnOrigin(DrawerDestination.SETTINGS, "help", "settings", "editor"))
+        assertEquals("roles", drawerReturnOrigin(DrawerDestination.HELP, "settings", "roles", "help"))
+        assertEquals("studio", drawerReturnOrigin(DrawerDestination.HELP, "studio", "roles", "editor"))
+    }
     @Test fun remoteDisconnectRequiresNonPendingTerminalStatusWhileConnected() {
         for (phase in listOf("preparing", "recording", "paused", "finalizing", "failed", "unknown", "new-value"))
             assertFalse(phase, mayDisconnectRemote(ready = true, pending = false, phase = phase))

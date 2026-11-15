@@ -507,8 +507,8 @@ private fun KontraApp(activity: MainActivity) {
         }
         fun selectDestination(destination: DrawerDestination) {
             if (drawerAllowedNow()) {
-                if (destination == DrawerDestination.HELP && page != "help") helpReturn = page
-                if (destination == DrawerDestination.SETTINGS && page != "settings") settingsReturn = page
+                if (destination == DrawerDestination.HELP && page != "help") helpReturn = drawerReturnOrigin(destination, page, helpReturn, settingsReturn)
+                if (destination == DrawerDestination.SETTINGS && page != "settings") settingsReturn = drawerReturnOrigin(destination, page, helpReturn, settingsReturn)
                 page = destination.route
             }
             drawerOpenJob?.cancel()
