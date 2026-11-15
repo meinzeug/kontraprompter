@@ -1,0 +1,50 @@
+name: Combined drawer recovery CI
+on:
+  push:
+    branches: [wip/camera-back-redesign-ci-20261115]
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Verify candidate
+        run: |
+          test "$(git rev-parse HEAD^)" = '68de5f1cb75e3ef9624e57933ecc22f57e85ac4b'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/android-ci.yml'
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install SDK
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37.0" "build-tools;36.0.0"'
+      - name: Assemble debug and run debug tests
+        run: ./gradlew --no-daemon --max-workers=1 --stacktrace :app:assembleDebug :app:testDebugUnitTest
+      - name: Upload debug artifact and test reports
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: camera-back-redesign-debug-${{ github.sha }}
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: error
+          retention-days: 2
+      - name: Assemble release
+        run: ./gradlew --no-daemon --max-workers=1 --stacktrace :app:assembleRelease
+      - name: Lint debug
+        run: ./gradlew --no-daemon --max-workers=1 --stacktrace :app:lintDebug
+      - name: Upload release and reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: camera-back-redesign-release-${{ github.sha }}
+          path: |
+            app/build/reports/
+            app/build/outputs/apk/release/*-unsigned.apk
+          if-no-files-found: warn
+          retention-days: 2
