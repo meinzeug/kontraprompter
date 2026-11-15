@@ -68,6 +68,13 @@ internal class StudioDeviceIdentity(private val store: StudioIdentityStore) {
     fun signLoginForFixture(expectedId: String, challengeId: String, token: String, scope: List<String>): ByteArray =
         sign(expectedId) { StudioDeviceTranscript.login(expectedId,challengeId,token,it,scope) }
 
+    /** V2 fixture only. The caller must fence consent and the eventual HTTP action. */
+    fun signOwnedEnrollmentForFixture(expectedId: String, challengeId: String, nonce: String, scope: List<String>, ownerHash: String, workspaceHash: String, sessionHash: String): ByteArray =
+        sign(expectedId) { StudioOwnedDeviceTranscript.enrollment(expectedId,challengeId,nonce,it,scope,ownerHash,workspaceHash,sessionHash) }
+
+    fun signOwnedLoginForFixture(expectedId: String, challengeId: String, token: String, scope: List<String>, ownerHash: String, workspaceHash: String): ByteArray =
+        sign(expectedId) { StudioOwnedDeviceTranscript.login(expectedId,challengeId,token,it,scope,ownerHash,workspaceHash) }
+
     private fun sign(expectedId: String, transcript: (ByteArray) -> ByteArray): ByteArray = synchronized(processLock) {
         val state = load() as? StudioIdentityState.Ready ?: error("Studio identity needs explicit recovery")
         check(state.id == expectedId)
