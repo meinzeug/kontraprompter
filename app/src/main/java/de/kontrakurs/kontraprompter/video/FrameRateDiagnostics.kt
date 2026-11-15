@@ -41,3 +41,23 @@ internal class FrameRateDiagnostics {
         return Summary(frames, invalid, if (frames > 1) last - first else 0, quantile(50), quantile(95), if (frames > 1) maxGapNs / 1_000_000L else null)
     }
 }
+
+/** Exactly one rejection reason is recorded for each classified recorder input. */
+internal class CaptureFrameDiagnostics {
+    enum class Rejection { PREPARING, INVALID_TIME, ROTATION, NO_OFFSET, DUPLICATE, PROJECTED_OUT, NO_RENDERER }
+    private val arrival = FrameRateDiagnostics()
+    private val accepted = FrameRateDiagnostics()
+    private val rejected = LongArray(Rejection.entries.size)
+    private var observedPaused = 0L
+
+    @Synchronized fun arriving(nowNs: Long, paused: Boolean) {
+        arrival.add(nowNs)
+        if (paused) observedPaused++
+    }
+    fun accepted(timestampNs: Long) = accepted.add(timestampNs)
+    @Synchronized fun rejected(reason: Rejection) { rejected[reason.ordinal]++ }
+    @Synchronized fun rejections(): List<Long> = rejected.toList()
+    @Synchronized fun pausedFrames(): Long = observedPaused
+    fun arrivals(): FrameRateDiagnostics.Summary = arrival.summary()
+    fun acceptedFrames(): FrameRateDiagnostics.Summary = accepted.summary()
+}

@@ -100,7 +100,7 @@ internal class RtcMp4Recorder(
     private val lastEncodedVideoMs = AtomicLong(0)
     private val lastEncodedAudioMs = AtomicLong(0)
     // This build-time diagnostic is disabled by default and retains no image, audio or IDs.
-    private val cameraTiming = if (BuildConfig.FRAME_RATE_DIAGNOSTICS) FrameRateDiagnostics() else null
+    private val cameraTiming = if (BuildConfig.FRAME_RATE_DIAGNOSTICS) CaptureFrameDiagnostics() else null
     private val encoderTiming = if (BuildConfig.FRAME_RATE_DIAGNOSTICS) FrameRateDiagnostics() else null
     @Volatile private var archive: RecordingArchive? = null
     @Volatile private var file: RandomAccessFile? = null
@@ -173,7 +173,9 @@ internal class RtcMp4Recorder(
 
     override fun onFrame(frame: VideoFrame) {
         if (!started.get() || stopRequested.get() || finished.get()) return
+        cameraTiming?.arriving(System.nanoTime(), pauseTimeline?.isPaused() == true)
         if (!configured.get()) {
+            cameraTiming?.rejected(CaptureFrameDiagnostics.Rejection.PREPARING)
             if (configuring.compareAndSet(false, true)) {
                 val w = frame.rotatedWidth; val h = frame.rotatedHeight
                 val rawTimestamp = frame.timestampNs
@@ -185,17 +187,17 @@ internal class RtcMp4Recorder(
             return
         }
         lastVideoAtMs.set(SystemClock.elapsedRealtime())
-        if (frame.rotatedWidth != width || frame.rotatedHeight != height) { fail("Kameraausrichtung hat sich während der Aufnahme geändert"); return }
+        if (frame.rotatedWidth != width || frame.rotatedHeight != height) { cameraTiming?.rejected(CaptureFrameDiagnostics.Rejection.ROTATION); fail("Kameraausrichtung hat sich während der Aufnahme geändert"); return }
         val now = System.nanoTime()
-        val offset = cameraOffsetNs ?: return
-        val absoluteNs = try { Math.addExact(frame.timestampNs, offset) } catch (_: ArithmeticException) { fail("Kamerazeitstempel ungültig"); return }
-        val deliveryDelay = try { Math.subtractExact(now, absoluteNs) } catch (_: ArithmeticException) { fail("Kamerazeitstempel ungültig"); return }
-        if (frame.timestampNs <= 0 || deliveryDelay < -100_000_000L || deliveryDelay > 500_000_000L) { fail("Zeitbasis der Kamera ist nicht stabil"); return }
+        val offset = cameraOffsetNs ?: run { cameraTiming?.rejected(CaptureFrameDiagnostics.Rejection.NO_OFFSET); return }
+        val absoluteNs = try { Math.addExact(frame.timestampNs, offset) } catch (_: ArithmeticException) { cameraTiming?.rejected(CaptureFrameDiagnostics.Rejection.INVALID_TIME); fail("Kamerazeitstempel ungültig"); return }
+        val deliveryDelay = try { Math.subtractExact(now, absoluteNs) } catch (_: ArithmeticException) { cameraTiming?.rejected(CaptureFrameDiagnostics.Rejection.INVALID_TIME); fail("Kamerazeitstempel ungültig"); return }
+        if (frame.timestampNs <= 0 || deliveryDelay < -100_000_000L || deliveryDelay > 500_000_000L) { cameraTiming?.rejected(CaptureFrameDiagnostics.Rejection.INVALID_TIME); fail("Zeitbasis der Kamera ist nicht stabil"); return }
         val previous = lastVideoNs.getAndSet(absoluteNs)
-        if (previous >= absoluteNs) return // A duplicate frame must not corrupt encoder timestamps.
-        val relative = pauseTimeline?.project(absoluteNs) ?: return
-        val target = renderer ?: return
-        cameraTiming?.add(relative)
+        if (previous >= absoluteNs) { cameraTiming?.rejected(CaptureFrameDiagnostics.Rejection.DUPLICATE); return } // Do not corrupt encoder timestamps.
+        val relative = pauseTimeline?.project(absoluteNs) ?: run { cameraTiming?.rejected(CaptureFrameDiagnostics.Rejection.PROJECTED_OUT); return }
+        val target = renderer ?: run { cameraTiming?.rejected(CaptureFrameDiagnostics.Rejection.NO_RENDERER); return }
+        cameraTiming?.accepted(relative)
         frame.buffer.retain()
         val adjusted = VideoFrame(frame.buffer, frame.rotation, relative)
         try { target.onFrame(adjusted) } catch (_: Exception) { fail("Videobild konnte nicht aufgezeichnet werden") }
@@ -468,13 +470,17 @@ internal class RtcMp4Recorder(
     }
 
     private fun logFrameTiming() {
-        val input = cameraTiming?.summary() ?: return
+        val camera = cameraTiming ?: return
+        val arrivals = camera.arrivals()
+        val accepted = camera.acceptedFrames()
         val output = encoderTiming?.summary() ?: return
         fun describe(s: FrameRateDiagnostics.Summary): String =
             "count=${s.frames} invalid=${s.invalidTimestamps} fps=${s.fps?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "unknown"} " +
                 "p50ms=${s.medianIntervalMs ?: "unknown"} p95ms=${s.p95IntervalMs ?: "unknown"} maxms=${s.maxIntervalMs ?: "unknown"}"
         // Only aggregates are logged. Encoder counts are output buffers, not a promise of a valid MP4.
-        Log.i("KpFrameTiming", "camera {${describe(input)}} encoder {${describe(output)}}")
+        Log.i("KpFrameTiming", "camera_arrival {${describe(arrivals)}} paused_observed=${camera.pausedFrames()} " +
+            "rejected_preparing_invalid_rotation_offset_duplicate_projected_renderer=${camera.rejections().joinToString(",")} " +
+            "recorder_accepted {${describe(accepted)}} encoder_before_muxer {${describe(output)}}")
     }
 
     private fun emit(event: Event) { callback.post { runCatching { listener(event) } } }
