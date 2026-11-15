@@ -26,7 +26,7 @@ java -XX:ActiveProcessorCount=1 -Xmx160m -cp "$compiler:$stdlib:$script:$reflect
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect -classpath "$stdlib:$annotations:$junit:$hamcrest" \
   -d "$fixture_dir" "$src/video/PcmTee.kt" "$src/speech/SpokenScript.kt" \
   "$tests/video/PcmTeeTest.kt" "$tests/speech/SpokenScriptTest.kt" "$tests/speech/SpeechPcmFixtureTest.kt" \
-  "$tests/speech/SpeechFollowHarness.kt" "$tests/speech/SpeechFollowHarnessTest.kt"
+  "$tests/speech/SpeechFollowHarness.kt" "$tests/speech/SpeechAtomicPositionFixture.kt" "$tests/speech/SpeechFollowHarnessTest.kt"
 java -Xmx64m -cp "$fixture_dir:$stdlib:$junit:$hamcrest" org.junit.runner.JUnitCore \
   de.kontrakurs.kontraprompter.video.PcmTeeTest \
   de.kontrakurs.kontraprompter.speech.SpokenScriptTest \

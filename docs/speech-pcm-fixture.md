@@ -62,6 +62,21 @@ erneut. Stille darf ohne finales passendes Ergebnis nicht scrollen. Ein nackter
 Skript-Hash kann Rückschlüsse auf bekannte Texte erlauben und ist kein Ersatz
 für Vertraulichkeit.
 
+Ein unabhängiger Review fand zwei konkrete Lücken der älteren Fixture: Ein
+verlorener letzter Block ohne Folgeblock wurde bis zur nächsten Eingabe nicht
+erkannt, und eine bereits erzeugte Position konnte nach Audio-Invalidierung
+oder Kanalwechsel noch zugestellt werden. Die erweiterte Test-Fixture prüft
+Verlustzähler und Audio-Generation auch bei Ergebnis und Empfang. Diese
+getrennten Lesezugriffe sind jedoch gegenüber parallel eintretendem Verlust,
+Kanalwechsel und UI-Anwendung **nicht atomar**. `SpeechAtomicPositionFixture`
+modelliert daher zusätzlich eine gemeinsame CAS-Zustandsquelle, in der
+Invalidierung und Position konkurrieren und die Position selbst den sichtbaren
+Zustand darstellt. Sie ist nur ein synthetisches Modell: `PcmTee`, Netzwerk und
+UI speisen diesen Automaten bislang nicht atomar. Vor echter Freigabe müssen
+Verlustanzeige auf dem nichtblockierenden Producerpfad und sämtliche Kanal-/
+Seek-Änderungen tatsächlich mit derselben Zustandsentscheidung verdrahtet und
+unter realen Parallelrennen überprüft werden.
+
 `SpeechFollowHarness` und seine Tests unter `app/src/test` demonstrieren nur
 diese Zustandsgrenzen mit dem echten isolierten Tee und künstlichen Texten.
 Der Testempfänger und seine objektgebundene Kanalidentität sind Platzhalter,
