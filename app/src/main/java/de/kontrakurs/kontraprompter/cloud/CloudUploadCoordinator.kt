@@ -31,7 +31,10 @@ internal class CloudUploadCoordinator(context: Context, private val client: Stud
     private val app = context.applicationContext
     private val _state = MutableStateFlow<CloudUploadState>(CloudUploadState.Idle)
     val state: StateFlow<CloudUploadState> = _state
-    init { client.onUploadSessionSet { _state.value = CloudUploadState.Idle } }
+    init {
+        client.onUploadSessionSet { _state.value = CloudUploadState.Idle }
+        client.onUploadSessionInvalidated { _state.value = CloudUploadState.Idle }
+    }
 
     suspend fun upload(recording: SavedRecording, projectId: String, requiredSession: StudioClient.ManualUploadSession? = null): CloudUploadState {
         fun changed() = CloudUploadState.Failed(recording.id, projectId, "session_changed", "Studio-Sitzung geändert; Serverstatus prüfen. Die Aufnahme bleibt lokal.")
@@ -99,8 +102,8 @@ internal class CloudUploadCoordinator(context: Context, private val client: Stud
                         else if (notSaved) CloudUploadState.Failed(recording.id, projectId, "uncertain", "Uploadstatus konnte nicht sicher gespeichert werden; Serverstatus prüfen. Die Aufnahme bleibt lokal.")
                         else CloudUploadState.Failed(recording.id, projectId, kind, error.message?.take(220) ?: "Upload nicht bestätigt; die lokale Aufnahme bleibt erhalten.")
                     }
-                    _state.value = result
                     if (failure?.invalidateSession == true) client.invalidateManualUploadSession(bound)
+                    _state.value = result
                     result
                 } ?: changed()
             }
