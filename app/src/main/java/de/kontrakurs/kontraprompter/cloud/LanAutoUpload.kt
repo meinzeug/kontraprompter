@@ -116,13 +116,18 @@ internal class LanAutoUploader(context: Context, private val client: StudioClien
 
     fun start(scope: CoroutineScope) = scope.launch {
         while (isActive) {
+            val session = client.manualUploadSession()
             try { runOnce() } catch (error: CancellationException) { throw error }
-            catch (_: Exception) { _status.value = LanAutoUploadStatus(message = "Uploadstatus nicht lesbar. Die Aufnahme bleibt lokal.") }
+            catch (_: Exception) {
+                val report = { _status.value = LanAutoUploadStatus(message = "Uploadstatus nicht lesbar. Die Aufnahme bleibt lokal.") }
+                if (session == null) client.withoutUploadSession(report) else client.withManualUploadSession(session, report)
+            }
             delay(15_000)
         }
     }
 
     internal suspend fun runOnce() = gate.withLock {
+        val runSession = client.manualUploadSession()
         val recordings = withContext(Dispatchers.IO) { savedRecordings(app).filter { it.origin in setOf(RecordingOrigin.LAN, RecordingOrigin.LAN_UNASSIGNED) && !it.partial }.sortedBy { it.createdAtMs } }
         var blocked: LanAutoUploadStatus? = null
         for (recording in recordings) {
@@ -136,8 +141,9 @@ internal class LanAutoUploader(context: Context, private val client: StudioClien
             val unsaved = unsavedDeletionMessage(uploads.state.value, recording.id, project, journal?.phase)
             if (unsaved != null) { blocked = LanAutoUploadStatus(recording.id, project, unsaved); continue }
             if (journal?.phase in setOf("project_missing", "conflict")) { blocked = LanAutoUploadStatus(recording.id, project, uploadBlockedMessage(journal?.conflictReason)); continue }
-            val session = client.manualUploadSession()
+            val session = runSession
             if (session == null) { client.withoutUploadSession { _status.value = LanAutoUploadStatus(recording.id, project, "Für den automatischen Upload Kamera bei Videomaker anmelden.") }; return@withLock }
+            if (!client.manualUploadSessionMatches(session)) return@withLock
             val binding = client.manualUploadSessionBinding(session)
             if (project == null) {
                 if (recording.id in blockedProjectImports) { blocked = LanAutoUploadStatus(recording.id, null, "Aufnahmeprojekt muss geprüft werden. Das Original bleibt lokal."); continue }
@@ -182,7 +188,8 @@ internal class LanAutoUploader(context: Context, private val client: StudioClien
             } }
             return@withLock // one upload at a time; network failures retry on the next tick
         }
-        _status.value = blocked ?: LanAutoUploadStatus()
+        val report = { _status.value = blocked ?: LanAutoUploadStatus() }
+        if (runSession == null) client.withoutUploadSession(report) else client.withManualUploadSession(runSession, report)
     }
 
     /** A local explicit action can rebind only the same unchanged recording/project. */
