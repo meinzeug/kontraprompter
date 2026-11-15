@@ -18,7 +18,7 @@ Widerruf gestartete Pakete lassen sich nicht zurücknehmen. Verbindungsfehler
 alter Versuche dürfen neuere Versuche nicht überschreiben. Manuelle Eingabe
 bleibt möglich und authentisiert sich unverändert mit Sitzungscode.
 
-Ein direkter Kotlin-/Compose-Compile und 14 JVM-Tests bestanden. Drei Tests
+Ein direkter Kotlin-/Compose-Compile und 17 JVM-Tests bestanden. Drei Tests
 verwenden echten TCP-Loopback und authentisierte Kanäle: manueller Aufbau,
 Widerruf während eines unvollständigen Handshakes und Fortbestand nach späterem
 Verlust des Suchergebnisses. Im manuellen Aufbau wird parallel eine andere
@@ -27,6 +27,10 @@ die manuelle Verbindung darf dadurch nicht abgebrochen werden. Weitere Tests
 verwenden synthetische DNS-Einträge und Callback-Reihenfolgen. Insbesondere
 beenden asynchroner Resolve-Fehler und Verlust einer ausgewählten Dienstinstanz
 den Ladezustand; überholte Fehler dürfen einen neueren Vorgang nicht ändern.
+Ohne Antwort endet die Auflösung nach zehn Sekunden. Ein verspätetes Ergebnis
+nach dem Timeout wird verworfen. Adresse und Port werden auf dem UI-Thread nur
+unter Prüfung derselben Auswahl übernommen; erst danach endet der Ladezustand.
+Die Timeout-Tests nutzen eine verkürzte Frist und keine Android-Geräte.
 Dies ist kein Android-Gradle-Build und kein
 Gerätetest; Androids konkretes DNS-SD-Cacheverhalten ist damit nicht belegt.
 Alte Einträge können sichtbar bleiben. Ein verspätetes Lost-Ereignis für einen

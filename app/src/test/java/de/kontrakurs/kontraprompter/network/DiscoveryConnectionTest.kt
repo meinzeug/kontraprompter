@@ -24,6 +24,69 @@ class DiscoveryConnectionTest {
         target.javaClass.getDeclaredField(name).apply { isAccessible = true }.set(target, value)
     }
 
+    @Test fun `resolved endpoint is applied before loading clears and cannot apply twice`() {
+        val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
+        val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession
+        val item = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
+        val discovery = DiscoveryServices<FoundDevice>()
+        discovery.found("camera", item); val selection = discovery.select(item)!!
+        val state = MutableStateFlow(LanState(role = "client", discoveryResolving = true))
+        set(lan, "_state", state); set(lan, "discovered", discovery); set(lan, "closed", AtomicBoolean(false)); set(lan, "discoveryEventLock", Any())
+        val endpoint = DiscoveredEndpoint("127.0.0.1", 1234, selection)
+        var applied = 0
+        assertTrue(lan.acceptResolved(endpoint) { assertTrue(state.value.discoveryResolving); applied++ })
+        assertFalse(state.value.discoveryResolving)
+        assertEquals(1, applied)
+        assertFalse(lan.acceptResolved(endpoint) { applied++ })
+        assertEquals(1, applied)
+    }
+
+    @Test fun `resolve timeout clears loading and rejects a later endpoint`() {
+        val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
+        val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession
+        val item = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
+        val discovery = DiscoveryServices<FoundDevice>()
+        discovery.found("camera", item); val selection = discovery.select(item)!!
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val state = MutableStateFlow(LanState(role = "client", discoveryResolving = true))
+        set(lan, "scope", scope); set(lan, "_state", state); set(lan, "discovered", discovery)
+        set(lan, "closed", AtomicBoolean(false)); set(lan, "discoveryEventLock", Any())
+        try {
+            LanSession::class.java.getDeclaredMethod("scheduleResolutionTimeout", DiscoveryServices.Selection::class.java, Long::class.javaPrimitiveType)
+                .apply { isAccessible = true }.invoke(lan, selection, 30L)
+            val limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (state.value.discoveryResolving && System.nanoTime() < limit) Thread.yield()
+            assertFalse(state.value.discoveryResolving)
+            assertTrue(state.value.error?.contains("dauert zu lange") == true)
+            var applied = false
+            assertFalse(lan.acceptResolved(DiscoveredEndpoint("127.0.0.1", 1234, selection)) { applied = true })
+            assertFalse(applied)
+        } finally { scope.cancel() }
+    }
+
+    @Test fun `old timeout cannot end a newer selection`() {
+        val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
+        val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession
+        val first = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
+        val second = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
+        val discovery = DiscoveryServices<FoundDevice>()
+        discovery.found("first", first); discovery.found("second", second)
+        val old = discovery.select(first)!!
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val state = MutableStateFlow(LanState(role = "client", discoveryResolving = true))
+        set(lan, "scope", scope); set(lan, "_state", state); set(lan, "discovered", discovery); set(lan, "closed", AtomicBoolean(false))
+        try {
+            LanSession::class.java.getDeclaredMethod("scheduleResolutionTimeout", DiscoveryServices.Selection::class.java, Long::class.javaPrimitiveType)
+                .apply { isAccessible = true }.invoke(lan, old, 500L)
+            val tasks = scope.coroutineContext[Job]!!.children.toList()
+            assertEquals(1, tasks.size)
+            discovery.select(second)
+            runBlocking { tasks.joinAll() }
+            assertTrue(state.value.discoveryResolving)
+            assertNull(state.value.error)
+        } finally { scope.cancel() }
+    }
+
     @Test fun `resolve failure clears loading only for the selected generation`() {
         val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
         val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession

@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private const val SERVICE_TYPE = "_kontraprompter._tcp."
 private const val TOKEN_TTL = 5 * 60 * 1000L
+private const val RESOLVE_TIMEOUT_MS = 10_000L
 
 data class FoundDevice(val name: String, val info: NsdServiceInfo)
 internal data class DiscoveredEndpoint(val address: String, val port: Int, val selection: DiscoveryServices.Selection<FoundDevice>)
@@ -66,6 +67,7 @@ class LanSession(context: Context) : AutoCloseable {
     private var discovery: NsdManager.DiscoveryListener? = null
     private val discoveryEventLock = Any()
     private val discovered = DiscoveryServices<FoundDevice>()
+    private var resolveTimeout: Job? = null
     @Volatile var onReady: (() -> Unit)? = null
     @Volatile var onMessage: ((String, String) -> Unit)? = null
     @Volatile var onDisconnect: (() -> Unit)? = null
@@ -120,7 +122,7 @@ class LanSession(context: Context) : AutoCloseable {
                     val previous = discovered.currentSelection()
                     val devices = discovered.found(info.serviceName, FoundDevice(info.serviceName, info))
                     val invalidated = previous != null && !discovered.current(previous)
-                    if (invalidated) supersedeConnectionAttempt(previous!!, "Suchergebnis geändert. Bitte Kamera erneut auswählen.")
+                    if (invalidated) { resolveTimeout?.cancel(); resolveTimeout = null; supersedeConnectionAttempt(previous!!, "Suchergebnis geändert. Bitte Kamera erneut auswählen.") }
                     _state.update { discoveryDevicesChanged(it, devices, invalidated, "Kameradienst geändert. Bitte erneut auswählen.") }
                 }
             }
@@ -128,7 +130,7 @@ class LanSession(context: Context) : AutoCloseable {
                 val previous = discovered.currentSelection()
                 val devices = discovered.lost(info.serviceName)
                 val invalidated = previous != null && !discovered.current(previous)
-                if (invalidated) supersedeConnectionAttempt(previous!!, "Kameradienst nicht mehr verfügbar. Bitte erneut auswählen.")
+                if (invalidated) { resolveTimeout?.cancel(); resolveTimeout = null; supersedeConnectionAttempt(previous!!, "Kameradienst nicht mehr verfügbar. Bitte erneut auswählen.") }
                 _state.update { discoveryDevicesChanged(it, devices, invalidated, "Kameradienst nicht mehr verfügbar. Bitte erneut auswählen.") }
             }
         }
@@ -143,6 +145,7 @@ class LanSession(context: Context) : AutoCloseable {
                 if (selected != null) {
                     if (previous != null) supersedeConnectionAttempt(previous, null)
                     _state.update { it.copy(discoveryResolving = true, error = null) }
+                    scheduleResolutionTimeout(selected, RESOLVE_TIMEOUT_MS)
                 }
             }
         }
@@ -156,24 +159,36 @@ class LanSession(context: Context) : AutoCloseable {
                     val host = info.host?.hostAddress
                     if (info.serviceName != device.name || info.serviceType?.trimEnd('.') != SERVICE_TYPE.trimEnd('.') || info.port !in 1..65535 || host == null) {
                         resolutionFailed(selection, "Kameradienst unvollständig oder veraltet. Bitte erneut auswählen.")
-                    } else {
-                        val accepted = discovered.ifCurrent(selection) {
-                            if (closed.get()) false else { _state.update { it.copy(discoveryResolving = false) }; true }
-                        } ?: false
-                        if (accepted) result(DiscoveredEndpoint(host, info.port, selection))
-                    }
+                    } else result(DiscoveredEndpoint(host, info.port, selection))
                 }
             })
         } catch (_: Exception) { resolutionFailed(selection, "Gerät nicht auflösbar; manuelle Adresse verwenden."); return false }
         return true
     }
     private fun resolutionFailed(selection: DiscoveryServices.Selection<FoundDevice>, message: String) {
-        discovered.ifCurrent(selection) { if (!closed.get()) _state.update { it.copy(discoveryResolving = false, error = message) } }
+        discovered.ifCurrent(selection) { if (!closed.get()) _state.update { if (it.discoveryResolving) it.copy(discoveryResolving = false, error = message) else it } }
+    }
+    private fun scheduleResolutionTimeout(selection: DiscoveryServices.Selection<FoundDevice>, timeoutMs: Long) {
+        resolveTimeout?.cancel()
+        resolveTimeout = scope.launch { delay(timeoutMs); resolutionFailed(selection, "Kamerasuche dauert zu lange. Bitte erneut auswählen oder manuell verbinden.") }
+    }
+    /** Apply the endpoint and clear loading together while this exact selection remains current. */
+    internal fun acceptResolved(endpoint: DiscoveredEndpoint, apply: () -> Unit): Boolean = synchronized(discoveryEventLock) {
+        discovered.ifCurrent(endpoint.selection) {
+            if (closed.get() || !_state.value.discoveryResolving) false
+            else {
+                apply()
+                _state.update { it.copy(discoveryResolving = false) }
+                resolveTimeout?.cancel(); resolveTimeout = null
+                true
+            }
+        } ?: false
     }
     fun cancelResolutionSelection() = synchronized(discoveryEventLock) {
         val previous = discovered.currentSelection()
         discovered.clearSelection()
         if (previous != null) supersedeConnectionAttempt(previous, null)
+        resolveTimeout?.cancel(); resolveTimeout = null
         _state.update { if (it.discoveryResolving) it.copy(discoveryResolving = false) else it }
     }
     internal fun isCurrent(endpoint: DiscoveredEndpoint): Boolean = !closed.get() && discovered.current(endpoint.selection)
@@ -380,7 +395,7 @@ class LanSession(context: Context) : AutoCloseable {
     private fun localAddresses(): List<String> = runCatching { NetworkInterface.getNetworkInterfaces().toList().filter { it.isUp && !it.isLoopback }.flatMap { it.inetAddresses.toList() }.filterIsInstance<Inet4Address>().filterNot { it.isLoopbackAddress || it.isLinkLocalAddress }.mapNotNull { it.hostAddress } }.getOrDefault(emptyList())
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        synchronized(discoveryEventLock) { discovered.close() }
+        synchronized(discoveryEventLock) { resolveTimeout?.cancel(); resolveTimeout = null; discovered.close() }
         synchronized(socketLock) {
             runCatching { pendingSocket?.close() }; pendingSocket = null; pendingAttempt = null
             runCatching { channel?.close() }; channel = null

@@ -153,7 +153,9 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
                         FilledTonalButton(onClick = {
                             address = ""; port = ""; resolvedEndpoint = null; discoveryError = null
                             val started = session.lan.resolve(device) { endpoint -> activity.runOnUiThread {
-                                if (session.lan.isCurrent(endpoint)) { address = endpoint.address; port = endpoint.port.toString(); resolvedEndpoint = endpoint; discoveryError = null }
+                                session.lan.acceptResolved(endpoint) {
+                                    address = endpoint.address; port = endpoint.port.toString(); resolvedEndpoint = endpoint; discoveryError = null
+                                }
                             } }
                             if (!started) discoveryError = "Kamerasuche konnte nicht gestartet werden. Bitte erneut auswählen."
                         }, modifier = Modifier.heightIn(min = 48.dp)) { Text(device.name) }
