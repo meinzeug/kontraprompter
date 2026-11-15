@@ -134,12 +134,27 @@ und 720 × 1280 bei 20 Bildern pro Sekunde. Welche Framegröße die App im
 fehlgeschlagenen Versuch tatsächlich erhalten hat, wurde nicht erfasst; die
 Ursache ist daher noch offen. Der Kandidat wurde nicht veröffentlicht.
 
+Ein zweiter Diagnosebuild ergänzte die tatsächlich abgelehnten Maße in der
+Fehlermeldung: Der Kamera-Stream hatte laut Android 1280 × 720 Pixel, am
+Recorder kamen 540 × 960 Pixel bei 20 Bildern pro Sekunde an. Für diese Größe
+fand der Recorder keinen passenden H.264-Oberflächenencoder. Die Vorschau und
+die Aufnahme nutzen derzeit dieselbe WebRTC-Videospur; die höhere angefragte
+Kameraauflösung garantiert daher keine entsprechend große Aufnahme. Eine
+Trennung von Aufnahme und adaptiver Vorschau ist noch zu entwickeln und auf
+beiden Geräten zu testen.
+
 Danach wurde auf dem Xiaomi die oben dokumentierte Release-APK wieder als
 Update installiert und ihre Prüfsumme erneut kontrolliert. Nach einem erneuten
 WLAN-Verbindungsaufbau wurden Xiaomi und Samsung wieder gekoppelt; Samsung
 zeigte das Livebild und das Skript an. Der Test demonstriert keine erfolgreiche
 HD-Aufnahme. Die aktuelle veröffentlichte Version nahm zuvor im Geräteversuch
 mit 480 × 640 Pixeln auf.
+
+Bei einer späteren Neukopplung löste die Gerätesuche einen alten Port für den
+gleichen Dienstnamen auf, obwohl der Kamera-Listener bereits einen anderen
+Port nutzte. Mit den aktuellen, manuell übernommenen Angaben ließ sich die
+Verbindung herstellen. Die genaue Rolle von Androids NSD-Cache und verzögerten
+Callbacks ist noch nicht geklärt; ein Fix wird separat erprobt.
 
 Mit der wiederhergestellten Release-APK wurde eine weitere Kontrollaufnahme am
 Samsung gestartet, pausiert, fortgesetzt und gestoppt. Das Xiaomi meldete die
