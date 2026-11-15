@@ -51,6 +51,8 @@ class LanSession(context: Context) : AutoCloseable {
     @Volatile private var channel: AuthenticatedChannel? = null
     private var registration: NsdManager.RegistrationListener? = null
     private var discovery: NsdManager.DiscoveryListener? = null
+    private val discoveryEventLock = Any()
+    private val discovered = DiscoveryServices<FoundDevice>()
     @Volatile var onReady: (() -> Unit)? = null
     @Volatile var onMessage: ((String, String) -> Unit)? = null
     @Volatile var onDisconnect: (() -> Unit)? = null
@@ -100,21 +102,39 @@ class LanSession(context: Context) : AutoCloseable {
             override fun onDiscoveryStopped(type: String) = Unit
             override fun onStartDiscoveryFailed(type: String, code: Int) { _state.update { it.copy(error = "Suche fehlgeschlagen ($code); manuelle Adresse verwenden.") } }
             override fun onStopDiscoveryFailed(type: String, code: Int) = Unit
-            override fun onServiceFound(info: NsdServiceInfo) { if (info.serviceType.trimEnd('.') == SERVICE_TYPE.trimEnd('.')) _state.update { s -> s.copy(devices = (s.devices.filterNot { it.name == info.serviceName } + FoundDevice(info.serviceName, info))) } }
-            override fun onServiceLost(info: NsdServiceInfo) { _state.update { s -> s.copy(devices = s.devices.filterNot { it.name == info.serviceName }) } }
+            override fun onServiceFound(info: NsdServiceInfo) {
+                if (info.serviceType.trimEnd('.') == SERVICE_TYPE.trimEnd('.')) synchronized(discoveryEventLock) {
+                    val devices = discovered.found(info.serviceName, FoundDevice(info.serviceName, info))
+                    _state.update { it.copy(devices = devices) }
+                }
+            }
+            override fun onServiceLost(info: NsdServiceInfo) = synchronized(discoveryEventLock) {
+                val devices = discovered.lost(info.serviceName)
+                _state.update { it.copy(devices = devices) }
+            }
         }
         discovery = listener
         try { nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener) } catch (_: Exception) { _state.update { it.copy(error = "Suche nicht verfügbar; manuelle Adresse verwenden.") } }
     }
     @Suppress("DEPRECATION")
-    fun resolve(device: FoundDevice, result: (String, Int) -> Unit) {
+    fun resolve(device: FoundDevice, result: (String, Int, () -> Boolean) -> Unit) {
+        val selection = discovered.select(device)
+        if (selection == null) { _state.update { it.copy(error = "Kamera nicht mehr in der Suche. Bitte erneut auswählen.") }; return }
+        val current = { !closed.get() && discovered.current(selection) }
         try {
             nsd.resolveService(device.info, object : NsdManager.ResolveListener {
-                override fun onResolveFailed(info: NsdServiceInfo, code: Int) { _state.update { it.copy(error = "Gerät nicht auflösbar ($code); manuelle Adresse verwenden.") } }
-                override fun onServiceResolved(info: NsdServiceInfo) { info.host?.hostAddress?.let { result(it, info.port) } }
+                override fun onResolveFailed(info: NsdServiceInfo, code: Int) { if (current()) _state.update { it.copy(error = "Gerät nicht auflösbar ($code); manuelle Adresse verwenden.") } }
+                override fun onServiceResolved(info: NsdServiceInfo) {
+                    if (!current()) return
+                    val host = info.host?.hostAddress
+                    if (info.serviceName != device.name || info.serviceType.trimEnd('.') != SERVICE_TYPE.trimEnd('.') || info.port !in 1..65535 || host == null) {
+                        _state.update { it.copy(error = "Kameradienst unvollständig oder veraltet. Bitte erneut auswählen.") }
+                    } else result(host, info.port, current)
+                }
             })
-        } catch (_: Exception) { _state.update { it.copy(error = "Gerät nicht auflösbar; manuelle Adresse verwenden.") } }
+        } catch (_: Exception) { if (current()) _state.update { it.copy(error = "Gerät nicht auflösbar; manuelle Adresse verwenden.") } }
     }
+    fun cancelResolutionSelection() { discovered.clearSelection() }
     fun connect(address: String, port: Int, token: String) {
         if (channel != null || _state.value.authenticated) return
         try { PairingCrypto.parseToken(token); require(port in 1..65535); require(isNumericIp(address.trim())) { "Bitte eine numerische IP-Adresse eingeben." } } catch (e: Exception) { _state.update { it.copy(error = e.localizedMessage ?: "Adresse, Port oder Sitzungscode ungültig") }; return }
@@ -198,7 +218,7 @@ class LanSession(context: Context) : AutoCloseable {
     fun reportFirstCameraFrame() { _state.update(::firstCameraFrame) }
     private fun fail(message: String) { _state.update { it.copy(status = "Fehler", error = message) } }
     private fun register(port: Int) {
-        val info = NsdServiceInfo().apply { serviceName = "KontraPrompter-${Build.MODEL.take(24)}"; serviceType = SERVICE_TYPE; setPort(port) }
+        val info = NsdServiceInfo().apply { serviceName = discoveryServiceName(Build.MODEL, PairingCrypto.randomBytes(8)); serviceType = SERVICE_TYPE; setPort(port) }
         val listener = object : NsdManager.RegistrationListener {
             override fun onServiceRegistered(info: NsdServiceInfo) = Unit
             override fun onRegistrationFailed(info: NsdServiceInfo, code: Int) { _state.update { it.copy(error = "Automatische Suche nicht verfügbar ($code); Adresse manuell eingeben.") } }
@@ -232,6 +252,7 @@ class LanSession(context: Context) : AutoCloseable {
     private fun localAddresses(): List<String> = runCatching { NetworkInterface.getNetworkInterfaces().toList().filter { it.isUp && !it.isLoopback }.flatMap { it.inetAddresses.toList() }.filterIsInstance<Inet4Address>().filterNot { it.isLoopbackAddress || it.isLinkLocalAddress }.mapNotNull { it.hostAddress } }.getOrDefault(emptyList())
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        synchronized(discoveryEventLock) { discovered.close() }
         synchronized(socketLock) {
             runCatching { pendingSocket?.close() }; pendingSocket = null
             runCatching { channel?.close() }; channel = null
