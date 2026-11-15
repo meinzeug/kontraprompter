@@ -665,7 +665,69 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
             pairedCapture.phase in setOf("failed", "partial") ||
             (lanState.ready && (keyboardDescriptor != null || pairedCapture.phase in setOf("preparing", "recording", "paused", "finalizing", "ready")))
         ))
-    Box(Modifier.fillMaxSize().background(Color.Black).clickable { controls = !controls }) {
+    @Composable
+    fun CaptureControls(modifier: Modifier = Modifier) {
+        Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            val toggleLabel = when (pairedCapture.phase) { "recording" -> "Aufnahme pausieren"; "paused" -> "Aufnahme fortsetzen"; else -> "Aufnahme starten" }
+            val canToggle = pairedCapture.phase in setOf("idle", "ready", "partial", "failed", "recording", "paused") && !pairedCapture.pending
+            Button(onClick = onCaptureToggle, enabled = canToggle, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(17.dp)) { Text(toggleLabel) }
+            TextButton(onClick = onCaptureStop, enabled = !pairedCapture.pending && pairedCapture.phase in setOf("preparing", "recording", "paused"), modifier = Modifier.heightIn(min = 48.dp)) { Text("Stopp", color = Color.White) }
+            CameraSwitchControl(enabled = pairedCapture.cameraCanSwitch && !pairedCapture.pending && !pairedCapture.cameraSwitching && pairedCapture.phase in setOf("idle", "ready", "partial", "failed"), onClick = onCameraSwitch)
+        }
+    }
+    @Composable
+    fun PlaybackControls(modifier: Modifier = Modifier) {
+        Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = back, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Editor", color = Color.White) }
+            TextButton(onClick = { playing = false; countdownJob?.cancel(); remaining = 0; scope.launch { scroll.scrollTo(0) } }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Anfang", color = Color.White) }
+            Button(onClick = {
+                if (playing || remaining > 0) { countdownJob?.cancel(); playing = false; remaining = 0 }
+                else { countdownJob = scope.launch { remaining = countdownSeconds; while (remaining > 0) { delay(1000); remaining-- }; playing = true } }
+            }, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(17.dp)) { Text(if (playing || remaining > 0) "Pause" else "Start") }
+        }
+    }
+    @Composable
+    fun CameraStatus() {
+        val warnings = buildList {
+            if (lanState.error != null) add("Verbindungsfehler")
+            if (isCameraClient && pairedCapture.cameraError != null) add("Kamerafehler")
+            if (isCameraClient && pairedCapture.message != null) add("Kamerahinweis")
+            if (isCameraClient && !lanState.ready && pairedCapture.phase == "failed") add("Letzter Aufnahmestatus: Fehler")
+            if (isCameraClient && !lanState.ready && pairedCapture.phase == "partial") add("Letzter Aufnahmestatus: Teilaufnahme")
+            if (isCameraClient && lanState.ready && keyboardDescriptor != null && !controls) add("Enter-Auslöser nicht bereit")
+        }
+        val primary = if (isCameraClient && lanState.ready) capturePhase
+            else if (lanState.role.isEmpty()) "Offline-Prompter" else lanState.status
+        val hasError = lanState.error != null || (isCameraClient && (pairedCapture.cameraError != null || pairedCapture.phase == "failed"))
+        val accessibleStatus = buildString {
+            if (pairedCapture.pending) append("Befehl ausstehend. ")
+            append(primary)
+            lanState.error?.let { append(". Verbindungsfehler: "); append(it) }
+            if (isCameraClient) {
+                pairedCapture.cameraError?.let { append(". Kamerafehler: "); append(it) }
+                pairedCapture.message?.let { append(". Kamerahinweis: "); append(it) }
+                if (!lanState.ready && pairedCapture.phase in setOf("failed", "partial")) { append(". Letzter Aufnahmestatus: "); append(capturePhase) }
+                if (lanState.ready && keyboardDescriptor != null && !controls) append(". Enter-Auslöser nicht bereit. Anzeige antippen und aktivieren")
+            }
+            append(". Details öffnen")
+        }
+        Surface(onClick = { statusDetails = true }, modifier = Modifier.fillMaxWidth().clearAndSetSemantics {
+            contentDescription = accessibleStatus
+            role = Role.Button
+            onClick(label = "Details öffnen") { statusDetails = true; true }
+        }, shape = RoundedCornerShape(14.dp), color = Color(0xe6202329)) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f)) {
+                    if (pairedCapture.pending) Text("Befehl ausstehend", color = Color(0xffffd79b), style = MaterialTheme.typography.labelMedium)
+                    Text(primary, color = if (isCameraClient && lanState.ready && pairedCapture.phase == "recording") Color(0xffffb2b2) else Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+                    if (warnings.isNotEmpty()) Text(if (hasError) "Fehler · Details öffnen" else "Hinweis · Details öffnen", color = Color(0xffffc7a8), style = MaterialTheme.typography.labelMedium)
+                }
+                Text("Details", color = SoftText, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black).clickable { controls = !controls }) {
+        val landscapeControls = useWidePrompterLayout(maxWidth.value, maxHeight.value, LocalDensity.current.fontScale, keyboardDescriptor != null)
         if (video != null) LivePreview(video, videoH, videoV, videoRotation, videoFill, videoOpacity, Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().graphicsLayer { scaleX = transform.scaleX; scaleY = transform.scaleY; rotationZ = transform.rotation.toFloat() }, contentAlignment = Alignment.TopCenter) {
             Column(Modifier.fillMaxSize().verticalScroll(scroll), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -674,69 +736,36 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
                 Spacer(Modifier.height(400.dp))
             }
         }
-        if (showCameraStatus || remote != null || notice?.needsAttention() == true) Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            // Put recording/connection errors first when vertical space is scarce.
-            if (showCameraStatus) {
-                val warnings = buildList {
-                    if (lanState.error != null) add("Verbindungsfehler")
-                    if (isCameraClient && pairedCapture.cameraError != null) add("Kamerafehler")
-                    if (isCameraClient && pairedCapture.message != null) add("Kamerahinweis")
-                    if (isCameraClient && !lanState.ready && pairedCapture.phase == "failed") add("Letzter Aufnahmestatus: Fehler")
-                    if (isCameraClient && !lanState.ready && pairedCapture.phase == "partial") add("Letzter Aufnahmestatus: Teilaufnahme")
-                    if (isCameraClient && lanState.ready && keyboardDescriptor != null && !controls) add("Enter-Auslöser nicht bereit")
+        val showNotice = notice?.needsAttention() == true
+        if (showCameraStatus || remote != null || showNotice) {
+            if (landscapeControls) {
+                Row(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
+                    if (showCameraStatus) Box(Modifier.weight(1f)) { CameraStatus() }
+                    if (remote != null) Box(Modifier.weight(1f)) { RemoteBanner(remote) }
+                    if (showNotice && notice != null) Box(Modifier.weight(1f)) { PrompterGenerationNotice(notice, compact = true) }
                 }
-                val primary = if (isCameraClient && lanState.ready) capturePhase
-                    else if (lanState.role.isEmpty()) "Offline-Prompter" else lanState.status
-                val hasError = lanState.error != null || (isCameraClient && (pairedCapture.cameraError != null || pairedCapture.phase == "failed"))
-                val accessibleStatus = buildString {
-                    if (pairedCapture.pending) append("Befehl ausstehend. ")
-                    append(primary)
-                    lanState.error?.let { append(". Verbindungsfehler: "); append(it) }
-                    if (isCameraClient) {
-                        pairedCapture.cameraError?.let { append(". Kamerafehler: "); append(it) }
-                        pairedCapture.message?.let { append(". Kamerahinweis: "); append(it) }
-                        if (!lanState.ready && pairedCapture.phase in setOf("failed", "partial")) { append(". Letzter Aufnahmestatus: "); append(capturePhase) }
-                        if (lanState.ready && keyboardDescriptor != null && !controls) append(". Enter-Auslöser nicht bereit. Anzeige antippen und aktivieren")
-                    }
-                    append(". Details öffnen")
-                }
-                Surface(onClick = { statusDetails = true }, modifier = Modifier.fillMaxWidth().clearAndSetSemantics {
-                    contentDescription = accessibleStatus
-                    role = Role.Button
-                    onClick(label = "Details öffnen") { statusDetails = true; true }
-                }, shape = RoundedCornerShape(14.dp), color = Color(0xe6202329)) {
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Column(Modifier.weight(1f)) {
-                            if (pairedCapture.pending) Text("Befehl ausstehend", color = Color(0xffffd79b), style = MaterialTheme.typography.labelMedium)
-                            Text(primary, color = if (isCameraClient && lanState.ready && pairedCapture.phase == "recording") Color(0xffffb2b2) else Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
-                            if (warnings.isNotEmpty()) Text(if (hasError) "Fehler · Details öffnen" else "Hinweis · Details öffnen", color = Color(0xffffc7a8), style = MaterialTheme.typography.labelMedium)
-                        }
-                        Text("Details", color = SoftText, style = MaterialTheme.typography.labelMedium)
-                    }
+            } else {
+                Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (showCameraStatus) CameraStatus()
+                    if (remote != null) RemoteBanner(remote)
+                    if (showNotice && notice != null) PrompterGenerationNotice(notice, compact = true)
                 }
             }
-            if (remote != null) RemoteBanner(remote)
-            notice?.let { PrompterGenerationNotice(it, compact = true) }
         }
         if (focusLine) Box(Modifier.align(Alignment.CenterStart).width(22.dp).height(3.dp).background(Red))
         if (remaining > 0) Text("$remaining", Modifier.align(Alignment.Center), color = Red, fontSize = 100.sp, fontWeight = FontWeight.Black)
         if (controls) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xf022252c)).padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-          if (lanState.role == "client" && lanState.ready && keyboardDescriptor != null) KeyboardRemoteReady(activity, keyboardDescriptor, keyboardConnected)
-          if (lanState.role == "client" && lanState.ready) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            val toggleLabel = when (pairedCapture.phase) { "recording" -> "Aufnahme pausieren"; "paused" -> "Aufnahme fortsetzen"; else -> "Aufnahme starten" }
-            val canToggle = pairedCapture.phase in setOf("idle", "ready", "partial", "failed", "recording", "paused") && !pairedCapture.pending
-            Button(onClick = onCaptureToggle, enabled = canToggle, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(17.dp)) { Text(toggleLabel) }
-            TextButton(onClick = onCaptureStop, enabled = !pairedCapture.pending && pairedCapture.phase in setOf("preparing", "recording", "paused"), modifier = Modifier.heightIn(min = 48.dp)) { Text("Stopp", color = Color.White) }
-            CameraSwitchControl(enabled = pairedCapture.cameraCanSwitch && !pairedCapture.pending && !pairedCapture.cameraSwitching && pairedCapture.phase in setOf("idle", "ready", "partial", "failed"), onClick = onCameraSwitch)
-          }
-          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = back, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Editor", color = Color.White) }
-            TextButton(onClick = { playing = false; countdownJob?.cancel(); remaining = 0; scope.launch { scroll.scrollTo(0) } }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Anfang", color = Color.White) }
-            Button(onClick = {
-                if (playing || remaining > 0) { countdownJob?.cancel(); playing = false; remaining = 0 }
-                else { countdownJob = scope.launch { remaining = countdownSeconds; while (remaining > 0) { delay(1000); remaining-- }; playing = true } }
-            }, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(17.dp)) { Text(if (playing || remaining > 0) "Pause" else "Start") }
-          }
+            if (lanState.role == "client" && lanState.ready && keyboardDescriptor != null) KeyboardRemoteReady(activity, keyboardDescriptor, keyboardConnected)
+            val showCaptureControls = lanState.role == "client" && lanState.ready
+            if (landscapeControls && showCaptureControls) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CaptureControls(Modifier.weight(.60f))
+                    PlaybackControls(Modifier.weight(.40f))
+                }
+            } else {
+                if (showCaptureControls) CaptureControls(Modifier.fillMaxWidth())
+                PlaybackControls(Modifier.fillMaxWidth())
+            }
         }
     }
     if (statusDetails) AlertDialog(
