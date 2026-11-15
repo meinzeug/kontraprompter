@@ -42,3 +42,10 @@ internal fun cameraUploadConflictKind(code: String?, cameraClaim: Boolean): Stri
 internal data class JournalLookup(val recordingId: String, val projectId: String, val phase: String?, val failed: Boolean, val conflictReason: String? = null)
 internal fun matchingJournal(value: JournalLookup?, recordingId: String, projectId: String): JournalLookup? =
     value?.takeIf { it.recordingId == recordingId && it.projectId == projectId }
+
+/** A failed durable tombstone write is held only in this process and only for its exact upload. */
+internal fun unsavedDeletionMessage(state: CloudUploadState, recordingId: String, projectId: String?, phase: String?): String? =
+    (state as? CloudUploadState.Failed)?.takeIf {
+        it.recordingId == recordingId && it.projectId == projectId && it.kind == RECORDING_DELETED &&
+            it.message == RECORDING_DELETED_NOT_SAVED && phase in setOf("uploading", "uncertain")
+    }?.message

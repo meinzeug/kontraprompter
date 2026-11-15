@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.testing.Test
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -20,7 +22,16 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 
+// Android's mockable framework contains nonfunctional org.json stubs. Prepend
+// the declared real test implementation only for local JVM unit tests.
+val jsonUnitTestRuntime by configurations.creating
+
+tasks.withType<Test>().configureEach {
+    classpath = files(jsonUnitTestRuntime) + classpath
+}
+
 dependencies {
+    jsonUnitTestRuntime("org.json:json:20240303")
     implementation("io.github.webrtc-sdk:android:150.7871.04")
     implementation(platform("androidx.compose:compose-bom:2025.08.00"))
     implementation("androidx.activity:activity-compose:1.10.1")

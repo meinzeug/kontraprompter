@@ -14,7 +14,8 @@ class UploadConflictTest {
         assertEquals(RECORDING_DELETED, uploadConflictKind(code, false))
         assertEquals(RECORDING_DELETED, uploadConflictKind(code, true))
         assertTrue(RECORDING_DELETED_MESSAGE.contains("Original bleibt lokal"))
-        assertTrue(RECORDING_DELETED_MESSAGE.contains("neue Aufnahme-ID"))
+        assertTrue(RECORDING_DELETED_MESSAGE.contains("Für dieses Skript"))
+        assertTrue(RECORDING_DELETED_MESSAGE.contains("neuer Aufnahme-ID"))
         assertEquals(RECORDING_DELETED, parse(""" { "error" : "Gelöscht \"sicher\"", "code" : "recording_deleted" } """))
     }
     @Test fun `malformed oversized absent and unexpected responses remain generic conflicts`() {
@@ -52,5 +53,40 @@ class UploadConflictTest {
         assertEquals("conflict", failedUploadPhase(RECORDING_DELETED))
         assertTrue(blocksManualContinuation(RECORDING_DELETED))
         assertFalse(blocksManualContinuation("busy"))
+    }
+    @Test fun `failed tombstone write is explicitly described as not durable`() {
+        assertEquals(RECORDING_DELETED_MESSAGE, deletedMessageAfterWrite(true))
+        val failed = deletedMessageAfterWrite(false)
+        assertTrue(failed.contains("nicht dauerhaft gespeichert"))
+        assertTrue(failed.contains("nach Neustart"))
+        assertTrue(failed.contains("Original bleibt lokal"))
+    }
+    @Test fun `slow response cannot outlive its original session`() {
+        val cookie = SessionCookie(); cookie.set("old")
+        val body = """{"code":"recording_deleted","error":"gelöscht"}""".toByteArray()
+        val source = object : ByteArrayInputStream(body) {
+            override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                cookie.set("new")
+                return super.read(bytes, offset, length)
+            }
+        }
+        val code = uploadConflictCode(source)
+        assertEquals(RECORDING_DELETED, code)
+        val error = runCatching { checkDeletedResponseSession(code, cookie.get() == "old") }.exceptionOrNull()
+        assertTrue(error is UploadException && error.kind == "auth")
+        assertTrue(runCatching { requireUploadSession("old", cookie.get()) }.exceptionOrNull() is UploadException)
+    }
+    @Test fun `legacy random upload ID stays associated with its original destination`() {
+        val legacy = UploadEntry("recording", "project-a", "4f5214c1-f6a3-4482-8b01-b0b17de57e13", 1, "hash", "conflict", null, RECORDING_DELETED)
+        assertTrue(deletedUploadBlocked(legacy, "recording", "project-a"))
+        assertFalse(deletedUploadBlocked(legacy, "recording", "project-b"))
+        assertFalse(deletedUploadBlocked(legacy.copy(conflictReason = null), "recording", "project-a"))
+    }
+    @Test fun `unsaved deletion is held only for same recording and destination`() {
+        val failure = CloudUploadState.Failed("r", "project-a", RECORDING_DELETED, RECORDING_DELETED_NOT_SAVED)
+        assertEquals(RECORDING_DELETED_NOT_SAVED, unsavedDeletionMessage(failure, "r", "project-a", "uploading"))
+        assertNull(unsavedDeletionMessage(failure, "r", "project-b", "uploading"))
+        assertNull(unsavedDeletionMessage(failure, "other", "project-a", "uploading"))
+        assertNull(unsavedDeletionMessage(failure, "r", "project-a", "confirmed"))
     }
 }

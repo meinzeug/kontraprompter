@@ -43,6 +43,7 @@ class StudioClient {
     internal class ManualUploadSession internal constructor(internal val cookie: String)
     internal fun manualUploadSession(): ManualUploadSession? = cookie.get()?.let(::ManualUploadSession)
     internal fun manualUploadSessionMatches(session: ManualUploadSession): Boolean = cookie.get() == session.cookie
+    internal fun <T> withManualUploadSession(session: ManualUploadSession, action: () -> T): T? = cookie.withCurrent(session.cookie, action)
     /** Random bearer sessions are bound only by a one-way, domain-separated digest. */
     internal fun manualUploadSessionBinding(session: ManualUploadSession): String =
         hex(MessageDigest.getInstance("SHA-256").digest(("kontraprompter-manual-upload-session-v1\u0000" + session.cookie).toByteArray(Charsets.UTF_8)))
@@ -116,7 +117,7 @@ class StudioClient {
     }
 
     /** Streams a local file without deleting it; only a matching durable receipt is success. */
-    internal suspend fun uploadRecording(recording: SavedRecording, entry: UploadEntry, progress: (Long, Long) -> Unit, workerStarted: () -> Unit, workerFinished: () -> Unit, requiredSession: ManualUploadSession? = null): Unit = suspendCancellableCoroutine { continuation ->
+    internal suspend fun uploadRecording(recording: SavedRecording, entry: UploadEntry, progress: (Long, Long) -> Unit, workerStarted: () -> Unit, workerFinished: () -> Unit, requiredSession: ManualUploadSession? = null): ManualUploadSession = suspendCancellableCoroutine { continuation ->
         val active = AtomicReference<HttpURLConnection?>(null)
         val delivered = AtomicBoolean(false)
         continuation.invokeOnCancellation { delivered.set(true); active.get()?.let { connection -> Thread({ runCatching { connection.disconnect() } }, "KontraUploadCancel").start() } }
@@ -126,7 +127,7 @@ class StudioClient {
                 val session = cookie.get() ?: throw UploadException("auth", "Bitte erneut bei Videomaker anmelden.")
                 if (requiredSession != null && requiredSession.cookie != session) throw UploadException("auth", "Die Studio-Sitzung hat sich geändert. Bitte erneut anmelden.")
                 fun ensureSession() {
-                    if (cookie.get() != session) throw UploadException("auth", "Studio-Sitzung geändert; Serverbeleg prüfen. Die Aufnahme bleibt lokal.")
+                    requireUploadSession(session, cookie.get())
                 }
                 if (recording.bytes !in 1..(1024L * 1024 * 1024) || !recording.file.isFile || recording.file.length() != recording.bytes)
                     throw UploadException("file_changed", "Lokale Aufnahme ist nicht vollständig vorhanden. Das Original bleibt lokal.")
@@ -197,7 +198,8 @@ class StudioClient {
                     check(rawSize is Int || rawSize is Long) { "Serverbestätigung ist ungültig." }
                     val receipt = UploadReceipt(response.getString("id"), response.getString("projectId"), (rawSize as Number).toLong(), response.getString("sha256"))
                     check(receiptMatches(entry, receipt)) { "Serverbestätigung stimmt nicht mit der Aufnahme überein." }
-                    if (delivered.compareAndSet(false, true) && continuation.isActive) continuation.resume(Unit)
+                    ensureSession()
+                    if (delivered.compareAndSet(false, true) && continuation.isActive) continuation.resume(ManualUploadSession(session))
                 } catch (error: IOException) {
                     if (error is UploadException) throw error
                     val status = runCatching { connection.responseCode }.getOrNull()
@@ -218,8 +220,9 @@ class StudioClient {
         404 -> UploadException("project_missing", "Skript nicht gefunden oder Upload-Endpunkt nicht verfügbar. Die Aufnahme bleibt lokal.")
         409 -> {
             val code = runCatching { uploadConflictCode(connection.errorStream) }.getOrNull()
+            checkDeletedResponseSession(code, cookie.get() == session)
             when (val kind = uploadConflictKind(code, cameraClaim)) {
-                RECORDING_DELETED -> UploadException(kind, RECORDING_DELETED_MESSAGE)
+                RECORDING_DELETED -> UploadException(kind, RECORDING_DELETED_MESSAGE, ManualUploadSession(session))
                 "manifest_pending" -> UploadException(kind, "Der Gerätenachweis fehlt noch. Die Aufnahme bleibt lokal und wird erneut gemeldet.")
                 "manifest_mismatch" -> UploadException(kind, "Der Gerätenachweis stimmt nicht mit der Aufnahme überein. Das Original bleibt lokal.")
                 "manifest_partial" -> UploadException(kind, "Das Teilvideo kann derzeit nur lokal exportiert werden.")
@@ -438,7 +441,7 @@ class StudioClient {
 
 data class StudioProject(val id: String, val title: String, val text: String, val generationNotice: GenerationNotice = GenerationNotice(GenerationNoticeStatus.UNKNOWN))
 data class StudioCommand(val id: String, val type: String, val projectId: String, val remainingMs: Long, val value: Double? = null)
-internal class UploadException(val kind: String, message: String) : IOException(message)
+internal class UploadException(val kind: String, message: String, val boundSession: StudioClient.ManualUploadSession? = null) : IOException(message)
 internal class CameraDeviceTicketException(message: String) : IOException(message)
 internal class CameraProtocolConflictException(message: String) : IOException(message)
 internal class CameraRegistrationRequiredException : IOException("Dieses Kameragerät ist noch nicht registriert.")

@@ -7,7 +7,8 @@ import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 
 internal const val RECORDING_DELETED = "recording_deleted"
-internal const val RECORDING_DELETED_MESSAGE = "Diese Serveraufnahme wurde gelöscht. Das Original bleibt lokal; dieselbe Server-Aufnahme-ID wird nicht wiederhergestellt. Für eine neue Serveraufnahme ist eine neue Aufnahme-ID nötig."
+internal const val RECORDING_DELETED_NOT_SAVED = "Der Server meldet die Upload-ID als gelöscht. Das Original bleibt lokal. Für dieses Skript ist eine neue Aufnahme nötig. Der Hinweis ist nicht dauerhaft gespeichert; nach Neustart ist ein erneuter Versuch möglich."
+internal const val RECORDING_DELETED_MESSAGE = "Der Server meldet: Die für diesen Uploadauftrag verwendete Server-Aufnahme-ID wurde gelöscht. Das Original bleibt lokal. Für dieses Skript ist eine neue Aufnahme mit neuer Aufnahme-ID nötig."
 
 // The deployed tombstone response has exactly code and error fields. Require
 // strict JSON syntax for that special case; unfamiliar shapes stay generic.
@@ -49,3 +50,14 @@ internal fun deletedUploadBlocked(entry: UploadEntry?, recordingId: String, proj
 
 internal fun blocksManualContinuation(kind: String): Boolean =
     kind in setOf("project_missing", "conflict", "manifest_mismatch", "manifest_partial", RECORDING_DELETED)
+
+internal fun checkDeletedResponseSession(code: String?, current: Boolean) {
+    if (code == RECORDING_DELETED && !current) throw UploadException("auth", "Studio-Sitzung geändert; Serverantwort prüfen. Die Aufnahme bleibt lokal.")
+}
+
+internal fun deletedMessageAfterWrite(saved: Boolean): String =
+    if (saved) RECORDING_DELETED_MESSAGE else RECORDING_DELETED_NOT_SAVED
+
+internal fun requireUploadSession(expected: String, current: String?) {
+    if (expected != current) throw UploadException("auth", "Studio-Sitzung geändert; Serverbeleg prüfen. Die Aufnahme bleibt lokal.")
+}

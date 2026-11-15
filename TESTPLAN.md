@@ -83,3 +83,18 @@ explizit gewähltes Projekt hat weiterhin ein eigenes Journal und eine andere
 Upload-ID. Fehlende, ungültige, übergroße oder unbekannte Fehlerantworten
 führen zum bisherigen allgemeinen Konflikt. Die Behandlung ist noch durch CI
 und unabhängigen Review zu prüfen; kein Gerätetest ist hiermit behauptet.
+
+Historische Journale können zufällige Upload-IDs enthalten; sie werden nicht
+still auf die heutige deterministische ID geändert. Die Löschmeldung bezieht
+sich auf die tatsächlich für diesen Uploadauftrag verwendete Server-ID und
+gilt nur für die gespeicherte Aufnahme/Ziel-Kombination. Wird der Löschgrund
+wegen eines Journalfehlers nicht gespeichert, benennt die Oberfläche dies;
+nach einem Prozessneustart kann ein erneuter Versuch stattfinden und wird vom
+Server bei weiterhin bestehendem Tombstone erneut abgewiesen.
+
+Erfolgs- und Löschbelege sind an die ursprüngliche Studio-Sitzung gebunden.
+Das Lesen des Bodys wird erneut geprüft; die persistente Entscheidung wird mit
+Sitzungswechseln derselben Clientinstanz serialisiert. Ein langsamer
+Dateisystem-Fsync kann Login/Logout während dieser kurzen kritischen Sektion
+verzögern. Android-AtomicFile-Bestandstests und reale Geräteprüfung fehlen bis
+zu gesondertem Nachweis; keine Produktivfreigabe allein durch JVM-Tests.
