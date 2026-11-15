@@ -45,6 +45,11 @@ public class OfflineVoskInstrumentedTest {
       assertFalse("network permission is forbidden in fixture", "android.permission.INTERNET".equals(permission));
     }
   }
+  private static BoundedPcmDecoder decoder(Model model) throws Exception {
+    Recognizer recognizer = new Recognizer(model, 48_000f);
+    try { return new BoundedPcmDecoder(new JnaVoskPcmEngine(recognizer), 8); }
+    catch (RuntimeException | LinkageError error) { recognizer.close(); throw error; }
+  }
 
   @Test public void decodeSyntheticSilenceAndGermanWithoutAnotherMicrophone() throws Exception {
     Context target = InstrumentationRegistry.getInstrumentation().getTargetContext();
@@ -88,20 +93,27 @@ public class OfflineVoskInstrumentedTest {
     }
     assertEquals(SYNTHETIC_BYTES, pcmSize); assertEquals(SYNTHETIC_SHA, hex(pcmDigest.digest()));
     try (Model model = new Model(modelDir.getAbsolutePath())) {
-      try (Recognizer decoder = new Recognizer(model, 48_000f)) {
+      try (BoundedPcmDecoder decoder = decoder(model)) {
         // One second of generated silence in bounded PCM16 mono blocks; no microphone.
-        byte[] silence = new byte[2048]; int remaining = 96_000;
-        while (remaining > 0) { int n = Math.min(silence.length, remaining); decoder.acceptWaveForm(silence, n); remaining -= n; }
-        assertEquals("", new JSONObject(decoder.getFinalResult()).optString("text", ""));
+        byte[] silence = new byte[2048]; int remaining = 96_000; long firstSample = 0;
+        while (remaining > 0) {
+          int n = Math.min(silence.length, remaining); remaining -= n;
+          assertTrue(decoder.offer(silence, n, firstSample, 48_000)); firstSample += n / 2;
+          BoundedPcmDecoder.Result result = decoder.pump(); assertNotEquals(BoundedPcmDecoder.Kind.FAILED, result.kind);
+          if (result.kind == BoundedPcmDecoder.Kind.FINAL) assertEquals("", new JSONObject(result.json).optString("text", ""));
+        }
+        assertEquals("", new JSONObject(decoder.finish()).optString("text", ""));
       }
-      try (Recognizer decoder = new Recognizer(model, 48_000f);
+      try (BoundedPcmDecoder decoder = decoder(model);
            DataInputStream pcm = new DataInputStream(test.getAssets().open(SYNTHETIC_ASSET))) {
-        StringBuilder text = new StringBuilder(); byte[] block = new byte[2048]; int remaining = SYNTHETIC_BYTES;
+        StringBuilder text = new StringBuilder(); byte[] block = new byte[2048]; int remaining = SYNTHETIC_BYTES; long firstSample = 0;
         while (remaining > 0) {
           int n = Math.min(block.length, remaining); pcm.readFully(block, 0, n); remaining -= n;
-          if (decoder.acceptWaveForm(block, n)) text.append(' ').append(new JSONObject(decoder.getResult()).optString("text", ""));
+          assertTrue(decoder.offer(block, n, firstSample, 48_000)); firstSample += n / 2;
+          BoundedPcmDecoder.Result result = decoder.pump(); assertNotEquals(BoundedPcmDecoder.Kind.FAILED, result.kind);
+          if (result.kind == BoundedPcmDecoder.Kind.FINAL) text.append(' ').append(new JSONObject(result.json).optString("text", ""));
         }
-        text.append(' ').append(new JSONObject(decoder.getFinalResult()).optString("text", ""));
+        text.append(' ').append(new JSONObject(decoder.finish()).optString("text", ""));
         String normalized = text.toString().toLowerCase(java.util.Locale.GERMANY)
             .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
         // Known machine-generated fixture text; not a human-speech accuracy metric.

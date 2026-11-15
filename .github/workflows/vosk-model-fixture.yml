@@ -35,6 +35,8 @@ jobs:
           python3 experiments/vosk-android-fixture/check-artifacts.py
           python3 experiments/vosk-android-fixture/check-model-asset.py --apk experiments/vosk-android-fixture/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           python3 experiments/vosk-android-fixture/check-synthetic-asset.py --apk experiments/vosk-android-fixture/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+      - name: Fake-native PCM queue and integer-status tests
+        run: python3 experiments/vosk-android-fixture/run-core-tests.py
       - uses: actions/upload-artifact@v4
         with:
           name: vosk-offline-model-fixture-${{ github.sha }}

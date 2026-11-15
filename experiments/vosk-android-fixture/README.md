@@ -61,6 +61,29 @@ JNA-Binding auf Android ankommt, ist noch nicht auf dem Gerät geprüft; ein
 verlässlicher Fehlerpfad und ein versionsgebundener negativer Fehlertest sind
 vor einer Appintegration erforderlich. Der Stille-Smoke-Test beweist sie nicht.
 
+Der nächste ausschließlich testseitige Stand verwendet in `JnaVoskPcmEngine`
+`Function.invokeInt` für das C-Symbol `vosk_recognizer_accept_waveform` mit dem
+Pointer des Vosk-`Recognizer`. `BoundedPcmDecoder` behandelt `0` als laufend,
+`1` als finales Segment und `-1` sowie alle anderen Werte als Analysefehler.
+Der Eingang ist auf 1–16 Blöcke à höchstens 8192 Bytes, 48-kHz-Mono-PCM16 und
+fortlaufende Samplepositionen begrenzt; bei Queueverlust, Lücke, falschem
+Format, nativer Ausnahme oder ungültigem Ergebnis stoppt nur der Decoder. Das
+Angebot wartet nicht auf den Queue-Lock. Native Aufrufe und Abschluss gehören
+dem separaten Analyseworker und öffnen kein Mikrofon. Nach einem verlorenen
+Block darf die Anwendung bereits ausgegebene Ergebnisse nur über einen noch zu
+implementierenden atomaren Epochen-/Kanal-Fence anwenden. Der Decoder selbst
+ist nicht mit `PcmTee`, Recorder, Netzwerk oder UI verbunden.
+
+`run-core-tests.py` prüft die Statuswerte und Queuefehler auf dem Host mit
+einer künstlichen nativen Engine; es ruft kein echtes Vosk auf. Die
+Instrumentierung wurde auf das integerbasierte JNA-Binding umgestellt und
+ist für Stille und das synthetische Sprachasset vorbereitet. Ein erneuter
+Android-CI-Build und ein späterer Gerätetest müssen gesondert belegt werden;
+das sichere Hervorrufen eines echten nativen `-1` ist noch nicht geklärt. Die
+Fake-Engine beweist daher nicht die tatsächliche Android-JNA-Fehlersemantik.
+Modellinitialisierung und Speichermangel können darüber hinaus den Prozess
+beeinträchtigen; deren Isolierung und Belastungstests bleiben offen.
+
 Ein späterer Bau vom Hauptverzeichnis des Speech-WIP aus wäre beispielsweise
 `./gradlew -p experiments/vosk-android-fixture :app:assembleDebug :app:assembleDebugAndroidTest`.
 Ein solcher Build lädt gegebenenfalls Abhängigkeiten und muss bei knappen
