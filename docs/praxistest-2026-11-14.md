@@ -156,6 +156,15 @@ Port nutzte. Mit den aktuellen, manuell übernommenen Angaben ließ sich die
 Verbindung herstellen. Die genaue Rolle von Androids NSD-Cache und verzögerten
 Callbacks ist noch nicht geklärt; ein Fix wird separat erprobt.
 
+Der erste vollständige Android-Testkandidat für die Gerätesuche wurde auf
+beiden Telefonen installiert und erneut geprüft. Android meldete die Auflösung
+des neuen Kameradienstes als erfolgreich; die App verwarf das Ergebnis jedoch
+als unvollständig. Das Android-Systemprotokoll zeigte den Diensttyp mit
+`.local`, während die App diesen Zusatz zunächst nicht akzeptierte. Eine
+Korrektur für beide zulässigen Schreibweisen ist separat im Test; der erneute
+Gerätetest steht aus. Die zuvor veröffentlichte Release-Version wurde auf
+beiden Geräten wiederhergestellt und die manuelle Verbindung eingerichtet.
+
 Mit der wiederhergestellten Release-APK wurde eine weitere Kontrollaufnahme am
 Samsung gestartet, pausiert, fortgesetzt und gestoppt. Das Xiaomi meldete die
 lokale Speicherung. Nach erneuter Anmeldung der Kamera meldete die App den
