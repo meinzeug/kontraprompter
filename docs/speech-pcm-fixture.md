@@ -84,6 +84,29 @@ kein Android-/TLS-Transport. Insbesondere werden die atomare Kopplung an die
 echte Netzwerk- und Benutzeraktion, laufzeitbegrenzte Ergebnisse, die
 Spracherkennung selbst und der Recorder auf dem Gerät noch nicht nachgewiesen.
 
+## Isolierte PCM-Decoderbrücke
+
+`PcmRecorderBridge` unter `app/src/test` verbindet den tatsächlichen `PcmTee`
+dieses WIP mit dem separat vorbereiteten `BoundedPcmDecoder`. Sie ist kein
+Bestandteil der App: Ein Testworker übernimmt ausschließlich bereits
+veröffentlichte, begrenzte PCM-Blöcke und prüft Aufnahme-ID, Tee-Generation,
+Sampleformat und Verlustzähler vor und nach der Decoderverarbeitung. Der
+Decoder prüft fortlaufende Samplepositionen; bei einem Fehler oder einer Lücke
+wird die Analyse angehalten. Es gibt keinen zusätzlichen Mikrofonzugriff.
+Die Tests nutzen synthetische PCM-Blöcke und eine Fake-Native-Engine; sie
+prüfen auch einen Tee-Verlust und eine Generationserneuerung während eines
+simulierten nativen Aufrufs. Sie beweisen keine Android-Recorderkopplung,
+Audioqualität, Modellintegration oder Dauerbetrieb unter Last.
+
+Die Sichtbarmachung einer Position ist hier bewusst nicht implementiert:
+Ein einzelner Tee-Zählercheck nach dem Decoder ist nicht atomar gegenüber
+einem unmittelbar danach eintretenden Verlust, Seek, Kanal- oder
+Skriptwechsel. Außerdem dürfen beim Neustart keine alten Queueblöcke in eine
+neue Folgeepoche gelangen. Beides erfordert vor dem App-Einsatz einen tatsächlich
+gemeinsamen Epochen-/Zustellfence und weitere parallele Tests. Die Brücke darf
+erst nach Übertragung auf aktuellen Main, unabhängiger Prüfung und isolierten
+Android-/Recorder-Praxistests als Funktion betrachtet werden.
+
 ## Reproduzierbarer Offline-Erkenner-Probe
 
 `bash scripts/test-vosk-offline-fixture.sh` verwendet ausschließlich einen

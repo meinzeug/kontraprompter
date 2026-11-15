@@ -6,15 +6,15 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 
 /** Isolated fixture only; never attached to the app or a microphone. */
-final class BoundedPcmDecoder implements AutoCloseable {
+public final class BoundedPcmDecoder implements AutoCloseable {
   interface Engine extends AutoCloseable {
     int accept(byte[] pcm);
     String result();
     String finalResult();
     @Override void close();
   }
-  enum Kind { EMPTY, CONTINUE, FINAL, FAILED }
-  static final class Result {
+  public enum Kind { EMPTY, CONTINUE, FINAL, FAILED }
+  public static final class Result {
     final Kind kind; final String json;
     Result(Kind kind, String json) { this.kind = kind; this.json = json; }
   }
