@@ -305,16 +305,22 @@ private fun KontraApp(activity: MainActivity) {
     }
     var cameraPermissionError by remember { mutableStateOf(false) }
     var cameraBusyError by remember { mutableStateOf(false) }
-    var recoverySession by remember { mutableStateOf<LiveSession?>(null) }
-    fun disconnectFromUi(recoveryTarget: LiveSession? = null) {
+    var recoverySession by remember { mutableStateOf<RecoverySnapshot<LiveSession, LanState, PairedCaptureState>?>(null) }
+    fun recoveryStillCurrent(target: RecoverySnapshot<LiveSession, LanState, PairedCaptureState>, active: LiveSession?): Boolean =
+        active != null && target.matches(active, active.lan.connectionAttemptGeneration(), active.lan.state.value, active.pairedCapture.state.value)
+    fun disconnectFromUi(recoveryTarget: RecoverySnapshot<LiveSession, LanState, PairedCaptureState>? = null) {
         val active = session
         if (active == null) { page = "roles"; return }
-        if (recoveryTarget != null && recoveryTarget !== active) return
+        if (recoveryTarget != null && !recoveryStillCurrent(recoveryTarget, active)) {
+            android.widget.Toast.makeText(activity, "Verbindungsstatus hat sich geändert. Bitte erneut prüfen.", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
         if (!active.host) {
-            val ready = active.lan.state.value.ready
+            val observedLan = active.lan.state.value
+            val ready = observedLan.ready
             val paired = active.pairedCapture.state.value
             if (!mayDisconnectRemote(ready, paired.pending, paired.phase)) {
-                if (!ready && recoveryTarget == null) recoverySession = active
+                if (!ready && recoveryTarget == null) recoverySession = RecoverySnapshot(active, active.lan.connectionAttemptGeneration(), observedLan, paired)
                 else if (ready || recoveryTarget == null) android.widget.Toast.makeText(activity, "Kameraaufnahme läuft oder ihr Status ist unklar. Bitte zuerst auf der Kamera prüfen.", android.widget.Toast.LENGTH_LONG).show()
                 if (ready || recoveryTarget == null) return
             }
@@ -325,6 +331,10 @@ private fun KontraApp(activity: MainActivity) {
         }
         session = null
         page = "roles"
+    }
+    LaunchedEffect(recoverySession, session, lanState, pairedCapture) {
+        val target = recoverySession
+        if (target != null && !recoveryStillCurrent(target, session)) recoverySession = null
     }
     BackHandler(enabled = page != "roles" || session != null) {
         when (page) {
