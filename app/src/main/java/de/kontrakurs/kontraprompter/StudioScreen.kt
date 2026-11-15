@@ -40,7 +40,7 @@ fun StudioScreen(client: StudioClient, remoteEnabled: Boolean, remoteStatus: Str
     }
     AppPage(stringResource(R.string.studio_title), stringResource(R.string.studio_eyebrow), stringResource(R.string.studio_description), onBack = onBack, showRemote = false) {
         if (checkingSession) {
-            StudioSurface { StudioMessage(stringResource(R.string.studio_connection_check)) }
+            StudioSurface { StudioMessage(stringResource(R.string.studio_connection_check), announce = true) }
         } else if (projects == null) {
             StudioSurface {
                 Text(stringResource(R.string.studio_sign_in_title), style = MaterialTheme.typography.titleLarge)
@@ -63,15 +63,15 @@ fun StudioScreen(client: StudioClient, remoteEnabled: Boolean, remoteStatus: Str
             QuietAction(if (remoteEnabled) "Fernsteuerung beenden" else "Fernsteuerung aktivieren") { onRemote(!remoteEnabled) }
             Spacer(Modifier.height(4.dp))
             Text(stringResource(R.string.studio_scripts_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            if (stale) StudioMessage("Zuletzt geladene Daten: Die Aktualisierung ist fehlgeschlagen. Hinweise können veraltet sein.", error = true)
-            if (projects!!.isEmpty()) StudioSurface { StudioMessage(stringResource(R.string.studio_empty)) }
+            if (stale) StudioMessage("Zuletzt geladene Daten: Die Aktualisierung ist fehlgeschlagen. Hinweise können veraltet sein.", error = true, announce = true)
+            if (projects!!.isEmpty()) StudioSurface { StudioMessage(stringResource(R.string.studio_empty), announce = true) }
             projects!!.forEach { project ->
                 val notice = if (stale || loading) project.generationNotice.copy(status = GenerationNoticeStatus.INCOMPLETE) else project.generationNotice
                 StudioProjectTile(project.title, notice.summary()) { onSelect(project.copy(generationNotice = notice)) }
             }
             QuietAction(stringResource(if (loading) R.string.studio_loading else R.string.studio_refresh), enabled = !loading) { load() }
         }
-        error?.let { StudioMessage(it, error = true) }
+        error?.let { StudioMessage(it, error = true, announce = true) }
         StudioMessage(stringResource(R.string.studio_copy_note))
     }
 }
