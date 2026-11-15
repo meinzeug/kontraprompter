@@ -34,7 +34,9 @@ class DirectLifecycleCloseTest {
         val video = jvmAllocate(RtcVideo::class.java)
         val generation = PrimaryPeerGeneration()
         val originalGeneration = generation.current()
-        val stop = DirectPeerStop({ action -> executor.execute { action() }; true }, { true })
+        val tracker = DirectPeerStopTracker()
+        val owner = Any()
+        val stop = DirectPeerStop({ action -> executor.execute { action() }; true }, { true }, { tracker.update(owner, it) })
         set(video, "executor", executor); set(video, "closed", AtomicBoolean(false))
         set(video, "primaryGeneration", generation); set(video, "directPeerStop", stop)
         val addresses = LanSession.SocketAddresses(Any(), InetAddress.getByName("192.0.2.1"), InetAddress.getByName("192.0.2.2"))
@@ -62,6 +64,7 @@ class DirectLifecycleCloseTest {
         session.close()
         assertFalse(generation.isCurrent(originalGeneration))
         assertEquals(DirectPeerStop.State.PENDING, stop.state())
+        assertEquals(DirectPeerStop.State.PENDING, tracker.state.value)
         assertEquals(1, stopCalls)
         assertSame(video, videoState.value) // recorder/camera owner remains until finalization
         assertTrue(recording.value is LocalRecording.Recording)
