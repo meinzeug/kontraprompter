@@ -14,13 +14,14 @@ internal val allowedCapturePhases = activeCapturePhases + setOf("ready", "partia
 internal const val MAX_CAMERA_DECISIONS = 10_000
 internal const val MAX_CAMERA_SEQUENCE = 9_007_199_254_740_991L
 internal fun cameraJournalVersion(state: CameraDecisionState): Int = when {
+    state.decisions.any { it.command.type in setOf("record_pause", "record_resume") && it.command.projectId != null } -> 5
     state.decisions.any { it.command.type == "camera_switch" } -> 4
     state.decisions.any { it.command.type in setOf("record_pause", "record_resume") } -> 3
     state.captures.any { it.quarantinedPhase != null } -> 2
     else -> 1
 }
 internal fun cameraJournalQuarantinesValid(version: Int, captures: List<CameraCapture>): Boolean {
-    if (version !in 1..4 || version == 2 && captures.none { it.quarantinedPhase != null }) return false
+    if (version !in 1..5 || version == 2 && captures.none { it.quarantinedPhase != null }) return false
     return captures.all { capture ->
         val phase = capture.quarantinedPhase
         phase == null || (version >= 2 && phase == capture.phase && capture.projectId != null && capture.reportedPhase != phase &&
@@ -42,11 +43,23 @@ internal fun reserveCameraSequence(state: CameraDecisionState): CameraDecisionSt
 
 private fun canonicalUuid(value: String): Boolean = runCatching { UUID.fromString(value).toString() == value }.getOrDefault(false)
 
+/** Old null-project decisions remain readable but can never authorize a new command. */
+internal fun cameraJournalCommandValid(version: Int, command: CameraCommand): Boolean {
+    val project = command.projectId; val from = command.cameraFrom
+    return when (command.type) {
+        "record_start" -> project != null && from == null
+        "record_stop" -> project == null && from == null
+        "record_pause", "record_resume" -> version >= 3 && from == null && (project == null || version >= 5)
+        "camera_switch" -> version >= 4 && project == null && command.recordingId == command.id && from != null
+        else -> false
+    }
+}
+
 /** A caller persists [CameraDecisionOutcome.state] before ACK or executing [CameraDecisionOutcome.action]. */
 internal fun decideCameraCommand(state: CameraDecisionState, command: CameraCommand, expired: Boolean, canStart: Boolean, canPause: Boolean = false, canResume: Boolean = false, canSwitch: Boolean = false): CameraDecisionOutcome {
     require(canonicalUuid(command.id) && canonicalUuid(command.recordingId))
     require(command.type in setOf("record_start", "record_stop", "record_pause", "record_resume", "camera_switch"))
-    require(if (command.type == "record_start") command.projectId != null && canonicalUuid(command.projectId) else command.projectId == null)
+    require(if (command.type in setOf("record_start", "record_pause", "record_resume")) command.projectId != null && canonicalUuid(command.projectId) else command.projectId == null)
     require(if (command.type == "camera_switch") command.recordingId == command.id && command.cameraFrom != null else command.cameraFrom == null)
     state.decisions.firstOrNull { it.command.id == command.id }?.let { previous ->
         check(previous.command == command) { "A command ID was reused for different data" }
@@ -67,8 +80,8 @@ internal fun decideCameraCommand(state: CameraDecisionState, command: CameraComm
     val eligible = when (command.type) {
         "record_start" -> canStart && state.decisions.size < MAX_CAMERA_DECISIONS - 1 && capture == null &&
             state.captures.none { it.phase in activeCapturePhases || it.reportedPhase != it.phase || it.quarantinedPhase != null }
-        "record_pause" -> capture?.phase == "recording" && capture.projectId != null && canPause
-        "record_resume" -> capture?.phase == "recording" && capture.projectId != null && canResume
+        "record_pause" -> capture?.phase == "recording" && capture.projectId == command.projectId && canPause
+        "record_resume" -> capture?.phase == "recording" && capture.projectId == command.projectId && canResume
         "camera_switch" -> canSwitch && state.captures.none { it.phase in activeCapturePhases || it.reportedPhase != it.phase || it.quarantinedPhase != null }
         else -> capture != null
     }

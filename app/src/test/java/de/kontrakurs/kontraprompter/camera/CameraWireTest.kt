@@ -30,7 +30,7 @@ class CameraWireTest {
             copy(start).put("remainingMs", "50"), copy(start).put("remainingMs", 1.5),
             copy(start).put("remainingMs", 10_001), copy(start).put("remainingMs", -1),
             copy(start).put("id", "INVALID"), copy(start).put("projectId", JSONObject.NULL),
-            copy(pause).put("projectId", start.getString("projectId")),
+            copy(pause).put("projectId", JSONObject.NULL),
             copy(pause).put("cameraFrom", false), copy(pause).put("type", "unexpected"),
             copy(switch).put("cameraFrom", "false"), copy(switch).put("recordingId", start.getString("recordingId")),
             copy(start).also { it.remove("projectId") },

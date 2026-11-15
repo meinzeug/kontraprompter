@@ -30,7 +30,7 @@ internal fun parseCameraPollResponse(text: String): CameraPollResponse {
     val remaining = when (rawRemaining) { is Int -> rawRemaining.toLong(); is Long -> rawRemaining; else -> error("Ungültige Befehlsfrist") }
     require(canonical(id) && canonical(recording) && remaining in 0..10_000)
     require(type in setOf("record_start", "record_stop", "record_pause", "record_resume", "camera_switch"))
-    require(if (type == "record_start") project != null && canonical(project) else project == null)
+    require(if (type in setOf("record_start", "record_pause", "record_resume")) project != null && canonical(project) else project == null)
     require(if (type == "camera_switch") id == recording && from != null else from == null)
     return CameraPollResponse(CameraCommand(id, type, recording, project, from), remaining)
 }
