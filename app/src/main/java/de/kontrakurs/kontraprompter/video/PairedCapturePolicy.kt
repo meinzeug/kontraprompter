@@ -44,9 +44,12 @@ internal fun isCurrentCaptureAck(pendingRequest: String?, acknowledgement: Strin
 internal fun isNewCaptureStatus(revision: Long, previous: Long): Boolean =
     revision >= 0 && revision > previous
 
-/** A switch ACK means admission only; a correlated snapshot confirms its actual state. */
+/** A start or switch ACK means admission only; a correlated snapshot follows it. */
 internal fun cameraAckNeedsStatus(action: String?, accepted: Boolean): Boolean =
-    action == "switch_camera" && accepted
+    action in setOf("start", "switch_camera") && accepted
 
 internal fun cameraStatusAnswersPending(action: String?, pendingId: String?, queryId: String?): Boolean =
-    action == "switch_camera" && pendingId != null && pendingId == queryId
+    action in setOf("start", "switch_camera") && pendingId != null && pendingId == queryId
+
+/** The queued asynchronous send may still reach the camera after a local timeout. */
+internal fun retainPendingAfterTimeout(action: String?): Boolean = action == "start"
