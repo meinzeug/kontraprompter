@@ -67,6 +67,7 @@ class PairedRecordingControlTest {
         }
         fun disconnect() { setField(lan, "channel", null); setField(lan, "connected", AtomicBoolean(false)) }
         fun setClosed() { setField(session, "closed", true) }
+        fun setWebExclusive() { setField(session, "remoteExclusive", true) }
         fun close() = scope.cancel()
         private fun setField(target: Any, name: String, value: Any?) { target.javaClass.getDeclaredField(name).apply { isAccessible = true }.set(target, value) }
     }
@@ -218,5 +219,22 @@ class PairedRecordingControlTest {
             assertEquals(0, f.control.pauses + f.control.resumes)
             assertEquals(1, f.control.stops)
         } finally { f.close() }
+    }
+
+    @Test fun `paired stop cannot stop a web exclusive recording but local recovery can`() {
+        val id = UUID.randomUUID().toString()
+        for (phase in listOf(LocalRecording.Preparing(id), LocalRecording.Recording(id), LocalRecording.Paused(id))) {
+            val f = Fixture()
+            try {
+                f.setWebExclusive(); f.state.value = phase
+                assertFalse(f.session.stopPairedRecording(f.marker, id))
+                assertEquals(phase, f.state.value)
+                assertEquals(0, f.control.stops)
+                val stopFlag = LiveSession::class.java.getDeclaredField("stopWhenStarted").apply { isAccessible = true }.getBoolean(f.session)
+                assertFalse(stopFlag)
+                assertTrue(f.session.stopRecording(id))
+                assertEquals(1, f.control.stops)
+            } finally { f.close() }
+        }
     }
 }

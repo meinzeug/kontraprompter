@@ -289,6 +289,9 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
         }
         if (recordingId != null && activeId != recordingId) return false
         if (!_recording.value.isActive() || _recording.value is LocalRecording.Finalizing || _recording.value is LocalRecording.Failed) return false
+        // Paired commands must not stop a recording owned exclusively by the web
+        // dashboard. Local/recovery stop deliberately remains unconditional.
+        if (marker != null && (activeId == null || !recordingControlAllowed(remoteExclusive, false, activeId, recordingId))) return false
         val admit = { stopWhenStarted = true; true }
         if (marker != null && (closed || disconnected)) return false
         if ((if (marker == null) admit() else lan.admitOnApprovedConnection(marker, admit)) != true) return false
