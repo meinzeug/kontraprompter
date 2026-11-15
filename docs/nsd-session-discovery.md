@@ -6,6 +6,12 @@ denselben DNS-SD-Namen, obwohl der Listener einen neuen Port erhielt. Android
 weist außerdem darauf hin, dass ein einzelnes `resolveService`-Ergebnis jederzeit
 veralten kann: <https://developer.android.com/reference/kotlin/android/net/nsd/NsdManager>.
 
+Ein weiterer isolierter Gerätetest zeigte einen zweiten, konkreten Fehler: Android
+lieferte den gültigen Typ `_kontraprompter._tcp.local`, den die App wegen des
+zusätzlichen DNS-SD-Domainnamens zurückwies. Der korrigierte Vergleich akzeptiert
+den erwarteten TCP-Dienst mit oder ohne `.local` und optionalem abschließendem
+Punkt; andere Diensttypen und zusätzliche Domainbestandteile bleiben ungültig.
+
 Der isolierte Arbeitsstand vergibt jeder Kamerasitzung einen neuen zufälligen,
 nicht geheimen DNS-SD-Namen. Suchergebnisse und verspätete Auflösungen sind an
 die aktuelle Auswahl gebunden; manuelle Bearbeitung widerruft die Auswahl.
@@ -18,7 +24,7 @@ Widerruf gestartete Pakete lassen sich nicht zurücknehmen. Verbindungsfehler
 alter Versuche dürfen neuere Versuche nicht überschreiben. Manuelle Eingabe
 bleibt möglich und authentisiert sich unverändert mit Sitzungscode.
 
-Ein direkter Kotlin-/Compose-Compile und 17 JVM-Tests bestanden. Drei Tests
+Ein direkter Kotlin-/Compose-Compile und 18 JVM-Tests bestanden. Drei Tests
 verwenden echten TCP-Loopback und authentisierte Kanäle: manueller Aufbau,
 Widerruf während eines unvollständigen Handshakes und Fortbestand nach späterem
 Verlust des Suchergebnisses. Im manuellen Aufbau wird parallel eine andere

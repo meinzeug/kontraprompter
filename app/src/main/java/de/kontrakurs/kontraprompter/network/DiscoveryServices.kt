@@ -2,6 +2,13 @@ package de.kontrakurs.kontraprompter.network
 
 import java.net.Socket
 
+/** Android may include the DNS-SD local domain and a final root dot. */
+internal fun isKontraPrompterServiceType(value: String?): Boolean {
+    val type = value?.removeSuffix(".") ?: return false
+    return type.equals("_kontraprompter._tcp", ignoreCase = true) ||
+        type.equals("_kontraprompter._tcp.local", ignoreCase = true)
+}
+
 /** Names change with each camera session; the suffix is random and is not a pairing secret. */
 internal fun discoveryServiceName(model: String, nonce: ByteArray): String {
     require(nonce.size == 8)
