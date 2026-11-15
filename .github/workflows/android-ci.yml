@@ -3,7 +3,7 @@ name: Android test and unsigned release APK
 on:
   push:
     branches:
-      - wip/recording-deleted-message-ci-20261115-v2
+      - wip/recording-deleted-message-ci-20261115-v3
 
 permissions:
   contents: read
