@@ -14,7 +14,7 @@ private fun waitUntil(timeoutMs: Long = 2000, predicate: () -> Boolean) {
 }
 
 fun main() {
-    repeat(4) { scenario ->
+    repeat(5) { scenario ->
         val lan = LanSession()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
@@ -35,10 +35,19 @@ fun main() {
                 check(capture.state.value.pending)
                 receive("capture_status", status(2)) // Uncorrelated timeout query cannot prove send ordering.
                 check(capture.state.value.pending)
+                check(lan.sent.none { it.first == "capture_query" && it.second.isNotBlank() })
             }
             receive("capture_ack", JSONObject().put("request", request).put("accepted", scenario != 2))
             check(capture.state.value.pending) // The earlier idle status cannot authorize disconnect.
             check(lan.sent.any { it.first == "capture_query" && it.second.isNotBlank() && JSONObject(it.second).optString("request") == request })
+            fun countQueries() = lan.sent.count { it.first == "capture_query" && it.second.isNotBlank() && JSONObject(it.second).optString("request") == request }
+            if (scenario == 4) {
+                waitUntil(10_000) { countQueries() == 2 }
+                check(capture.state.value.pending && capture.state.value.message == START_STATUS_TIMEOUT_MESSAGE)
+                receive("capture_status", status(2, request))
+                check(!capture.state.value.pending && capture.state.value.message == null)
+                return@repeat
+            }
             if (scenario == 2) {
                 val take = java.util.UUID.randomUUID().toString()
                 receive("capture_status", JSONObject().put("revision", 2).put("phase", "recording").put("recording", take).put("query", request))
@@ -50,7 +59,6 @@ fun main() {
             check(capture.state.value.pending) // A different query is insufficient.
             receive("capture_status", status(5, request))
             check(capture.state.value.pending) // A stale correlated response triggers a new query.
-            fun countQueries() = lan.sent.count { it.first == "capture_query" && it.second.isNotBlank() && JSONObject(it.second).optString("request") == request }
             check(countQueries() == 2)
             if (scenario == 3) {
                 receive("capture_status", status(4, request))
@@ -58,6 +66,8 @@ fun main() {
                 receive("capture_status", status(4, request))
                 check(countQueries() == 3 && capture.state.value.pending)
                 check(capture.state.value.message == START_STATUS_STALE_MESSAGE)
+                waitUntil(10_000) { capture.state.value.message == START_STATUS_TIMEOUT_MESSAGE }
+                check(countQueries() == 3 && capture.state.value.pending) // Timeout respects the same limit.
                 return@repeat
             }
             receive("capture_status", status(7, request))
@@ -65,5 +75,5 @@ fun main() {
             check(capture.state.value.message == null)
         } finally { scope.cancel() }
     }
-    println("PASS: positive/negative ACK; malformed ACK; timeout; overtaken response; bounded retry; precise message cleanup")
+    println("PASS: positive/negative ACK; malformed ACK; timeout before ACK; lost status after ACK; overtaken response; bounded retry; message cleanup")
 }
