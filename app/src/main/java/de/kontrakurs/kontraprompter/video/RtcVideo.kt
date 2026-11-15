@@ -32,6 +32,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     private var source: VideoSource? = null
     private val captureProfile = CameraCaptureProfile.select(BuildConfig.DEBUG, BuildConfig.EXPERIMENTAL_RAW_RECORDING, BuildConfig.EXPERIMENTAL_FIXED_CAMERA_FPS)
     private val rawFrames = if (captureProfile.raw) RawFrameFanout<VideoFrame>() else null
+    private val experimentalReadiness = if (captureProfile.fixedFps) ExperimentalCameraReadiness() else null
     private var localTrack: VideoTrack? = null
     private var camera: CameraVideoCapturer? = null
     private var textureHelper: SurfaceTextureHelper? = null
@@ -77,6 +78,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
                         override fun onFrameCaptured(frame: VideoFrame) {
                             // The camera owns this borrowed frame for this synchronous call.
                             // Continue to deliver to WebRTC even if the recorder fails.
+                            experimentalReadiness?.frame()
                             rawFrames.deliverThen(frame, upstream::onFrameCaptured)
                         }
                     }
@@ -98,12 +100,12 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
         if (vp8.isNotEmpty()) p.transceivers.firstOrNull { it.mediaType == MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO }?.setCodecPreferences(vp8 + caps.filterNot { it.name.equals("VP8", true) })
     }
     private fun cameraEvents() = object : CameraVideoCapturer.CameraEventsHandler {
-        override fun onCameraError(error: String) { cameraFrameAvailable = false; stopAnyBrowserPreview(); lan.report("Kamerafehler", error); onCameraFailure?.invoke("Kamera meldet einen Fehler") }
-        override fun onCameraDisconnected() { cameraFrameAvailable = false; stopAnyBrowserPreview(); lan.report("Kamerafehler", "Kamera wurde getrennt"); onCameraFailure?.invoke("Kamera wurde getrennt") }
-        override fun onCameraFreezed(error: String) { cameraFrameAvailable = false; stopAnyBrowserPreview(); lan.report("Kamerafehler", error); onCameraFailure?.invoke("Kamerabild ist stehengeblieben") }
-        override fun onCameraOpening(name: String) = Unit
+        override fun onCameraError(error: String) { cameraFrameAvailable = false; experimentalReadiness?.invalidate(); stopAnyBrowserPreview(); lan.report("Kamerafehler", error); onCameraFailure?.invoke("Kamera meldet einen Fehler") }
+        override fun onCameraDisconnected() { cameraFrameAvailable = false; experimentalReadiness?.invalidate(); stopAnyBrowserPreview(); lan.report("Kamerafehler", "Kamera wurde getrennt"); onCameraFailure?.invoke("Kamera wurde getrennt") }
+        override fun onCameraFreezed(error: String) { cameraFrameAvailable = false; experimentalReadiness?.invalidate(); stopAnyBrowserPreview(); lan.report("Kamerafehler", error); onCameraFailure?.invoke("Kamerabild ist stehengeblieben") }
+        override fun onCameraOpening(name: String) { experimentalReadiness?.opening() }
         override fun onFirstFrameAvailable() { cameraFrameAvailable = true; lan.reportFirstCameraFrame() }
-        override fun onCameraClosed() { cameraFrameAvailable = false; stopAnyBrowserPreview() }
+        override fun onCameraClosed() { cameraFrameAvailable = false; experimentalReadiness?.invalidate(); stopAnyBrowserPreview() }
     }
     private fun observer(generation: Long) = object : PeerConnection.Observer {
         override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
@@ -203,17 +205,25 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
         if (closed.get() || !host) return false
         return runCatching {
             executor.execute {
+                var switchToken: Long? = null
                 try {
                     if (closed.get()) { complete(null, "Kamerasitzung beendet."); return@execute }
                     val current = camera ?: run { complete(null, "Kamera ist noch nicht bereit."); return@execute }
                     val enumerator: CameraEnumerator = if (Camera2Enumerator.isSupported(context)) Camera2Enumerator(context) else Camera1Enumerator(false)
                     val target = enumerator.deviceNames.firstOrNull { if (front) enumerator.isFrontFacing(it) else enumerator.isBackFacing(it) }
                     if (target == null) { complete(null, "Gewählte Kamera ist nicht verfügbar."); return@execute }
+                    if (experimentalReadiness != null) {
+                        switchToken = experimentalReadiness.beginSwitch()
+                        if (switchToken == null) { complete(null, "Kamerawechsel läuft bereits."); return@execute }
+                        cameraFrameAvailable = false
+                        stopAnyBrowserPreview()
+                    }
+                    val token = switchToken
                     current.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
-                        override fun onCameraSwitchDone(isFrontCamera: Boolean) { complete(isFrontCamera, null) }
-                        override fun onCameraSwitchError(errorDescription: String) { complete(null, errorDescription.take(200)) }
+                        override fun onCameraSwitchDone(isFrontCamera: Boolean) { token?.let { experimentalReadiness?.finishSwitch(it) }; complete(isFrontCamera, null) }
+                        override fun onCameraSwitchError(errorDescription: String) { token?.let { experimentalReadiness?.finishSwitch(it) }; complete(null, errorDescription.take(200)) }
                     }, target)
-                } catch (_: Exception) { complete(null, "Kamerawechsel fehlgeschlagen.") }
+                } catch (_: Exception) { switchToken?.let { experimentalReadiness?.finishSwitch(it) }; complete(null, "Kamerawechsel fehlgeschlagen.") }
             }
         }.isSuccess
     }
@@ -224,7 +234,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
             executor.execute { val track = if (closed.get() || !host) null else localTrack; action(track, if (track == null) null else rawFrames, egl.eglBaseContext) }
         }.isSuccess
     }
-    internal fun browserPreviewAvailable(): Boolean = host && !closed.get() && cameraFrameAvailable && browserPreviewSafety.mayStart()
+    internal fun browserPreviewAvailable(): Boolean = host && !closed.get() && (experimentalReadiness?.isReady() ?: cameraFrameAvailable) && browserPreviewSafety.mayStart()
 
     /** All peer operations run on the camera owner executor; closing this peer never closes the track. */
     internal fun startBrowserPreview(id: String, offer: String, permitted: () -> Boolean, emit: (String, String, String?, Int?) -> Unit) = execute {

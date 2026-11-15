@@ -24,6 +24,8 @@ java -Xmx256m -cp "$compiler:$stdlib:$script:$reflect:$daemon:$coroutines:$annot
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect -classpath "$stdlib:$annotations:$junit:$hamcrest" \
   -d "$test_dir/classes" \
   "$root/app/src/main/java/de/kontrakurs/kontraprompter/video/CameraFpsPolicy.kt" \
-  "$root/app/src/test/java/de/kontrakurs/kontraprompter/video/CameraFpsPolicyTest.kt"
+  "$root/app/src/main/java/de/kontrakurs/kontraprompter/video/ExperimentalCameraReadiness.kt" \
+  "$root/app/src/test/java/de/kontrakurs/kontraprompter/video/CameraFpsPolicyTest.kt" \
+  "$root/app/src/test/java/de/kontrakurs/kontraprompter/video/ExperimentalCameraReadinessTest.kt"
 java -Xmx96m -cp "$test_dir/classes:$stdlib:$junit:$hamcrest" \
-  org.junit.runner.JUnitCore de.kontrakurs.kontraprompter.video.CameraFpsPolicyTest
+  org.junit.runner.JUnitCore de.kontrakurs.kontraprompter.video.CameraFpsPolicyTest de.kontrakurs.kontraprompter.video.ExperimentalCameraReadinessTest
