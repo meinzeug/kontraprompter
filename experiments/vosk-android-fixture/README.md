@@ -93,6 +93,29 @@ Dieser Aufruf setzt die gesonderte Installation voraus und wurde noch nicht
 ausgeführt. Das Modell wird dabei in ein neu angelegtes privates Cacheverzeichnis
 der Fixture-App entpackt; der Test entfernt es nicht eigenmächtig.
 
+## Isolierter Gerätetest vom 15. November 2026
+
+Mit den oben genannten CI-APKs (`b79e96bfa02a349c8bdfa28fb908dd6dacc2fac8730ee9bd5286451685a32a7e`
+und `71cdee7def8e2aedac2251d1e691d772528ddc7c7faed88db0adfd597723026e`)
+und dem darin anhand Größe und SHA-256 geprüften deutschen Modell lief die
+Instrumentierung mit künstlicher Stille erfolgreich:
+
+- Samsung `R5CR60Q07YN`: 1 Test, 7,548 Sekunden, erfolgreich.
+- Xiaomi `HEHU4TQSINOJEQG6`: 1 Test, 6,546 Sekunden, erfolgreich.
+
+Auf dem Xiaomi benötigte die Installation die ausdrückliche ADB-Bestätigung
+des Systemdialogs; die zuvor bereits aktivierte Systemeinstellung blieb
+unverändert. Die vor dem Test auf beiden Telefonen nicht vorhandenen separaten
+Fixture-Pakete wurden anschließend samt ausschließlich ihrem eigenen Cache
+entfernt. KontraPrompter und vorhandene Aufnahmen wurden nicht verändert; die
+Wiederherstellung der Sitzung war danach noch im Gang.
+
+Die geprüften APK-Manifeste fordern weder `RECORD_AUDIO` noch `INTERNET` an;
+der Test speist ausschließlich künstliche Stille ein. Das Ergebnis belegt die
+Modellinitialisierung und Verarbeitung dieses Testsignals auf beiden Geräten.
+Es belegt kein Sprachverständnis, keine Recorder- oder Prompteranbindung, keine
+Latenz unter Echtzeitlast und keinen sicheren Produktionsbetrieb.
+
 Der isolierte CI-Run 43673659245 zum Commit `e76fa04` war erfolgreich. Die
 Fixture-App hat 40.926.499 Bytes, SHA-256
 `fb6e0f0a2efca4d92a41f1873f2a3e91cee35f90d8f1bab0a6612088b7e1ef28`;
