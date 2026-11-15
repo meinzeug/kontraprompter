@@ -53,3 +53,7 @@ Kandidaten, verschiedene unerlaubte Kandidatenformen und SDP-Escapehatches. Ein
 isolierter LanSession-Test prüft, dass ein zuvor gefasster Socket-Snapshot nach
 Kanalwechsel keine aktuelle Kanalidentität mehr besitzt. Sie ersetzen weder
 echte WebRTC- noch Geräte-/Netzwechseltests.
+`DirectLifecycleCloseTest` prüft zusätzlich am echten `LiveSession.close()` mit
+synthetischem Recorder und blockiertem Videoexecutor, dass ein Peer-Stopp auch
+bei ausbleibender Aufnahmefinalisierung angemeldet wird; nativer Peer und
+Recorderverhalten bleiben dabei ungetestet.
