@@ -217,16 +217,9 @@ class StudioClient {
         401, 403 -> { cookie.invalidate(session); UploadException("auth", "Sitzung abgelaufen. Bitte erneut anmelden.") }
         404 -> UploadException("project_missing", "Skript nicht gefunden oder Upload-Endpunkt nicht verfügbar. Die Aufnahme bleibt lokal.")
         409 -> {
-            val code = runCatching {
-                val input = connection.errorStream ?: return@runCatching null
-                val text = input.bufferedReader(Charsets.UTF_8).use { reader ->
-                    val result = StringBuilder(); val block = CharArray(512)
-                    while (true) { val n = reader.read(block); if (n < 0) break; check(result.length + n <= 4096); result.append(block, 0, n) }
-                    result.toString()
-                }
-                JSONObject(text).optString("code", "")
-            }.getOrNull()
-            when (val kind = cameraUploadConflictKind(code, cameraClaim)) {
+            val code = runCatching { uploadConflictCode(connection.errorStream) }.getOrNull()
+            when (val kind = uploadConflictKind(code, cameraClaim)) {
+                RECORDING_DELETED -> UploadException(kind, RECORDING_DELETED_MESSAGE)
                 "manifest_pending" -> UploadException(kind, "Der Gerätenachweis fehlt noch. Die Aufnahme bleibt lokal und wird erneut gemeldet.")
                 "manifest_mismatch" -> UploadException(kind, "Der Gerätenachweis stimmt nicht mit der Aufnahme überein. Das Original bleibt lokal.")
                 "manifest_partial" -> UploadException(kind, "Das Teilvideo kann derzeit nur lokal exportiert werden.")

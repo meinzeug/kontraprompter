@@ -129,7 +129,7 @@ internal class LanAutoUploader(context: Context, private val client: StudioClien
             val journal = try { if (knownProject == null) null else withContext(Dispatchers.IO) { UploadJournal.get(app, recording, knownProject) } }
             catch (_: Exception) { blocked = LanAutoUploadStatus(recording.id, project, "Uploadstatus beschädigt. Die Aufnahme bleibt lokal."); continue }
             if (journal?.phase == "confirmed") continue // never resurrect a user-deleted server copy
-            if (journal?.phase in setOf("project_missing", "conflict")) { blocked = LanAutoUploadStatus(recording.id, project, "Aufnahme oder Skript muss geprüft werden. Das Original bleibt lokal."); continue }
+            if (journal?.phase in setOf("project_missing", "conflict")) { blocked = LanAutoUploadStatus(recording.id, project, uploadBlockedMessage(journal?.conflictReason)); continue }
             val session = client.manualUploadSession()
             if (session == null) { _status.value = LanAutoUploadStatus(recording.id, project, "Für den automatischen Upload Kamera bei Videomaker anmelden."); return@withLock }
             val binding = client.manualUploadSessionBinding(session)
@@ -151,7 +151,7 @@ internal class LanAutoUploader(context: Context, private val client: StudioClien
             val currentJournal = if (knownProject == target) journal else try { withContext(Dispatchers.IO) { UploadJournal.get(app, recording, target) } }
             catch (_: Exception) { blocked = LanAutoUploadStatus(recording.id, target, "Uploadstatus beschädigt. Die Aufnahme bleibt lokal."); continue }
             if (currentJournal?.phase == "confirmed") continue
-            if (currentJournal?.phase in setOf("project_missing", "conflict")) { blocked = LanAutoUploadStatus(recording.id, target, "Aufnahme oder Skript muss geprüft werden. Das Original bleibt lokal."); continue }
+            if (currentJournal?.phase in setOf("project_missing", "conflict")) { blocked = LanAutoUploadStatus(recording.id, target, uploadBlockedMessage(currentJournal?.conflictReason)); continue }
             val initial = lanUploadDecision(recording, intent, binding, true, currentJournal?.phase, target)
             if (initial != LanUploadDecision.READY) {
                 blocked = LanAutoUploadStatus(recording.id, target, if (initial == LanUploadDecision.SESSION_CHANGED) "Studio-Sitzung geändert. Upload für diese Aufnahme erneut freigeben." else "Aufnahme oder Uploadauftrag hat sich geändert.", reauthorizeRequired = initial == LanUploadDecision.SESSION_CHANGED)

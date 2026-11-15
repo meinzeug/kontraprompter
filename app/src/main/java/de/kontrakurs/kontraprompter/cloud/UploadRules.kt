@@ -39,6 +39,6 @@ internal fun cameraUploadConflictKind(code: String?, cameraClaim: Boolean): Stri
     else -> "conflict"
 }
 
-internal data class JournalLookup(val recordingId: String, val projectId: String, val phase: String?, val failed: Boolean)
+internal data class JournalLookup(val recordingId: String, val projectId: String, val phase: String?, val failed: Boolean, val conflictReason: String? = null)
 internal fun matchingJournal(value: JournalLookup?, recordingId: String, projectId: String): JournalLookup? =
     value?.takeIf { it.recordingId == recordingId && it.projectId == projectId }

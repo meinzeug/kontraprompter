@@ -69,3 +69,17 @@
 7. Verweigerte Berechtigungen, Rotation, Standby, Hintergrundbetrieb, knappes Speicherangebot, Mikrofon-/Kamerabelegung, Akku und Temperatur prüfen.
 
 Die oben nicht ausdrücklich als durchgeführt genannten Tests sind weiterhin **offen**. Vorschau, lokale Kopplung, lokale Aufnahme und manueller Cloud-Upload sind experimentell implementiert. Die Dashboard-Fernsteuerung und Webvorschau bleiben bis zur Prüfung ihrer Freigabeblocker gesperrt; automatischer Reconnect und Hotspot fehlen noch.
+
+### Hinweis auf serverseitig gelöschte Upload-ID
+
+Die Android-Uploadantwort erkennt den bekannten HTTP-409-Code
+`recording_deleted` für manuelle und kamera-/LAN-gebundene Uploads. Die
+Meldung erklärt, dass das Original lokal bleibt, dieselbe Server-Aufnahme-ID
+nicht wiederhergestellt wird und eine neue Aufnahme-ID nötig ist. Ein optionaler
+Grund innerhalb der vorhandenen Journalphase `conflict` hält die Meldung für
+Aufnahme und Zielprojekt fest; ältere Journale ohne dieses Feld bleiben lesbar.
+Andere Konflikte behalten ihre bisherigen Phasen und Behandlungen. Ein anderes
+explizit gewähltes Projekt hat weiterhin ein eigenes Journal und eine andere
+Upload-ID. Fehlende, ungültige, übergroße oder unbekannte Fehlerantworten
+führen zum bisherigen allgemeinen Konflikt. Die Behandlung ist noch durch CI
+und unabhängigen Review zu prüfen; kein Gerätetest ist hiermit behauptet.

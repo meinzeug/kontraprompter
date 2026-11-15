@@ -172,7 +172,7 @@ internal class ManualUploadContinuation(context: Context, private val client: St
                     if (saved) ManualResumeDecision.COMPLETE else ManualResumeDecision.PAUSED
                 }
                 is CloudUploadState.Failed -> {
-                    if (state.recordingId == recording.id && state.projectId == intent.projectId && state.kind in setOf("project_missing", "conflict", "manifest_mismatch", "manifest_partial"))
+                    if (state.recordingId == recording.id && state.projectId == intent.projectId && blocksManualContinuation(state.kind))
                         withContext(Dispatchers.IO) { store.finish(recording.id, intent.generation, "blocked") }
                     ManualResumeDecision.BLOCKED
                 }

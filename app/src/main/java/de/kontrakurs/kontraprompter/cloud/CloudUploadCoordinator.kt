@@ -20,7 +20,7 @@ internal sealed interface CloudUploadState {
 /** Local byte changes are terminal until an explicit retry, not a transient network error. */
 internal fun failedUploadPhase(kind: String): String = when (kind) {
     "project_missing" -> "project_missing"
-    "conflict", "manifest_mismatch", "manifest_partial", "file_changed" -> "conflict"
+    "conflict", "manifest_mismatch", "manifest_partial", "file_changed", RECORDING_DELETED -> "conflict"
     else -> "uncertain"
 }
 
@@ -60,7 +60,7 @@ internal class CloudUploadCoordinator(context: Context, private val client: Stud
             gate.stopProgress(ticket)
             val kind = (error as? UploadException)?.kind ?: "uncertain"
             val phase = failedUploadPhase(kind)
-            entry?.let { withContext(Dispatchers.IO) { runCatching { UploadJournal.write(app, it.copy(phase = phase)) } } }
+            entry?.let { withContext(Dispatchers.IO) { runCatching { UploadJournal.write(app, it.copy(phase = phase, conflictReason = uploadConflictReason(kind, phase))) } } }
             CloudUploadState.Failed(recording.id, projectId, kind, error.message?.take(220) ?: "Upload nicht bestätigt; die lokale Aufnahme bleibt erhalten.").also { _state.value = it }
         } finally { gate.operationFinished(ticket) }
     }

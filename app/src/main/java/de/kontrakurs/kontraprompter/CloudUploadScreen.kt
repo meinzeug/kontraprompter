@@ -18,6 +18,8 @@ import de.kontrakurs.kontraprompter.cloud.ManualUploadContinuation
 import de.kontrakurs.kontraprompter.cloud.showCoordinatorConfirmation
 import de.kontrakurs.kontraprompter.cloud.JournalLookup
 import de.kontrakurs.kontraprompter.cloud.matchingJournal
+import de.kontrakurs.kontraprompter.cloud.RECORDING_DELETED
+import de.kontrakurs.kontraprompter.cloud.RECORDING_DELETED_MESSAGE
 import de.kontrakurs.kontraprompter.video.SavedRecording
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -76,8 +78,8 @@ internal fun CloudUploadScreen(recording: SavedRecording, client: StudioClient, 
         val project = selected
         journal = null
         if (project != null) {
-            val result = withContext(Dispatchers.IO) { runCatching { UploadJournal.get(context, recording, project.id)?.phase } }
-            journal = JournalLookup(recording.id, project.id, result.getOrNull(), result.isFailure)
+            val result = withContext(Dispatchers.IO) { runCatching { UploadJournal.get(context, recording, project.id) } }
+            journal = JournalLookup(recording.id, project.id, result.getOrNull()?.phase, result.isFailure, result.getOrNull()?.conflictReason)
         }
     }
     // Deliberately disabled in production: only resume an earlier explicitly
@@ -143,11 +145,15 @@ internal fun CloudUploadScreen(recording: SavedRecording, client: StudioClient, 
             val currentJournal = matchingJournal(journal, recording.id, project.id)
             AppPanel {
                 Text("Ziel: ${project.title}", style = MaterialTheme.typography.titleMedium)
+                val lastFailure = (state as? CloudUploadState.Failed)?.takeIf { it.recordingId == recording.id && it.projectId == project.id }
+                val deleted = currentJournal?.conflictReason == RECORDING_DELETED || lastFailure?.kind == RECORDING_DELETED
+                if (currentJournal?.conflictReason == RECORDING_DELETED && lastFailure?.kind != RECORDING_DELETED)
+                    Text(RECORDING_DELETED_MESSAGE, color = MaterialTheme.colorScheme.error)
                 when (val status = state) {
                     is CloudUploadState.Running -> if (status.recordingId == recording.id && status.projectId == project.id) Text(if (status.sent == 0L) "Aufnahme wird geprüft …" else "Übertragen: ${(status.sent * 100 / status.total).coerceIn(0, 100)} % · Serverbestätigung ausstehend", color = SoftText) else Text("Ein anderer Upload wird noch beendet.", color = SoftText)
                     is CloudUploadState.Confirmed -> if (showCoordinatorConfirmation(status, recording.id, project.id)) Text("Übertragung für dieses Skript bestätigt. Das Original bleibt lokal.", color = MaterialTheme.colorScheme.primary)
                     is CloudUploadState.Failed -> if (status.recordingId == recording.id && status.projectId == project.id) Text(status.message, color = MaterialTheme.colorScheme.error)
-                    CloudUploadState.Idle -> if (currentJournal?.phase == "confirmed") Text("Eine frühere Übertragung wurde bestätigt.", color = SoftText) else if (currentJournal?.phase != null) Text("Eine frühere Übertragung ist nicht bestätigt; erneut versuchen ist sicher.", color = SoftText)
+                    CloudUploadState.Idle -> if (currentJournal?.phase == "confirmed") Text("Eine frühere Übertragung wurde bestätigt.", color = SoftText) else if (currentJournal?.phase != null && !deleted) Text("Eine frühere Übertragung ist nicht bestätigt; erneut versuchen ist sicher.", color = SoftText)
                 }
                 if (MANUAL_UPLOAD_CONTINUATION_ENABLED && !recording.partial && recording.projectId == null && !running) {
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -177,7 +183,7 @@ internal fun CloudUploadScreen(recording: SavedRecording, client: StudioClient, 
                         }
                     } else runningJob?.cancel()
                 }
-                else MainAction("Video hochladen", enabled = currentJournal != null && !currentJournal.failed && !recording.partial) {
+                else MainAction("Video hochladen", enabled = currentJournal != null && !currentJournal.failed && !recording.partial && !deleted) {
                     if (job?.isActive != true) job = scope.launch {
                         try {
                             if (MANUAL_UPLOAD_CONTINUATION_ENABLED && autoResume) {
