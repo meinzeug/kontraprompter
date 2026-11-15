@@ -60,8 +60,8 @@ ordered(done, 'stateLock', 'monitorenter', 'currentSession', 'onCameraSwitchDone
 ordered(frame, 'stateLock', 'monitorenter', 'currentSession', 'if_acmpeq', 'return', 'capturerObserver', 'CapturerObserver.onFrameCaptured:')
 print('Pinned WebRTC session-owner frame fence checked')
 PY
-javac -J-Xmx128m --release 17 -cp "$test_dir/classes:$test_dir/webrtc.jar:$junit:$hamcrest" -d "$test_dir/tests" "$here/KpFixedFpsSelectorTest.java" "$here/KpCameraLifecycleTest.java" "$here/KpCameraOpenFence.java" "$here/KpCameraOpenFenceTest.java"
-java -Xmx96m -cp "$test_dir/tests:$test_dir/classes:$test_dir/webrtc.jar:$junit:$hamcrest" org.junit.runner.JUnitCore org.webrtc.KpFixedFpsSelectorTest org.webrtc.KpCameraLifecycleTest org.webrtc.KpCameraOpenFenceTest
+javac -J-Xmx128m --release 17 -cp "$test_dir/classes:$test_dir/webrtc.jar:$sdkjar:$junit:$hamcrest" -d "$test_dir/tests" "$here/KpFixedFpsSelectorTest.java" "$here/KpCameraLifecycleTest.java" "$here/KpCameraOpenFence.java" "$here/KpCameraOpenFenceTest.java" "$here/KpCameraCapturerNoAbortTest.java"
+java -Xmx96m -cp "$test_dir/tests:$test_dir/classes:$test_dir/webrtc.jar:$sdkjar:$junit:$hamcrest" org.junit.runner.JUnitCore org.webrtc.KpFixedFpsSelectorTest org.webrtc.KpCameraLifecycleTest org.webrtc.KpCameraOpenFenceTest org.webrtc.KpCameraCapturerNoAbortTest
 python3 - "$test_dir/webrtc.jar" "$test_dir/classes" <<'PY'
 import pathlib,sys,zipfile
 root=pathlib.Path(sys.argv[2])
