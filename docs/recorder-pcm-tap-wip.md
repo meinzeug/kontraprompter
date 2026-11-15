@@ -28,3 +28,14 @@ Dateivergleiche auf Geräten sowie ein tatsächlich angebundener atomarer
 Audio-/Skript-/Kanal-/Seek-Zustellfence. Insbesondere darf der gesondert
 entwickelte Decoder erst nach Verlust-/Generations- und Sitzungskontrolle
 Ergebnisse an eine Oberfläche weitergeben.
+
+Ein Block kann bereits entnommen sein, während ein konkurrierender Producer
+wegen des gehaltenen Analyse-Locks einen Verlust registriert. Ein gezielter
+Race-Test reproduziert diese Reihenfolge; `isCurrent` erkennt den danach
+registrierten Verlust. Diese Abfrage allein ist kein atomarer UI-Zustellfence:
+Ein weiterer Verlust oder Seek kann direkt nach der Prüfung eintreten. Auf dem
+lokalen Empfänger müssen Positionsübernahme und bereits bekannte Invalidierung
+in derselben atomaren Zustandsquelle entschieden werden. Ein auf dem anderen
+Gerät eingetretener, noch nicht zugestellter Verlust kann dort nicht
+rückwirkend bekannt sein. Transkripte dürfen nicht über den bestehenden
+unverschlüsselten LAN-Kanal gesendet werden. Der Abzweig bleibt deaktiviert.

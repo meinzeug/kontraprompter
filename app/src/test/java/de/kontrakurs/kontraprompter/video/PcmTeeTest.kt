@@ -65,4 +65,27 @@ class PcmTeeTest {
         tee.disable(); assertNotEquals(before, tee.generation); assertNull(sub.poll())
         assertThrows(IllegalStateException::class.java) { tee.subscribe() }; tee.close()
     }
+
+    @Test(timeout = 5000) fun `loss after dequeue while analysis lock is held invalidates block`() {
+        val tee = PcmTee(); val sub = tee.subscribe(2)
+        tee.publish("take", tee.generation, 0, 1, 48_000, byteArrayOf(1, 2), 2)
+        val field = sub.javaClass.getDeclaredField("lock").apply { isAccessible = true }; val lock = field.get(sub) as ReentrantLock
+        val dequeued = CountDownLatch(1); val lost = CountDownLatch(1)
+        val result = java.util.concurrent.atomic.AtomicReference<Boolean?>(null)
+        val analysis = Thread {
+            lock.lock()
+            try {
+                val block = sub.poll() ?: return@Thread
+                dequeued.countDown(); if (!lost.await(2, TimeUnit.SECONDS)) return@Thread
+                result.set(sub.isCurrent(block))
+            } finally { lock.unlock() }
+        }
+        analysis.isDaemon = true; analysis.start()
+        try {
+            assertTrue(dequeued.await(1, TimeUnit.SECONDS))
+            tee.publish("take", tee.generation, 1, 1, 48_000, byteArrayOf(3, 4), 2)
+            assertEquals(1L, sub.dropped); lost.countDown(); analysis.join(2000)
+            assertFalse(analysis.isAlive); assertEquals(false, result.get())
+        } finally { lost.countDown(); analysis.join(2000); tee.close() }
+    }
 }

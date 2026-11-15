@@ -71,8 +71,10 @@ internal class PcmTee : AutoCloseable {
         private val lock = ReentrantLock()
         private val slots = Array(capacity) { Slot() }
         private val lost = AtomicLong()
-        private var head = 0; private var size = 0; private var closed = false
+        private var head = 0; private var size = 0; @Volatile private var closed = false
         val dropped: Long get() = lost.get()
+        /** A snapshot check only; UI delivery still requires its own atomic fence. */
+        fun isCurrent(block: PcmBlock): Boolean = !closed && lost.get() == 0L && block.generation == currentGeneration()
 
         internal fun offer(recordingId: String, generation: Long, firstSample: Long, captureTimeNs: Long,
                            sampleRate: Int, bytes: ByteArray, length: Int) {
@@ -97,6 +99,7 @@ internal class PcmTee : AutoCloseable {
             val slot = slots[head]
             val data = ByteBuffer.wrap(slot.bytes.copyOf(slot.length)).asReadOnlyBuffer().order(ByteOrder.nativeOrder())
             val block = PcmBlock(slot.recordingId, slot.generation, slot.firstSample, slot.captureTimeNs, slot.sampleRate, data)
+            if (!isCurrent(block)) return null
             head = (head + 1) % slots.size; size--
             block
         }
