@@ -45,5 +45,11 @@ private fun ThemeExample() {
 @Preview(name = "Dunkel · Fallback", showBackground = true, uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable private fun DarkThemePreview() { KontraAdaptiveTheme(darkTheme = true, dynamicColor = false) { ThemeExample() } }
 
-@Preview(name = "Große Schrift", showBackground = true, fontScale = 1.5f)
+@Preview(name = "Große Schrift · 200 %", showBackground = true, widthDp = 320, fontScale = 2f)
 @Composable private fun LargeTextThemePreview() { KontraAdaptiveTheme(darkTheme = false, dynamicColor = false) { ThemeExample() } }
+
+@Preview(name = "Kompakt · 320 dp", showBackground = true, widthDp = 320)
+@Composable private fun CompactThemePreview() { KontraAdaptiveTheme(darkTheme = false, dynamicColor = false) { ThemeExample() } }
+
+@Preview(name = "Breit · 840 dp", showBackground = true, widthDp = 840)
+@Composable private fun ExpandedThemePreview() { KontraAdaptiveTheme(darkTheme = true, dynamicColor = false) { ThemeExample() } }
