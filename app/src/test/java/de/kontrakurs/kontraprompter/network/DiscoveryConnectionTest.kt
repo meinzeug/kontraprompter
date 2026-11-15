@@ -14,6 +14,7 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -230,10 +231,27 @@ class DiscoveryConnectionTest {
                 while (!state.value.authenticated && System.nanoTime() < deadline) Thread.yield()
                 assertTrue(state.value.authenticated)
                 discovery.lost("camera")
-                peerChannel.get().send("approve", "")
-                deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-                while (!state.value.remoteApproved && System.nanoTime() < deadline) Thread.yield()
-                assertTrue(state.value.remoteApproved)
+                val client = LanSession::class.java.getDeclaredField("channel").apply { isAccessible = true }.get(lan) as AuthenticatedChannel
+                val socket = AuthenticatedChannel::class.java.getDeclaredField("socket").apply { isAccessible = true }.get(client) as java.net.Socket
+                assertNull("discovered connection must use an ordinary socket", socket.channel)
+                val worker = Executors.newFixedThreadPool(2)
+                try {
+                    // Give the session's receive coroutine time to enter its blocking read.
+                    CountDownLatch(1).await(100, TimeUnit.MILLISECONDS)
+                    val started = System.nanoTime()
+                    val pong = worker.submit {
+                        val message = peerChannel.get().receive()
+                        check(message.first == "ping" && message.second == "synthetic")
+                        peerChannel.get().send("pong", "synthetic")
+                        peerChannel.get().send("approve", "")
+                    }
+                    val sent = worker.submit { client.send("ping", "synthetic") }
+                    sent.get(3, TimeUnit.SECONDS); pong.get(3, TimeUnit.SECONDS)
+                    deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+                    while (!state.value.remoteApproved && System.nanoTime() < deadline) Thread.yield()
+                    assertTrue("pong and following approval not received", state.value.remoteApproved)
+                    assertTrue("loopback ping/pong took too long", System.nanoTime() - started < TimeUnit.SECONDS.toNanos(3))
+                } finally { worker.shutdownNow() }
                 release.countDown(); host.join(5_000)
             }
         } finally { release.countDown(); peerChannel.get()?.close(); scope.cancel(); discovery.close() }

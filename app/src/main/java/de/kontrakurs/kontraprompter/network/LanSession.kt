@@ -14,9 +14,6 @@ import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketTimeoutException
-import java.nio.channels.SelectionKey
-import java.nio.channels.Selector
-import java.nio.channels.SocketChannel
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val SERVICE_TYPE = "_kontraprompter._tcp."
@@ -198,35 +195,26 @@ class LanSession(context: Context) : AutoCloseable {
         catch (_: Exception) { discovered.ifCurrent(endpoint.selection) { if (!closed.get()) _state.update { it.copy(error = "Adresse, Port oder Sitzungscode ungültig.") } }; return }
         val attempt = discovered.ifCurrent(endpoint.selection) { beginConnectionAttempt(endpoint.selection) } ?: return
         scope.launch {
-            var socket: Socket? = null
-            var openedWire: SocketChannel? = null
+            val candidate = try { Socket() } catch (_: Exception) {
+                discovered.ifCurrent(endpoint.selection) { reportConnectionAttempt(attempt, "Netzwerk-Socket nicht verfügbar.") }
+                return@launch
+            }
             try {
-                val wire = SocketChannel.open(); openedWire = wire
-                wire.configureBlocking(false)
-                val candidate = wire.socket(); socket = candidate
                 if (!trackPending(candidate, attempt)) {
                     discovered.ifCurrent(endpoint.selection) { reportConnectionAttempt(attempt, "Eine Verbindung wird noch beendet. Bitte erneut versuchen.") }
                     return@launch
                 }
                 check(discovered.attach(endpoint.selection, candidate)) { "Suchergebnis veraltet" }
                 val target = InetSocketAddress(endpoint.address, endpoint.port)
-                val connectedNow = discovered.ifCurrent(endpoint.selection) {
+                val startAdmitted = discovered.ifCurrent(endpoint.selection) {
                     check(!closed.get() && !candidate.isClosed)
-                    wire.connect(target) // nonblocking; never wait on network under selection lock
+                    true
                 } ?: error("Suchergebnis veraltet")
-                if (!connectedNow) {
-                    Selector.open().use { selector ->
-                        wire.register(selector, SelectionKey.OP_CONNECT)
-                        val deadline = System.nanoTime() + 6_000_000_000L
-                        while (!wire.finishConnect()) {
-                            val remaining = deadline - System.nanoTime()
-                            if (remaining <= 0) throw SocketTimeoutException("Verbindungsaufbau abgelaufen")
-                            selector.select(((remaining + 999_999L) / 1_000_000L).coerceAtLeast(1L))
-                            selector.selectedKeys().clear()
-                        }
-                    }
-                }
-                wire.configureBlocking(true)
+                check(startAdmitted)
+                // Blocking connect and all handshake I/O stay outside the selection lock.
+                // Invalidation closes the attached socket; a start already admitted just
+                // before invalidation can briefly reach the network before close wins.
+                candidate.connect(target, 6_000)
                 check(isCurrent(endpoint)) { "Suchergebnis veraltet" }
                 candidate.soTimeout = 15_000
                 val connection = AuthenticatedChannel.client(candidate, token, deviceName)
@@ -237,10 +225,9 @@ class LanSession(context: Context) : AutoCloseable {
                 } ?: false
                 if (installed) authenticated(connection) else { connection.close(); error("Suchergebnis veraltet") }
             } catch (_: Exception) {
-                socket?.let { clearPending(it); runCatching { it.close() } }
-                if (socket == null) runCatching { openedWire?.close() }
+                clearPending(candidate); runCatching { candidate.close() }
                 discovered.ifCurrent(endpoint.selection) { reportConnectionAttempt(attempt, "Verbindung fehlgeschlagen. Bitte Kamera und Netzwerk prüfen.") }
-            } finally { socket?.let { discovered.detach(endpoint.selection, it) } }
+            } finally { discovered.detach(endpoint.selection, candidate) }
         }
     }
     fun connect(address: String, port: Int, token: String) {
