@@ -32,4 +32,19 @@ class FrameRateDiagnosticsTest {
         assertEquals(1001, s.p95IntervalMs)
         assertEquals(3000L, s.maxIntervalMs)
     }
+
+    @Test fun `arrivals, observed pause, rejection and accepted samples stay separate`() {
+        val d = CaptureFrameDiagnostics()
+        d.arriving(1_000_000, false)
+        d.rejected(CaptureFrameDiagnostics.Rejection.PREPARING)
+        d.arriving(51_000_000, true)
+        d.rejected(CaptureFrameDiagnostics.Rejection.PROJECTED_OUT)
+        d.arriving(101_000_000, false)
+        d.accepted(1_000_000)
+        assertEquals(3L, d.arrivals().frames)
+        assertEquals(1L, d.pausedFrames())
+        assertEquals(1L, d.rejections()[CaptureFrameDiagnostics.Rejection.PREPARING.ordinal])
+        assertEquals(1L, d.rejections()[CaptureFrameDiagnostics.Rejection.PROJECTED_OUT.ordinal])
+        assertEquals(1L, d.acceptedFrames().frames)
+    }
 }
