@@ -1,5 +1,6 @@
 package de.kontrakurs.kontraprompter
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -74,8 +75,12 @@ private fun DrawerItems(page: String, onSelect: (DrawerDestination) -> Unit) {
 }
 
 @Composable
-internal fun ModalDrawerNavigationView(state: DrawerState, page: String, onSelect: (DrawerDestination) -> Unit) {
-    ModalDrawerSheet(drawerState = state, modifier = Modifier.widthIn(max = 320.dp), drawerContainerColor = MaterialTheme.colorScheme.surface) { DrawerItems(page, onSelect) }
+internal fun ModalDrawerNavigationView(state: DrawerState, page: String, onBack: () -> Unit, onSelect: (DrawerDestination) -> Unit) {
+    ModalDrawerSheet(drawerState = state, modifier = Modifier.widthIn(max = 320.dp), drawerContainerColor = MaterialTheme.colorScheme.surface) {
+        // Composed inside the sheet so this handler precedes any page-level Back action.
+        BackHandler(enabled = drawerInterceptsBack(state.currentValue == DrawerValue.Open, state.targetValue == DrawerValue.Open), onBack = onBack)
+        DrawerItems(page, onSelect)
+    }
 }
 
 @Composable

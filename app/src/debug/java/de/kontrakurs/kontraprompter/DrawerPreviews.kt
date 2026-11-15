@@ -13,7 +13,7 @@ import androidx.compose.ui.tooling.preview.Preview
 @Preview(name = "Drawer erweitert – dunkel", widthDp = 840, heightDp = 480, uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun DrawerNavigationPreview() {
-    KontraTheme { ModalDrawerNavigationView(state = rememberDrawerState(DrawerValue.Open), page = "editor", onSelect = {}) }
+    KontraTheme { ModalDrawerNavigationView(state = rememberDrawerState(DrawerValue.Open), page = "editor", onBack = {}, onSelect = {}) }
 }
 
 @Preview(name = "Breites Fenster – breiter Drawer", widthDp = 840, heightDp = 480, uiMode = Configuration.UI_MODE_NIGHT_NO)

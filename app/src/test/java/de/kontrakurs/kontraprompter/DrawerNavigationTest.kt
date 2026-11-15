@@ -19,6 +19,12 @@ class DrawerNavigationTest {
         assertFalse(targets.contains("connection"))
         assertFalse(targets.contains("upload"))
     }
+    @Test fun backBelongsToDrawerWhileOpenOrOpening() {
+        assertFalse(drawerInterceptsBack(currentOpen = false, targetOpen = false))
+        assertTrue(drawerInterceptsBack(currentOpen = true, targetOpen = false))
+        assertTrue(drawerInterceptsBack(currentOpen = false, targetOpen = true))
+        assertTrue(drawerInterceptsBack(currentOpen = true, targetOpen = true))
+    }
     @Test fun settingsAndHelpCannotCreateBackLoops() {
         assertEquals("editor", drawerReturnOrigin(DrawerDestination.HELP, "settings", "roles", "editor"))
         assertEquals("editor", drawerReturnOrigin(DrawerDestination.SETTINGS, "help", "editor", "roles"))

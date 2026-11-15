@@ -534,7 +534,10 @@ private fun KontraApp(activity: MainActivity) {
         ModalNavigationDrawer(
             drawerState = drawerState,
             gesturesEnabled = drawerAllowed && !expandedWindow,
-            drawerContent = { ModalDrawerNavigationView(state = drawerState, page = page, onSelect = ::selectDestination) },
+            drawerContent = { ModalDrawerNavigationView(state = drawerState, page = page, onBack = {
+                drawerOpenJob?.cancel()
+                drawerScope.launch { drawerState.close() }
+            }, onSelect = ::selectDestination) },
         ) {
     AppBackground {
         when (page) {
