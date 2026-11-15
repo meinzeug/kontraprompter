@@ -281,3 +281,39 @@ der Download nach Abmeldung waren gesperrt. Die Weboberfläche kann bis zum
 separaten Web-Update weiterhin „Debug“ als Dateinamen anzeigen; die APK selbst
 ist ein nicht debuggbarer Release-Build. Das ist kein Nachweis für eine bereits
 implementierte automatische dauerhafte Wiederverbindung.
+
+## Kanalgebundene Steuerung und Abbruchtest
+
+Der Release-Kandidat für die kanalgebundene Steuerung bestand in der CI die
+Debug- und die Release-Variante derselben Suite mit jeweils 210 Tests. Er wurde
+mit dem bisherigen Geräteschlüssel auf beiden Telefonen als Update installiert;
+die APK hatte auf beiden Geräten dieselbe SHA-256-Summe
+`5fb741550a313504d8f9cfba552e681610efbd9a58863560111cc55e58470c11`.
+Drei frische Kamerasitzungen wurden nacheinander über die Gerätesuche mit dem
+jeweils aktuellen Port gefunden, bestätigt und als Videoverbindung aufgebaut.
+Eine weitere Sitzung wurde nach versehentlichem Zurücknavigieren eingerichtet.
+
+Start, Pause, Fortsetzen und Stopp einer Testaufnahme wurden vom Samsung aus
+ausgelöst und vom Xiaomi bestätigt. Nach erneuter Videomaker-Anmeldung auf dem
+Xiaomi wurde die Aufnahme hochgeladen. Die 4.258.719 Bytes große Serverdatei
+war 17,44 Sekunden lang und enthielt H.264 mit 480 × 640 Pixeln und AAC mit
+48 kHz. Ihre SHA-256-Summe war
+`9c7c7f19d67509cb53c25dfe862fd2ac8b6594078c6ecefb59f3b07752d74989`.
+
+Für den Abbruchtest wurde eine weitere Aufnahme vom Samsung aus gestartet und
+dessen WLAN kurz ausgeschaltet. Das Xiaomi meldete, dass die Aufnahme ohne
+Videoverbindung weiterläuft. Sie wurde auf dem Xiaomi regulär gestoppt und
+lokal gespeichert; danach wurde das Samsung-WLAN wieder eingeschaltet. Die
+Serverdatei war 3.888.012 Bytes groß und 16,34 Sekunden lang; sie enthielt
+H.264 mit 480 × 640 Pixeln sowie AAC mit 48 kHz. Ihre SHA-256-Summe war
+`c7ef0d9e0bf93fdf77ff48831a1c936c9fe3caad77beb10de21bd343e9cd8dfe`.
+Für diese beiden Aufnahmen wurde kein Originalexport zum Bytevergleich erstellt.
+
+Die getestete APK wurde auf Videomaker veröffentlicht. Der vollständige
+HTTPS-Download nach Anmeldung war 30.439.121 Bytes groß und hatte dieselbe
+SHA-256-Summe wie die installierte APK. Alle 21 Projekte und 30 Aufnahmen waren
+bei der Bestandsprüfung vorhanden; kein ursprünglich erfasstes Projekt war
+verändert. Anonymer Download und Download nach Abmeldung waren gesperrt. Die
+vorherige APK wurde separat gesichert. Der Downloadname kann in der alten
+Weboberfläche weiterhin „Debug“ enthalten, obwohl die APK nicht debuggbar ist.
+Die Anmeldung und Kopplung werden dadurch noch nicht dauerhaft gespeichert.
