@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -54,6 +55,8 @@ import de.kontrakurs.kontraprompter.cloud.CloudUploadViewModel
 import de.kontrakurs.kontraprompter.network.LanState
 import de.kontrakurs.kontraprompter.cloud.StudioClient
 import de.kontrakurs.kontraprompter.video.LiveSession
+import de.kontrakurs.kontraprompter.video.DirectPeerStop
+import de.kontrakurs.kontraprompter.video.ProcessDirectPeerStops
 import de.kontrakurs.kontraprompter.video.PairedCaptureState
 import de.kontrakurs.kontraprompter.video.RtcVideo
 import de.kontrakurs.kontraprompter.video.SavedRecording
@@ -169,6 +172,7 @@ private fun KontraApp(activity: MainActivity) {
     val recording by (session?.recording ?: emptyRecording).collectAsState()
     val emptyCapture = remember { kotlinx.coroutines.flow.MutableStateFlow(PairedCaptureState()) }
     val pairedCapture by (session?.pairedCapture?.state ?: emptyCapture).collectAsState()
+    val directPeerStopStatus by ProcessDirectPeerStops.state.collectAsState()
     var selectedVolumeRemote by remember { mutableStateOf(preferences.getString("volume_remote_descriptor", null)) }
     var inputRefresh by remember { mutableIntStateOf(0) }
     DisposableEffect(activity, page, session, lanState.ready, selectedVolumeRemote, selected.studioProjectId) {
@@ -445,6 +449,7 @@ private fun KontraApp(activity: MainActivity) {
     AppBackground {
         when (page) {
             "roles" -> AppPage("Bereit für deinen Auftritt.", "KONTRAPROMPTER", "Verbinde Kamera und Text – und behalte alles im Blick.") {
+                if (directPeerStopStatus == DirectPeerStop.State.PENDING || directPeerStopStatus == DirectPeerStop.State.FAILED) DirectPeerStopNotice(directPeerStopStatus)
                 Spacer(Modifier.height(8.dp))
                 Text("Dieses Gerät verwenden als", style = MaterialTheme.typography.titleMedium, color = SoftText)
                 RoleTile("Teleprompter", "Skripte lesen und fernsteuern", camera = false) { page = "scripts" }
@@ -601,6 +606,12 @@ private fun Page(title: String, eyebrow: String, onBack: (() -> Unit)? = null, c
 @Composable
 private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, speed: Float, width: Float, lineSpacing: Float, horizontal: Boolean, vertical: Boolean, rotation: Int, opacity: Float, focusLine: Boolean, bold: Boolean, countdownSeconds: Int, initialPosition: Int, savePosition: (Int) -> Unit, back: () -> Unit, video: RtcVideo?, videoH: Boolean, videoV: Boolean, videoRotation: Int, videoFill: Boolean, videoOpacity: Float, lanState: LanState, pairedCapture: PairedCaptureState, recordingScrollSync: Boolean, cloudProjectLinked: Boolean, activity: MainActivity, keyboardDescriptor: String?, inputRefresh: Int, onCaptureToggle: () -> Unit, onCaptureStop: () -> Unit, onCameraSwitch: () -> Unit, remoteActions: Channel<RemoteEvent>, onPlaybackStatus: (String) -> Unit) {
     val remote = LocalRemoteIndicator.current
+    val directPeerStop by ProcessDirectPeerStops.state.collectAsState()
+    val directStopWarning = when (directPeerStop) {
+        DirectPeerStop.State.PENDING -> stringResource(R.string.direct_peer_stop_pending_short)
+        DirectPeerStop.State.FAILED -> stringResource(R.string.direct_peer_stop_failed_short)
+        else -> null
+    }
     val keyboardConnected = remember(keyboardDescriptor, inputRefresh) { Build.VERSION.SDK_INT >= 29 && keyboardDescriptor != null && InputDevice.getDeviceIds().any { id -> InputDevice.getDevice(id)?.let { it.isExternal && !it.isVirtual && it.descriptor == keyboardDescriptor } == true } }
     val scroll = rememberScrollState(initialPosition)
     val density = LocalDensity.current.density
@@ -663,7 +674,7 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
         "failed" -> "Aufnahme fehlgeschlagen"
         else -> "Kamerastatus wird ermittelt …"
     }
-    val showCameraStatus = controls || lanState.error != null || pairedCapture.pending || (isCameraClient && (
+    val showCameraStatus = controls || lanState.error != null || pairedCapture.pending || directStopWarning != null || (isCameraClient && (
         pairedCapture.cameraError != null || pairedCapture.message != null ||
             pairedCapture.phase in setOf("failed", "partial") ||
             (lanState.ready && (keyboardDescriptor != null || pairedCapture.phase in setOf("preparing", "recording", "paused", "finalizing", "ready")))
@@ -693,6 +704,7 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
     fun CameraStatus() {
         val warnings = buildList {
             if (lanState.error != null) add("Verbindungsfehler")
+            if (directStopWarning != null) add(directStopWarning)
             if (isCameraClient && pairedCapture.cameraError != null) add("Kamerafehler")
             if (isCameraClient && pairedCapture.message != null) add("Kamerahinweis")
             if (isCameraClient && !lanState.ready && pairedCapture.phase == "failed") add("Letzter Aufnahmestatus: Fehler")
@@ -701,10 +713,11 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
         }
         val primary = if (isCameraClient && lanState.ready) capturePhase
             else if (lanState.role.isEmpty()) "Offline-Prompter" else lanState.status
-        val hasError = lanState.error != null || (isCameraClient && (pairedCapture.cameraError != null || pairedCapture.phase == "failed"))
+        val hasError = lanState.error != null || directPeerStop == DirectPeerStop.State.FAILED || (isCameraClient && (pairedCapture.cameraError != null || pairedCapture.phase == "failed"))
         val accessibleStatus = buildString {
             if (pairedCapture.pending) append("Befehl ausstehend. ")
             append(primary)
+            directStopWarning?.let { append(". "); append(it) }
             lanState.error?.let { append(". Verbindungsfehler: "); append(it) }
             if (isCameraClient) {
                 pairedCapture.cameraError?.let { append(". Kamerafehler: "); append(it) }
@@ -723,6 +736,7 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
                 Column(Modifier.weight(1f)) {
                     if (pairedCapture.pending) Text("Befehl ausstehend", color = Color(0xffffd79b), style = MaterialTheme.typography.labelMedium)
                     Text(primary, color = if (isCameraClient && lanState.ready && pairedCapture.phase == "recording") Color(0xffffb2b2) else Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+                    directStopWarning?.let { Text(it, color = Color(0xffffc7a8), style = MaterialTheme.typography.labelMedium) }
                     if (warnings.isNotEmpty()) Text(if (hasError) "Fehler · Details öffnen" else "Hinweis · Details öffnen", color = Color(0xffffc7a8), style = MaterialTheme.typography.labelMedium)
                 }
                 Text("Details", color = SoftText, style = MaterialTheme.typography.labelMedium)
@@ -778,6 +792,7 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
             Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (lanState.role.isEmpty()) "Offline-Prompter" else lanState.status + (lanState.rttMs?.let { " · RTT $it ms" } ?: ""))
                 lanState.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                DirectPeerStopNotice(directPeerStop)
                 if (pairedCapture.pending) Text("Befehl ausstehend")
                 if (isCameraClient && lanState.ready) {
                     Text(capturePhase)

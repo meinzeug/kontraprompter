@@ -102,6 +102,7 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
         CameraConnectionScreen(session, state, video, cloud, onClose)
         return
     }
+    val directPeerStop by session.directPeerStopState.collectAsState()
     // A discovered endpoint is session-bound and must not survive recreation
     // without its in-memory discovery selection.
     var address by remember(session) { mutableStateOf("") }
@@ -127,6 +128,7 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
         onBack = onClose, backLabel = "Trennen", showCamera = false
     ) {
         StatusPanel(state.status, detail = state.rttMs?.let { "Signalisierungs-RTT: $it ms · keine Bildlatenz" }, error = state.error, active = state.ready)
+        DirectPeerStopNotice(directPeerStop)
         if (video != null && session.host) {
             Text("Kameravorschau", style = MaterialTheme.typography.titleMedium)
             Box(Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(22.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
@@ -195,6 +197,7 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
                 else MainAction("Kopplung bestätigen") { session.lan.approve() }
             }
         }
+        if (!state.authenticated) WifiDirectHelp()
         if (state.ready && !session.host) MainAction("Zu Skripten und Prompter", onClick = onScripts)
         Text("Hier siehst du das Livebild. Die Aufnahme erfolgt am Kameragerät; Ton wird nicht live übertragen.", color = SoftText, style = MaterialTheme.typography.bodySmall)
         QuietAction("Trennen und zur Rollenwahl", onClick = onClose)
@@ -248,6 +251,7 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
     val context = LocalContext.current
     val recording by session.recording.collectAsState()
     val cameraSelection by session.cameraSelection.collectAsState()
+    val directPeerStop by session.directPeerStopState.collectAsState()
     var permissionMessage by remember { mutableStateOf<String?>(null) }
     val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -367,6 +371,8 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
                     else Text("Auf diesem Gerät bestätigt", color = Color(0xffa3dfbb), style = MaterialTheme.typography.labelLarge)
                 }
             }
+            DirectPeerStopNotice(directPeerStop)
+            if (!state.authenticated) WifiDirectHelp()
             Text("Die Aufnahme bleibt auf diesem Gerät. Ton wird nicht live übertragen.", color = SoftText, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(12.dp))
         }

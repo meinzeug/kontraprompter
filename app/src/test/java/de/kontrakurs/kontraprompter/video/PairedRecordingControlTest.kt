@@ -63,6 +63,8 @@ class PairedRecordingControlTest {
                 override fun awaitTermination(timeout: Long, unit: TimeUnit) = false
             }
             field(video, "closed", AtomicBoolean(false)); field(video, "host", true); field(video, "executor", queue)
+            // Unsafe allocation bypasses RtcVideo's field initializers.
+            field(video, "primaryGeneration", PrimaryPeerGeneration())
             field(session, "guard", Any()); field(session, "host", true); field(session, "lan", lan); field(session, "scope", scope)
             field(session, "_recording", state); field(session, "_cameraSelection", camera); field(session, "_video", MutableStateFlow<RtcVideo?>(video))
             control = Control(lan, marker)

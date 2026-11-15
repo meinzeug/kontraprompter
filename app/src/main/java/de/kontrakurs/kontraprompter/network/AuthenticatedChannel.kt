@@ -54,6 +54,9 @@ class AuthenticatedChannel private constructor(
     private val sendingRole: String,
     val remoteName: String,
 ) : AutoCloseable {
+    // Captured on the established socket; never log or serialize these addresses.
+    internal val localAddress = socket.localAddress
+    internal val remoteAddress = socket.inetAddress
     private var outgoing = 0L
     private var incoming = 0L
     private val receivingRole = if (sendingRole == "host") "client" else "host"

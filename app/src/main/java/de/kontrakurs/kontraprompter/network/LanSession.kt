@@ -375,6 +375,14 @@ class LanSession(context: Context) : AutoCloseable {
     internal fun approvedConnectionMarker(): Any? = synchronized(socketLock) {
         if (!closed.get() && connected.get() && _state.value.ready) channel else null
     }
+    internal class SocketAddresses(val marker: Any, val local: java.net.InetAddress, val remote: java.net.InetAddress)
+    /** Snapshot only; users must recheck marker after any interface inspection. */
+    internal fun approvedSocketAddresses(): SocketAddresses? = synchronized(socketLock) {
+        val current = channel ?: return null
+        val remote = current.remoteAddress ?: return null
+        if (closed.get() || !connected.get() || !_state.value.ready) null
+        else SocketAddresses(current, current.localAddress, remote)
+    }
     internal fun isApprovedConnection(marker: Any): Boolean = synchronized(socketLock) {
         !closed.get() && connected.get() && _state.value.ready && channel === marker
     }
