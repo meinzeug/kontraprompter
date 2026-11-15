@@ -147,6 +147,13 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
         } else if (!session.host && !state.authenticated) {
             CameraConnectionCard {
                 Text("Kameragerät", style = MaterialTheme.typography.titleLarge)
+                PairingQrScanner { pairing ->
+                    session.lan.cancelResolutionSelection()
+                    resolvedEndpoint = null; discoveryError = null
+                    address = pairing.address; port = pairing.port.toString(); token = pairing.token
+                    session.lan.connect(pairing.address, pairing.port, pairing.token)
+                }
+                Text(androidx.compose.ui.res.stringResource(R.string.pair_qr_manual), style = MaterialTheme.typography.titleSmall)
                 Text("Wähle die Kamera aus der Suche. Adresse und Port werden übernommen. Gib anschließend den Sitzungscode vom Kameragerät ein.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 // Keep the search row in place when a device appears, so focused fields do not jump.
                 Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -307,6 +314,7 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
             if (!state.authenticated && state.token.isNotEmpty()) {
                 CameraConnectionCard {
                     Text("Mit Teleprompter verbinden", style = MaterialTheme.typography.titleMedium)
+                    PairingQrDisplay(state.addresses, state.port, state.token)
                     Text("Wähle dieses Gerät auf dem Teleprompter aus und gib dort den Sitzungscode ein. Falls es nicht gefunden wird, übertrage zusätzlich Adresse und Port.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                     Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
                         Text(state.token.chunked(4).joinToString(" ").uppercase(), modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp), color = MaterialTheme.colorScheme.onSecondaryContainer, style = MaterialTheme.typography.headlineSmall, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)

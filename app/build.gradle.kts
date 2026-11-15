@@ -31,6 +31,7 @@ tasks.withType<Test>().configureEach {
 dependencies {
     jsonUnitTestRuntime("org.json:json:20240303")
     implementation("io.github.webrtc-sdk:android:150.7871.04")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.activity:activity-compose:1.10.1")
     // Explicit release candidate: public Material Expressive APIs are not in stable 1.4.0.

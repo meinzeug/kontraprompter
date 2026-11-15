@@ -1,0 +1,13 @@
+<resources>
+    <string name="pair_qr_network">Netzwerk für den QR-Code</string>
+    <string name="pair_qr_direct_address">Wi-Fi Direct · %1$s</string>
+    <string name="pair_qr_description">QR-Code zur Kopplung</string>
+    <string name="pair_qr_scan_instruction">Auf dem Teleprompter „QR-Code scannen“ wählen. Der Code erneuert sich regelmäßig.</string>
+    <string name="pair_qr_unavailable">QR-Code noch nicht verfügbar. Netzwerk prüfen oder manuelle Kopplung verwenden.</string>
+    <string name="pair_qr_scan">QR-Code scannen</string>
+    <string name="pair_qr_camera_denied">Kamerazugriff nicht erlaubt. Du kannst die Daten auch manuell eingeben.</string>
+    <string name="pair_qr_aim">Richte die Kamera auf den QR-Code des Kamerahandys.</string>
+    <string name="pair_qr_invalid">Ungültiger oder abgelaufener QR-Code. Bitte den aktuellen Code scannen.</string>
+    <string name="pair_qr_stop">Scan beenden</string>
+    <string name="pair_qr_manual">Oder manuell verbinden</string>
+</resources>
