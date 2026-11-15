@@ -107,7 +107,6 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
     var address by remember(session) { mutableStateOf("") }
     var port by remember(session) { mutableStateOf("") }
     var resolvedEndpoint by remember(session) { mutableStateOf<DiscoveredEndpoint?>(null) }
-    var resolving by remember(session) { mutableStateOf(false) }
     var discoveryError by remember(session) { mutableStateOf<String?>(null) }
     var token by remember { mutableStateOf("") }
     var showToken by remember { mutableStateOf(false) }
@@ -152,16 +151,16 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
                     if (state.devices.isEmpty()) Text("Suche läuft … Adresse und Port kannst du auch unten eingeben.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                     state.devices.forEach { device ->
                         FilledTonalButton(onClick = {
-                            address = ""; port = ""; resolvedEndpoint = null; resolving = true; discoveryError = null
+                            address = ""; port = ""; resolvedEndpoint = null; discoveryError = null
                             val started = session.lan.resolve(device) { endpoint -> activity.runOnUiThread {
-                                if (session.lan.isCurrent(endpoint)) { address = endpoint.address; port = endpoint.port.toString(); resolvedEndpoint = endpoint; resolving = false; discoveryError = null }
+                                if (session.lan.isCurrent(endpoint)) { address = endpoint.address; port = endpoint.port.toString(); resolvedEndpoint = endpoint; discoveryError = null }
                             } }
-                            if (!started) { resolving = false; discoveryError = "Kamera nicht mehr in der Suche. Bitte erneut auswählen." }
+                            if (!started) discoveryError = "Kamerasuche konnte nicht gestartet werden. Bitte erneut auswählen."
                         }, modifier = Modifier.heightIn(min = 48.dp)) { Text(device.name) }
                     }
                 }
-                OutlinedTextField(value = address, onValueChange = { session.lan.cancelResolutionSelection(); address = it; resolvedEndpoint = null; resolving = false; discoveryError = null }, label = { Text("IP-Adresse") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = port, onValueChange = { session.lan.cancelResolutionSelection(); port = it; resolvedEndpoint = null; resolving = false; discoveryError = null }, label = { Text("Port") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = address, onValueChange = { session.lan.cancelResolutionSelection(); address = it; resolvedEndpoint = null; discoveryError = null }, label = { Text("IP-Adresse") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = port, onValueChange = { session.lan.cancelResolutionSelection(); port = it; resolvedEndpoint = null; discoveryError = null }, label = { Text("Port") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     value = token,
                     onValueChange = { token = it },
@@ -173,11 +172,13 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 discoveryError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                MainAction("Verbinden", enabled = state.status != "Verbinde …") {
+                if (state.discoveryResolving) Text("Kameradienst wird aufgelöst …", color = SoftText, style = MaterialTheme.typography.bodySmall)
+                MainAction("Verbinden", enabled = state.status != "Verbinde …" && !state.discoveryResolving) {
                     val endpoint = resolvedEndpoint
-                    if (resolving || (endpoint != null && !session.lan.isCurrent(endpoint))) discoveryError = "Das Suchergebnis ist veraltet oder wird noch geladen. Bitte die Kamera erneut auswählen."
+                    if (session.lan.state.value.discoveryResolving) Unit
+                    else if (endpoint != null && !session.lan.isCurrent(endpoint)) discoveryError = "Das Suchergebnis ist veraltet. Bitte die Kamera erneut auswählen."
                     else if (endpoint != null) session.lan.connectDiscovered(endpoint, token)
-                    else session.lan.connect(address, port.toIntOrNull() ?: 0, token)
+                    else { discoveryError = null; session.lan.connect(address, port.toIntOrNull() ?: 0, token) }
                 }
             }
         }

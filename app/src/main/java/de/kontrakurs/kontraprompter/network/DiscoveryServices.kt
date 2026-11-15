@@ -62,7 +62,7 @@ internal class DiscoveryServices<T : Any> {
     }
     @Synchronized fun current(selection: Selection<T>): Boolean =
         open && selected === selection && services.values.any { it === selection.item }
-    @Synchronized fun hasSelection(): Boolean = open && selected != null
+    @Synchronized fun currentSelection(): Selection<T>? = if (open) selected else null
 
     /** Keep work under this monitor in-memory or strictly nonblocking. */
     @Synchronized fun <R> ifCurrent(selection: Selection<T>, action: () -> R): R? =

@@ -30,6 +30,7 @@ data class LanState(
     val devices: List<FoundDevice> = emptyList(), val remoteName: String = "",
     val authenticated: Boolean = false, val localApproved: Boolean = false,
     val remoteApproved: Boolean = false, val ready: Boolean = false, val rttMs: Long? = null,
+    val discoveryResolving: Boolean = false,
 )
 
 /** A late first frame must not overwrite a newer connection result or an error. */
@@ -37,6 +38,10 @@ internal fun firstCameraFrame(state: LanState): LanState =
     if (state.ready && state.error == null && state.status == "Gekoppelt; Video wird vorbereitet")
         state.copy(status = "Kamerabild verfügbar; Verbindung wird aufgebaut")
     else state
+
+internal fun discoveryDevicesChanged(state: LanState, devices: List<FoundDevice>, invalidated: Boolean, message: String): LanState =
+    if (invalidated && state.discoveryResolving) state.copy(devices = devices, discoveryResolving = false, error = message)
+    else state.copy(devices = devices)
 
 /** A single short-lived LAN session. All SDP and ICE messages pass through the authenticated channel. */
 class LanSession(context: Context) : AutoCloseable {
@@ -50,9 +55,12 @@ class LanSession(context: Context) : AutoCloseable {
     private val connected = AtomicBoolean(false)
     private val socketLock = Any()
     private var connectGeneration = 0L
+    private var activeAttempt: Long? = null
+    private var connectOwner: DiscoveryServices.Selection<FoundDevice>? = null
     private val approvalLock = Any()
     private var server: ServerSocket? = null
     private var pendingSocket: Socket? = null
+    private var pendingAttempt: Long? = null
     @Volatile private var channel: AuthenticatedChannel? = null
     private var registration: NsdManager.RegistrationListener? = null
     private var discovery: NsdManager.DiscoveryListener? = null
@@ -109,19 +117,19 @@ class LanSession(context: Context) : AutoCloseable {
             override fun onStopDiscoveryFailed(type: String, code: Int) = Unit
             override fun onServiceFound(info: NsdServiceInfo) {
                 if (info.serviceType.trimEnd('.') == SERVICE_TYPE.trimEnd('.')) synchronized(discoveryEventLock) {
-                    val hadSelection = discovered.hasSelection()
+                    val previous = discovered.currentSelection()
                     val devices = discovered.found(info.serviceName, FoundDevice(info.serviceName, info))
-                    val invalidated = hadSelection && !discovered.hasSelection()
-                    if (invalidated) supersedeConnectionAttempt("Suchergebnis geändert. Bitte Kamera erneut auswählen.")
-                    _state.update { it.copy(devices = devices) }
+                    val invalidated = previous != null && !discovered.current(previous)
+                    if (invalidated) supersedeConnectionAttempt(previous!!, "Suchergebnis geändert. Bitte Kamera erneut auswählen.")
+                    _state.update { discoveryDevicesChanged(it, devices, invalidated, "Kameradienst geändert. Bitte erneut auswählen.") }
                 }
             }
             override fun onServiceLost(info: NsdServiceInfo) = synchronized(discoveryEventLock) {
-                val hadSelection = discovered.hasSelection()
+                val previous = discovered.currentSelection()
                 val devices = discovered.lost(info.serviceName)
-                val invalidated = hadSelection && !discovered.hasSelection()
-                if (invalidated) supersedeConnectionAttempt("Kameradienst nicht mehr verfügbar. Bitte erneut auswählen.")
-                _state.update { it.copy(devices = devices) }
+                val invalidated = previous != null && !discovered.current(previous)
+                if (invalidated) supersedeConnectionAttempt(previous!!, "Kameradienst nicht mehr verfügbar. Bitte erneut auswählen.")
+                _state.update { discoveryDevicesChanged(it, devices, invalidated, "Kameradienst nicht mehr verfügbar. Bitte erneut auswählen.") }
             }
         }
         discovery = listener
@@ -130,37 +138,50 @@ class LanSession(context: Context) : AutoCloseable {
     @Suppress("DEPRECATION")
     internal fun resolve(device: FoundDevice, result: (DiscoveredEndpoint) -> Unit): Boolean {
         val selection = synchronized(discoveryEventLock) {
+            val previous = discovered.currentSelection()
             discovered.select(device).also { selected ->
-                if (selected != null) supersedeConnectionAttempt(null)
+                if (selected != null) {
+                    if (previous != null) supersedeConnectionAttempt(previous, null)
+                    _state.update { it.copy(discoveryResolving = true, error = null) }
+                }
             }
         }
         if (selection == null) return false
         val current = { !closed.get() && discovered.current(selection) }
         try {
             nsd.resolveService(device.info, object : NsdManager.ResolveListener {
-                override fun onResolveFailed(info: NsdServiceInfo, code: Int) { discovered.ifCurrent(selection) { if (!closed.get()) _state.update { it.copy(error = "Gerät nicht auflösbar ($code); manuelle Adresse verwenden.") } } }
+                override fun onResolveFailed(info: NsdServiceInfo, code: Int) { resolutionFailed(selection, "Gerät nicht auflösbar ($code); manuelle Adresse verwenden.") }
                 override fun onServiceResolved(info: NsdServiceInfo) {
                     if (!current()) return
                     val host = info.host?.hostAddress
                     if (info.serviceName != device.name || info.serviceType?.trimEnd('.') != SERVICE_TYPE.trimEnd('.') || info.port !in 1..65535 || host == null) {
-                        discovered.ifCurrent(selection) { if (!closed.get()) _state.update { it.copy(error = "Kameradienst unvollständig oder veraltet. Bitte erneut auswählen.") } }
-                    } else result(DiscoveredEndpoint(host, info.port, selection))
+                        resolutionFailed(selection, "Kameradienst unvollständig oder veraltet. Bitte erneut auswählen.")
+                    } else {
+                        val accepted = discovered.ifCurrent(selection) {
+                            if (closed.get()) false else { _state.update { it.copy(discoveryResolving = false) }; true }
+                        } ?: false
+                        if (accepted) result(DiscoveredEndpoint(host, info.port, selection))
+                    }
                 }
             })
-        } catch (_: Exception) { discovered.ifCurrent(selection) { if (!closed.get()) _state.update { it.copy(error = "Gerät nicht auflösbar; manuelle Adresse verwenden.") } }; return false }
+        } catch (_: Exception) { resolutionFailed(selection, "Gerät nicht auflösbar; manuelle Adresse verwenden."); return false }
         return true
     }
+    private fun resolutionFailed(selection: DiscoveryServices.Selection<FoundDevice>, message: String) {
+        discovered.ifCurrent(selection) { if (!closed.get()) _state.update { it.copy(discoveryResolving = false, error = message) } }
+    }
     fun cancelResolutionSelection() = synchronized(discoveryEventLock) {
-        val hadSelection = discovered.hasSelection()
+        val previous = discovered.currentSelection()
         discovered.clearSelection()
-        if (hadSelection) supersedeConnectionAttempt(null)
+        if (previous != null) supersedeConnectionAttempt(previous, null)
+        _state.update { if (it.discoveryResolving) it.copy(discoveryResolving = false) else it }
     }
     internal fun isCurrent(endpoint: DiscoveredEndpoint): Boolean = !closed.get() && discovered.current(endpoint.selection)
     internal fun connectDiscovered(endpoint: DiscoveredEndpoint, token: String) {
         if (channel != null || _state.value.authenticated) return
         try { PairingCrypto.parseToken(token); require(endpoint.port in 1..65535 && isNumericIp(endpoint.address)) }
         catch (_: Exception) { discovered.ifCurrent(endpoint.selection) { if (!closed.get()) _state.update { it.copy(error = "Adresse, Port oder Sitzungscode ungültig.") } }; return }
-        val attempt = discovered.ifCurrent(endpoint.selection) { beginConnectionAttempt() } ?: return
+        val attempt = discovered.ifCurrent(endpoint.selection) { beginConnectionAttempt(endpoint.selection) } ?: return
         scope.launch {
             var socket: Socket? = null
             var openedWire: SocketChannel? = null
@@ -210,7 +231,7 @@ class LanSession(context: Context) : AutoCloseable {
     fun connect(address: String, port: Int, token: String) {
         if (channel != null || _state.value.authenticated) return
         try { PairingCrypto.parseToken(token); require(port in 1..65535); require(isNumericIp(address.trim())) { "Bitte eine numerische IP-Adresse eingeben." } } catch (e: Exception) { _state.update { it.copy(error = e.localizedMessage ?: "Adresse, Port oder Sitzungscode ungültig") }; return }
-        val attempt = beginConnectionAttempt() ?: return
+        val attempt = beginConnectionAttempt(null) ?: return
         scope.launch {
             val socket = Socket()
             if (!trackPending(socket, attempt)) { reportConnectionAttempt(attempt, "Eine Verbindung wird noch beendet. Bitte erneut versuchen."); return@launch }
@@ -221,22 +242,30 @@ class LanSession(context: Context) : AutoCloseable {
             } catch (_: Exception) { clearPending(socket); runCatching { socket.close() }; reportConnectionAttempt(attempt, "Verbindung fehlgeschlagen. Adresse, Port, Sitzungscode und gemeinsames Netz prüfen.") }
         }
     }
-    private fun beginConnectionAttempt(): Long? = synchronized(socketLock) {
-        if (closed.get() || channel != null || _state.value.authenticated) return null
+    private fun beginConnectionAttempt(owner: DiscoveryServices.Selection<FoundDevice>?): Long? = synchronized(socketLock) {
+        if (closed.get() || channel != null || _state.value.authenticated || activeAttempt != null) return null
         val attempt = ++connectGeneration
+        activeAttempt = attempt
+        connectOwner = owner
         readyDelivered.set(false)
         _state.update { it.copy(status = "Verbinde …", error = null) }
         attempt
     }
     private fun reportConnectionAttempt(attempt: Long, message: String) = synchronized(socketLock) {
-        if (!closed.get() && connectGeneration == attempt && channel == null)
+        if (!closed.get() && connectGeneration == attempt && activeAttempt == attempt && channel == null) {
+            activeAttempt = null; connectOwner = null
             _state.update { it.copy(status = "Nicht verbunden", error = message) }
+        }
     }
-    private fun supersedeConnectionAttempt(message: String?) {
+    private fun supersedeConnectionAttempt(owner: DiscoveryServices.Selection<FoundDevice>, message: String?) {
         val pending = synchronized(socketLock) {
+            if (connectOwner !== owner || activeAttempt == null) return
+            val previous = connectGeneration
             connectGeneration++
+            activeAttempt = null
+            connectOwner = null
             _state.update { if (it.status == "Verbinde …") it.copy(status = "Nicht verbunden", error = message) else it }
-            pendingSocket.also { pendingSocket = null }
+            if (pendingAttempt == previous) pendingSocket.also { pendingSocket = null; pendingAttempt = null } else null
         }
         pending?.let { runCatching { it.close() } }
     }
@@ -323,16 +352,16 @@ class LanSession(context: Context) : AutoCloseable {
     }
     private fun trackPending(socket: Socket, attempt: Long? = null): Boolean {
         val tracked = synchronized(socketLock) {
-            if (closed.get() || pendingSocket != null || channel != null || (attempt != null && connectGeneration != attempt)) false
-            else { pendingSocket = socket; true }
+            if (closed.get() || pendingSocket != null || channel != null || (attempt != null && (connectGeneration != attempt || activeAttempt != attempt))) false
+            else { pendingSocket = socket; pendingAttempt = attempt; true }
         }
         if (!tracked) runCatching { socket.close() }
         return tracked
     }
-    private fun clearPending(socket: Socket) = synchronized(socketLock) { if (pendingSocket === socket) pendingSocket = null }
+    private fun clearPending(socket: Socket) = synchronized(socketLock) { if (pendingSocket === socket) { pendingSocket = null; pendingAttempt = null } }
     private fun installWithoutClose(connection: AuthenticatedChannel, socket: Socket, attempt: Long? = null): Boolean = synchronized(socketLock) {
-        if (closed.get() || pendingSocket !== socket || (attempt != null && connectGeneration != attempt)) false
-        else { pendingSocket = null; channel = connection; connected.set(true); true }
+        if (closed.get() || pendingSocket !== socket || (attempt != null && (connectGeneration != attempt || activeAttempt != attempt))) false
+        else { pendingSocket = null; pendingAttempt = null; activeAttempt = null; connectOwner = null; channel = connection; connected.set(true); true }
     }
     private fun install(connection: AuthenticatedChannel, socket: Socket, attempt: Long? = null): Boolean {
         val ok = installWithoutClose(connection, socket, attempt)
@@ -353,7 +382,7 @@ class LanSession(context: Context) : AutoCloseable {
         if (!closed.compareAndSet(false, true)) return
         synchronized(discoveryEventLock) { discovered.close() }
         synchronized(socketLock) {
-            runCatching { pendingSocket?.close() }; pendingSocket = null
+            runCatching { pendingSocket?.close() }; pendingSocket = null; pendingAttempt = null
             runCatching { channel?.close() }; channel = null
             runCatching { server?.close() }; server = null
         }

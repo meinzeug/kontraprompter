@@ -24,17 +24,53 @@ class DiscoveryConnectionTest {
         target.javaClass.getDeclaredField(name).apply { isAccessible = true }.set(target, value)
     }
 
-    @Test fun `manual connection still authenticates on loopback`() {
+    @Test fun `resolve failure clears loading only for the selected generation`() {
+        val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
+        val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession
+        val first = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
+        val second = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
+        val discovery = DiscoveryServices<FoundDevice>()
+        discovery.found("first", first); discovery.found("second", second)
+        val old = discovery.select(first)!!
+        val current = discovery.select(second)!!
+        val state = MutableStateFlow(LanState(role = "client", discoveryResolving = true))
+        set(lan, "_state", state); set(lan, "discovered", discovery); set(lan, "closed", AtomicBoolean(false))
+        val method = LanSession::class.java.getDeclaredMethod("resolutionFailed", DiscoveryServices.Selection::class.java, String::class.java)
+            .apply { isAccessible = true }
+        method.invoke(lan, old, "old failure")
+        assertTrue(state.value.discoveryResolving)
+        assertNull(state.value.error)
+        method.invoke(lan, current, "current failure")
+        assertFalse(state.value.discoveryResolving)
+        assertEquals("current failure", state.value.error)
+    }
+
+    @Test fun `service loss ends loading only for the invalidated selection`() {
+        val loading = LanState(role = "client", discoveryResolving = true)
+        val unrelated = discoveryDevicesChanged(loading, emptyList(), false, "lost")
+        assertTrue(unrelated.discoveryResolving)
+        assertNull(unrelated.error)
+        val lost = discoveryDevicesChanged(loading, emptyList(), true, "lost")
+        assertFalse(lost.discoveryResolving)
+        assertEquals("lost", lost.error)
+    }
+
+    @Test fun `discovery invalidation cannot cancel a concurrent manual connection`() {
         val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
         val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val state = MutableStateFlow(LanState(role = "client"))
+        val item = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
+        val discovery = DiscoveryServices<FoundDevice>()
+        discovery.found("old camera", item); val selection = discovery.select(item)!!
         set(lan, "scope", scope); set(lan, "_state", state)
+        set(lan, "discovered", discovery); set(lan, "discoveryEventLock", Any())
         set(lan, "closed", AtomicBoolean(false)); set(lan, "connected", AtomicBoolean(false))
         set(lan, "readyDelivered", AtomicBoolean(false)); set(lan, "socketLock", Any()); set(lan, "deviceName", "test")
         val token = "00000000000000000000000000000000"
         val peerChannel = AtomicReference<AuthenticatedChannel>()
         val peerReady = CountDownLatch(1)
+        val accepted = CountDownLatch(1); val continueHandshake = CountDownLatch(1)
         val release = CountDownLatch(1)
         try {
             ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { server ->
@@ -42,12 +78,19 @@ class DiscoveryConnectionTest {
                 val host = Thread {
                     try {
                         val socket = server.accept().apply { soTimeout = 5_000 }
+                        accepted.countDown()
+                        check(continueHandshake.await(5, TimeUnit.SECONDS))
                         peerChannel.set(AuthenticatedChannel.host(socket, token, "test-host"))
                         peerReady.countDown()
                         release.await(5, TimeUnit.SECONDS)
                     } finally { peerChannel.get()?.close() }
                 }.apply { isDaemon = true; start() }
                 lan.connect("127.0.0.1", server.localPort, token)
+                assertTrue(accepted.await(5, TimeUnit.SECONDS))
+                // A second connection cannot seize the first attempt's slot.
+                lan.connectDiscovered(DiscoveredEndpoint("127.0.0.1", server.localPort, selection), token)
+                lan.cancelResolutionSelection()
+                continueHandshake.countDown()
                 assertTrue(peerReady.await(5, TimeUnit.SECONDS))
                 val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
                 while (!state.value.authenticated && System.nanoTime() < deadline) Thread.yield()
@@ -56,7 +99,7 @@ class DiscoveryConnectionTest {
                 release.countDown()
                 host.join(5_000)
             }
-        } finally { release.countDown(); peerChannel.get()?.close(); scope.cancel() }
+        } finally { continueHandshake.countDown(); release.countDown(); peerChannel.get()?.close(); scope.cancel(); discovery.close() }
     }
 
     @Test fun `losing selection closes the authenticating socket and prevents installation`() {
