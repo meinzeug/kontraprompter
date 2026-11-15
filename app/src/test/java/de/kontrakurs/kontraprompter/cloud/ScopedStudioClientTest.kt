@@ -2,9 +2,20 @@ package de.kontrakurs.kontraprompter.cloud
 
 import org.junit.Assert.*
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
 
 /** Exercises actual StudioClient ownership and snapshot operations without any network. */
 class ScopedStudioClientTest {
+    @Test fun `experimental shared clients cannot open network operations`() {
+        val registry = SessionRegistry()
+        for (owner in SessionOwner.entries) {
+            try { StudioClient(registry, owner).checkNetworkAllowed(); fail("unfenced network enabled") }
+            catch (_: IllegalStateException) { }
+            try { runBlocking { StudioClient(registry, owner).login("synthetic") }; fail("shared login reached network") }
+            catch (_: IllegalStateException) { }
+        }
+        StudioClient().checkNetworkAllowed() // legacy isolated client remains usable
+    }
     @Test fun `same owner shares session while camera stays independent`() {
         val registry = SessionRegistry()
         val one = StudioClient(registry, SessionOwner.STUDIO_UPLOAD)

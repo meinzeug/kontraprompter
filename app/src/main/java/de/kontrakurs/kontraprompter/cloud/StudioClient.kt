@@ -32,9 +32,9 @@ import de.kontrakurs.kontraprompter.parseGenerationNotice
 import de.kontrakurs.kontraprompter.requireProjectString
 
 /** HTTPS-only, in-memory session. No password or session cookie is persisted. */
-class StudioClient private constructor(internal val cookie: SessionCookie) {
-    constructor() : this(SessionCookie())
-    internal constructor(registry: SessionRegistry, owner: SessionOwner) : this(registry.slot(owner))
+class StudioClient private constructor(internal val cookie: SessionCookie, private val scopedExperiment: Boolean) {
+    constructor() : this(SessionCookie(), false)
+    internal constructor(registry: SessionRegistry, owner: SessionOwner) : this(registry.slot(owner), true)
     companion object { private const val BASE = "https://videomaker.dorfspy.de" }
 
     /** Reports only whether this app process currently holds a studio session. */
@@ -440,12 +440,18 @@ class StudioClient private constructor(internal val cookie: SessionCookie) {
         } finally { connection.disconnect() }
     }
 
-    private fun open(path: String, method: String): HttpURLConnection = (URL(BASE + path).openConnection() as HttpURLConnection).apply {
+    /** Shared sessions have no delivery/journal fence yet and must never reach the network. */
+    internal fun checkNetworkAllowed() { check(!scopedExperiment) { "Gemeinsame Studiositzung ist noch nicht freigegeben." } }
+
+    private fun open(path: String, method: String): HttpURLConnection {
+        checkNetworkAllowed()
+        return (URL(BASE + path).openConnection() as HttpURLConnection).apply {
         requestMethod = method
         connectTimeout = 10000
         readTimeout = 30000
         instanceFollowRedirects = false
         useCaches = false
+        }
     }
 }
 
