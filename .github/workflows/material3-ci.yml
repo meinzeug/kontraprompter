@@ -34,6 +34,11 @@ jobs:
         run: ./gradlew --no-daemon --max-workers=1 --stacktrace :app:testDebugUnitTest
       - name: Android lint
         run: ./gradlew --no-daemon --max-workers=1 --stacktrace :app:lintDebug
+      - name: Assemble unsigned release candidate
+        run: |
+          ./gradlew --no-daemon --max-workers=1 --stacktrace :app:assembleRelease
+          test -s app/build/outputs/apk/release/app-release-unsigned.apk
+          sha256sum app/build/outputs/apk/release/app-release-unsigned.apk
       - name: Save resolution and reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -44,5 +49,6 @@ jobs:
             build-environment.txt
             build-info.txt
             app/build/reports/
+            app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: warn
           retention-days: 2
