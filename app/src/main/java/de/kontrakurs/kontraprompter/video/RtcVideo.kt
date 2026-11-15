@@ -30,7 +30,8 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     private var factory: PeerConnectionFactory? = null
     private var peer: PeerConnection? = null
     private var source: VideoSource? = null
-    private val rawFrames = RawFrameFanout<VideoFrame>()
+    private val captureProfile = CameraCaptureProfile.select(BuildConfig.DEBUG, BuildConfig.EXPERIMENTAL_RAW_RECORDING, BuildConfig.EXPERIMENTAL_FIXED_CAMERA_FPS)
+    private val rawFrames = if (captureProfile.raw) RawFrameFanout<VideoFrame>() else null
     private var localTrack: VideoTrack? = null
     private var camera: CameraVideoCapturer? = null
     private var textureHelper: SurfaceTextureHelper? = null
@@ -62,14 +63,14 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
                     val enumerator: CameraEnumerator = if (Camera2Enumerator.isSupported(context)) Camera2Enumerator(context) else Camera1Enumerator(false)
                     val name = chooseCamera(enumerator.deviceNames.toList(), preferFrontCamera, enumerator::isFrontFacing, enumerator::isBackFacing) ?: error("Keine Kamera verfügbar")
                     onCameraSelection?.invoke(if (enumerator.isFrontFacing(name)) true else if (enumerator.isBackFacing(name)) false else null, enumerator.deviceNames.any { enumerator.isFrontFacing(it) } && enumerator.deviceNames.any { enumerator.isBackFacing(it) })
-                    camera = if (BuildConfig.DEBUG && BuildConfig.EXPERIMENTAL_FIXED_CAMERA_FPS && enumerator is Camera2Enumerator) {
+                    camera = if (captureProfile.fixedFps && enumerator is Camera2Enumerator) {
                         // Isolated diagnostic build only. The selected AE range still requires device verification.
                         KpExperimentalCamera2Capturer(context, name, cameraEvents(), 20)
                     } else enumerator.createCapturer(name, cameraEvents()) ?: error("Kamera konnte nicht geöffnet werden")
                     textureHelper = SurfaceTextureHelper.create("KontraCamera", egl.eglBaseContext) ?: error("Kameraoberfläche nicht verfügbar")
                     source = factory!!.createVideoSource(false)
                     val upstream = source!!.capturerObserver
-                    camera!!.initialize(textureHelper, context.applicationContext, object : CapturerObserver {
+                    val captureObserver = if (rawFrames == null) upstream else object : CapturerObserver {
                         override fun onCapturerStarted(success: Boolean) = upstream.onCapturerStarted(success)
                         override fun onCapturerStopped() = upstream.onCapturerStopped()
                         override fun onFrameCaptured(frame: VideoFrame) {
@@ -77,13 +78,13 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
                             // Continue to deliver to WebRTC even if the recorder fails.
                             rawFrames.deliverThen(frame, upstream::onFrameCaptured)
                         }
-                    })
+                    }
+                    camera!!.initialize(textureHelper, context.applicationContext, captureObserver)
                     val track = factory!!.createVideoTrack("camera", source)
                     synchronized(sinks) { localTrack = track; sinks.forEach { track.addSink(it) } }
                     peer!!.addTrack(track, listOf("kontra")) ?: error("Videospur konnte nicht hinzugefügt werden")
                     preferVp8()
-                    // Experimental candidate: hardware support and long-run load are unverified.
-                    camera!!.startCapture(1280, 720, 20)
+                    camera!!.startCapture(captureProfile.width, captureProfile.height, 20)
                     peer!!.createOffer(createDescriptionObserver(generation), MediaConstraints())
                 }
             } catch (e: Exception) { lan.report("Videofehler", e.localizedMessage ?: "Video konnte nicht gestartet werden") }
@@ -216,10 +217,10 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
         }.isSuccess
     }
 
-    internal fun withRawFrameSource(action: (RawFrameSource<VideoFrame>?, EglBase.Context) -> Unit): Boolean {
+    internal fun withRecordingSources(action: (VideoTrack?, RawFrameSource<VideoFrame>?, EglBase.Context) -> Unit): Boolean {
         if (closed.get()) return false
         return runCatching {
-            executor.execute { action(if (closed.get() || !host || localTrack == null) null else rawFrames, egl.eglBaseContext) }
+            executor.execute { val track = if (closed.get() || !host) null else localTrack; action(track, if (track == null) null else rawFrames, egl.eglBaseContext) }
         }.isSuccess
     }
     internal fun browserPreviewAvailable(): Boolean = host && !closed.get() && cameraFrameAvailable && browserPreviewSafety.mayStart()
@@ -287,7 +288,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
             browserPreviewId = null
             if (runCatching { browserPreview?.close() }.isFailure) browserPreviewSafety.markCleanupUnknown()
             browserPreview = null
-            rawFrames.close()
+            rawFrames?.close()
             val track = synchronized(sinks) {
                 sinks.forEach { (if (host) localTrack else remoteTrack)?.removeSink(it) }
                 sinks.clear()

@@ -21,10 +21,12 @@ android {
     buildTypes {
         getByName("debug") {
             // Test build only; release cannot turn on this unvalidated camera path.
+            buildConfigField("boolean", "EXPERIMENTAL_RAW_RECORDING", providers.gradleProperty("experimentalRawRecording").map { (it == "true").toString() }.getOrElse("false"))
             buildConfigField("boolean", "EXPERIMENTAL_FIXED_CAMERA_FPS", useExperimentalFixedCameraFps.toString())
             buildConfigField("boolean", "FRAME_RATE_DIAGNOSTICS", providers.gradleProperty("frameDiagnostics").map { (it == "true").toString() }.getOrElse("false"))
         }
         getByName("release") {
+            buildConfigField("boolean", "EXPERIMENTAL_RAW_RECORDING", "false")
             buildConfigField("boolean", "EXPERIMENTAL_FIXED_CAMERA_FPS", "false")
             buildConfigField("boolean", "FRAME_RATE_DIAGNOSTICS", "false")
         }

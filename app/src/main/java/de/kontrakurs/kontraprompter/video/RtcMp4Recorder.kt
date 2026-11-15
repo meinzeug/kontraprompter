@@ -24,6 +24,7 @@ import org.webrtc.EglRenderer
 import org.webrtc.GlRectDrawer
 import org.webrtc.VideoFrame
 import org.webrtc.VideoSink
+import org.webrtc.VideoTrack
 import java.io.Closeable
 import java.io.File
 import java.io.RandomAccessFile
@@ -37,8 +38,8 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /**
- * Isolated recorder for a running camera's pre-adaptation frames. The caller owns
- * camera permission, RECORD_AUDIO permission, the frame source and its lifecycle.
+ * The recorder normally receives the existing local track; only an opted-in debug
+ * build may use the camera's pre-adaptation source. The caller owns both lifecycles.
  * This class never opens or closes the camera or PeerConnection. A caller must keep
  * the frame source alive when the LAN peer disconnects and while this recorder finalizes.
  *
@@ -47,7 +48,8 @@ import kotlin.math.max
  */
 internal class RtcMp4Recorder(
     context: Context,
-    private val frames: RawFrameSource<VideoFrame>,
+    private val track: VideoTrack,
+    private val frames: RawFrameSource<VideoFrame>?,
     private val sharedEglContext: EglBase.Context,
     private val recordingId: String,
     private val projectId: String?,
@@ -68,8 +70,6 @@ internal class RtcMp4Recorder(
     companion object {
         private const val SAMPLE_RATE = 48_000
         private const val AUDIO_BITRATE = 96_000
-        // Experimental HD candidate; not a quality or device-compatibility guarantee.
-        private const val VIDEO_BITRATE = 3_800_000
         private const val VIDEO_FPS = 20
         private const val MAX_DURATION_MS = 30 * 60 * 1000L
         private const val START_TIMEOUT_MS = 12_000L
@@ -100,8 +100,8 @@ internal class RtcMp4Recorder(
     private val lastEncodedVideoMs = AtomicLong(0)
     private val lastEncodedAudioMs = AtomicLong(0)
     // This build-time diagnostic is disabled by default and retains no image, audio or IDs.
-    private val cameraTiming = if (BuildConfig.FRAME_RATE_DIAGNOSTICS) CaptureFrameDiagnostics() else null
-    private val encoderTiming = if (BuildConfig.FRAME_RATE_DIAGNOSTICS) FrameRateDiagnostics() else null
+    private val cameraTiming = if (BuildConfig.DEBUG && BuildConfig.EXPERIMENTAL_RAW_RECORDING && BuildConfig.FRAME_RATE_DIAGNOSTICS) CaptureFrameDiagnostics() else null
+    private val encoderTiming = if (BuildConfig.DEBUG && BuildConfig.EXPERIMENTAL_RAW_RECORDING && BuildConfig.FRAME_RATE_DIAGNOSTICS) FrameRateDiagnostics() else null
     @Volatile private var archive: RecordingArchive? = null
     @Volatile private var file: RandomAccessFile? = null
     @Volatile private var mux: RecordingMuxer? = null
@@ -134,7 +134,8 @@ internal class RtcMp4Recorder(
                 startAtMs = SystemClock.elapsedRealtime()
                 emit(Event.Preparing(reserved.recordingId))
                 if (!stopRequested.get()) {
-                    check(frames.attach(this, ::onFrame) { fail("Rohbildquelle nicht mehr verfügbar") }) { "Rohbildquelle wird bereits verwendet" }
+                    if (frames == null) track.addSink(this)
+                    else check(frames.attach(this, ::onFrame) { fail("Rohbildquelle nicht mehr verfügbar") }) { "Rohbildquelle wird bereits verwendet" }
                     attached = true
                 }
                 watchdog.scheduleAtFixedRate({ checkLimits() }, 1, 1, TimeUnit.SECONDS)
@@ -218,7 +219,8 @@ internal class RtcMp4Recorder(
             val videoCaps = selected.getCapabilitiesForType("video/avc").videoCapabilities
             val videoFormat = MediaFormat.createVideoFormat("video/avc", w, h).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-                setInteger(MediaFormat.KEY_BIT_RATE, VIDEO_BITRATE.coerceIn(videoCaps.bitrateRange.lower, videoCaps.bitrateRange.upper))
+                val bitrate = CameraCaptureProfile.recorderBitrate(frames != null)
+                setInteger(MediaFormat.KEY_BIT_RATE, bitrate.coerceIn(videoCaps.bitrateRange.lower, videoCaps.bitrateRange.upper))
                 setInteger(MediaFormat.KEY_FRAME_RATE, VIDEO_FPS)
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
                 if (Build.VERSION.SDK_INT >= 29) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
@@ -400,7 +402,7 @@ internal class RtcMp4Recorder(
             emit(Event.Finalizing(current.recordingId, reason.get()))
         }
         watchdog.shutdownNow()
-        if (attached) { runCatching { frames.detach(this) }.onFailure { unsafeRelease = true; failure.compareAndSet(null, "Rohbildquelle konnte nicht gelöst werden") }; attached = false }
+        if (attached) { runCatching { if (frames == null) track.removeSink(this) else frames.detach(this) }.onFailure { unsafeRelease = true; failure.compareAndSet(null, if (frames == null) "Videospur konnte nicht gelöst werden" else "Rohbildquelle konnte nicht gelöst werden") }; attached = false }
         runCatching { renderer?.release() }.onFailure { unsafeRelease = true; failure.compareAndSet(null, "Videooberfläche konnte nicht geschlossen werden") }; renderer = null
         runCatching { videoEncoder?.signalEndOfInputStream() }.onFailure { if (videoEncoder != null) failure.compareAndSet(null, "Videoencoder konnte nicht abgeschlossen werden") }
         runCatching { audioInput?.stop() }.onFailure { if (audioInput != null && configured.get()) failure.compareAndSet(null, "Mikrofon konnte nicht gestoppt werden") }
