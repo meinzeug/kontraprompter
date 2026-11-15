@@ -14,7 +14,7 @@ private fun waitUntil(timeoutMs: Long = 2000, predicate: () -> Boolean) {
 }
 
 fun main() {
-    repeat(5) { scenario ->
+    repeat(6) { scenario ->
         val lan = LanSession()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
@@ -30,7 +30,7 @@ fun main() {
                 check(capture.state.value.pending)
                 check(lan.sent.none { it.first == "capture_query" && it.second.isNotBlank() })
             }
-            if (scenario == 1) {
+            if (scenario == 1 || scenario == 5) {
                 waitUntil(10_000) { capture.state.value.message == START_STATUS_TIMEOUT_MESSAGE }
                 check(capture.state.value.pending)
                 receive("capture_status", status(2)) // Uncorrelated timeout query cannot prove send ordering.
@@ -41,6 +41,14 @@ fun main() {
             check(capture.state.value.pending) // The earlier idle status cannot authorize disconnect.
             check(lan.sent.any { it.first == "capture_query" && it.second.isNotBlank() && JSONObject(it.second).optString("request") == request })
             fun countQueries() = lan.sent.count { it.first == "capture_query" && it.second.isNotBlank() && JSONObject(it.second).optString("request") == request }
+            if (scenario == 5) {
+                check(countQueries() == 1 && capture.state.value.pending)
+                waitUntil(10_000) { countQueries() == 2 }
+                check(capture.state.value.pending)
+                receive("capture_status", status(3, request))
+                check(!capture.state.value.pending && capture.state.value.message == null)
+                return@repeat
+            }
             if (scenario == 4) {
                 waitUntil(10_000) { countQueries() == 2 }
                 check(capture.state.value.pending && capture.state.value.message == START_STATUS_TIMEOUT_MESSAGE)
@@ -75,5 +83,5 @@ fun main() {
             check(capture.state.value.message == null)
         } finally { scope.cancel() }
     }
-    println("PASS: positive/negative ACK; malformed ACK; timeout before ACK; lost status after ACK; overtaken response; bounded retry; message cleanup")
+    println("PASS: positive/negative ACK; malformed ACK; timeout before ACK; lost status after ACK and late ACK; overtaken response; bounded retry; message cleanup")
 }
