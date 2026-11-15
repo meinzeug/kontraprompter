@@ -100,6 +100,18 @@ Codecverhalten, AAC-Dekodierung, Echtzeit, Drop-/Seek-/Netzwerkrennen und
 Produktionsfreigabe sind damit nicht bewiesen. Der Test verschickt weder Audio
 noch Transkripte und funktioniert nur mit separat bereitgestelltem Modellasset.
 
+Der isolierte [CI-Run 43678295966](https://github.com/meinzeug/kontraprompter/actions/runs/43678295966)
+zum Quellcommit `0a15363` hat diesen Testkandidaten erfolgreich kompiliert,
+die kopierten Quell-/Modell-/PCM-Hashes, Permissions und ABIs geprüft sowie
+sechs Fake-Native-Hosttests ausgeführt. Das kurzlebige
+[Artefakt 14147117699](https://github.com/meinzeug/kontraprompter/actions/runs/43678295966/artifacts/14147117699)
+enthält die App-APK (41.759.012 Bytes, SHA-256
+`721ac04559a1382c57fff5af25a9c408de0aae75d9b719641fa87d226cfa9e4b`)
+und die Test-APK (47.007.205 Bytes, SHA-256
+`16161d745a60eaeb1b3694f0ce69e745130121a1eb9a639f3c7c8d5b9bf918b6`).
+Die neu zusammengestellte AAC-/Sprachpipeline wurde nicht auf Android
+ausgeführt; ihr Build beweist keine erfolgreiche Instrumentierung.
+
 Der isolierte [CI-Run 43675525092](https://github.com/meinzeug/kontraprompter/actions/runs/43675525092)
 zum Quellcommit `3b94ab9` baut die Fixture mit integerbasiertem JNA-Aufruf und
 prüft Modell, synthetisches PCM, beide APK-Manifeste und native ABIs. Alle
