@@ -348,3 +348,31 @@ Sitzung mit Livebild wurde eingerichtet. Später waren direkte Pings in beiden
 Richtungen erfolgreich. Die genaue Ursache der zeitweisen fehlenden
 Netzwerkerreichbarkeit ist nicht festgestellt; eine automatische dauerhafte
 Wiederverbindung ist weiterhin nicht nachgewiesen.
+
+## Platzsparende Querformat-Bedienung
+
+Der Querformat-Kandidat wurde auf beiden Telefonen mit vorhandenen Appdaten
+installiert. Auf dem Samsung standen im Querformat Aufnahme, Stopp,
+Kamerawechsel, Editor, Anfang und Start in einer Zeile; der Text hatte dadurch
+mehr Platz. Auch mit aktiver Studioverbindung waren beide Statusflächen und die
+Bedienelemente sichtbar. Start, Pause, Fortsetzen und Stopp einer Testaufnahme
+wurden im Querformat vom Samsung ausgelöst und vom Xiaomi bestätigt. Die
+ursprünglichen Drehungseinstellungen wurden anschließend wiederhergestellt.
+Ein erster Versuch konnte die Aufnahmebedienung wegen einer getrennten
+Kameraverbindung nicht prüfen; nach frischer Kopplung gelang der beschriebene
+Test. Ein vollständiger TalkBack-Test und Tests aller sehr kleinen
+Fenstergrößen stehen aus.
+
+Die 4.180.076 Bytes große Testaufnahme wurde nach erneuter Kamera-Anmeldung
+hochgeladen. Die Serverdatei war 17,20 Sekunden lang und enthielt H.264 mit
+480 × 640 Pixeln sowie AAC mit 48 kHz; ihre SHA-256-Summe war
+`d877316fb6e7597c359a8041c40a6888f17ac372eb1cc69feb95c63ad397580f`.
+Ein Originalexport zum Bytevergleich erfolgte nicht.
+
+Die getestete Release-APK wurde auf Videomaker veröffentlicht. Der
+vollständige authentifizierte HTTPS-Download war 30.447.313 Bytes groß und
+hatte die SHA-256-Summe
+`3234dfcd22f7a66968d66d46d6280c406f53df7c8374fd36f0933eb3770e585c`.
+Alle 21 Projekte und 33 Aufnahmen waren bei der Bestandsprüfung vorhanden; die
+vorherige APK wurde gesichert. Die Weboberfläche kann weiterhin „Debug“ im
+Downloadnamen anzeigen, obwohl die APK nicht debuggbar ist.
