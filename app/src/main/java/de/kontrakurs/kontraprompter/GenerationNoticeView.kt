@@ -8,8 +8,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -37,12 +40,27 @@ internal fun GenerationNoticePanel(notice: GenerationNotice) {
 
 /** Always visible during playback; full historical text remains accessible. */
 @Composable
-internal fun PrompterGenerationNotice(notice: GenerationNotice) {
+internal fun PrompterGenerationNotice(notice: GenerationNotice, compact: Boolean = false) {
     if (!notice.needsAttention()) return
     var details by remember(notice) { mutableStateOf(false) }
+    val accessibilityText = buildString {
+        when (notice.status) {
+            GenerationNoticeStatus.UNKNOWN -> append("Für dieses Studio-Skript liegen keine Angaben zu Erstellhinweisen vor. Bitte Kanal und Text vor der Aufnahme prüfen. ")
+            GenerationNoticeStatus.INCOMPLETE -> append("Die Erstellhinweise sind unvollständig, ungültig oder möglicherweise veraltet. Bitte das Skript im Studio prüfen. ")
+            GenerationNoticeStatus.PROVIDED -> Unit
+        }
+        notice.messages.forEach { append(it); append(". ") }
+        append("Hinweise beziehen sich auf die Erstellung und sind keine Freigabe. Details öffnen.")
+    }
+    val accessible = if (compact) Modifier.semantics(mergeDescendants = true) { contentDescription = accessibilityText } else Modifier
     Surface(color = Color(0xf029241c), shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Color(0xffa88041)),
-        modifier = Modifier.fillMaxWidth().clickable { details = true }) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        modifier = Modifier.fillMaxWidth().then(accessible).clickable { details = true }) {
+        if (compact) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(notice.summary(), modifier = Modifier.weight(1f), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                Text("Details", color = Color(0xffffd79b), style = MaterialTheme.typography.labelMedium)
+            }
+        } else Column(Modifier.padding(horizontal = 14.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text("Hinweise zur Skripterstellung · Details öffnen", color = Color(0xffffd79b), style = MaterialTheme.typography.labelMedium)
             Text(notice.summary(), color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
         }
