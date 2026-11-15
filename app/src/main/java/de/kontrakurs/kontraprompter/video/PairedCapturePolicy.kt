@@ -1,5 +1,11 @@
 package de.kontrakurs.kontraprompter.video
 
+internal const val PAIRED_DISCONNECTED_MESSAGE = "Kameraverbindung getrennt. Aufnahmezustand unbekannt."
+
+/** A fresh, validated camera status replaces only the stale disconnection notice. */
+internal fun pairedMessageAfterStatus(previous: String?, failure: String?): String? =
+    failure ?: previous.takeUnless { it == PAIRED_DISCONNECTED_MESSAGE }
+
 internal fun shutterRequestMatches(expectedPhase: String, expectedId: String?, phase: String, recordingId: String?, pending: Boolean, connectionCurrent: Boolean): Boolean =
     connectionCurrent && !pending && phase == expectedPhase && recordingId == expectedId
 

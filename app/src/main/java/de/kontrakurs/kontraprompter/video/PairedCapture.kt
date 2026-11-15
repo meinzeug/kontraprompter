@@ -55,7 +55,7 @@ internal class PairedCapture(
 
     fun disconnected() = synchronized(lock) {
         pendingId = null; pendingAction = null; timeout?.cancel(); timeout = null; lastRevision = -1L
-        _state.value = PairedCaptureState(message = "Kameraverbindung getrennt. Aufnahmezustand unbekannt.")
+        _state.value = PairedCaptureState(message = PAIRED_DISCONNECTED_MESSAGE)
     }
 
     fun changed() { if (host && lan.state.value.ready) sendStatus() }
@@ -168,7 +168,7 @@ internal class PairedCapture(
                     val failure = if (phase == "failed") data.optString("message").take(240).takeIf { it.isNotBlank() } else null
                     val facing = when (data.optString("cameraFacing")) { "front" -> true; "back" -> false; else -> null }
                     val cameraError = data.optString("cameraError").take(200).takeIf { it.isNotBlank() }
-                    _state.value = _state.value.copy(phase = phase, recordingId = id, message = failure ?: _state.value.message, cameraFront = facing, cameraCanSwitch = data.optBoolean("cameraCanSwitch", false), cameraSwitching = data.optBoolean("cameraSwitching", false), cameraError = cameraError)
+                    _state.value = _state.value.copy(phase = phase, recordingId = id, message = pairedMessageAfterStatus(_state.value.message, failure), cameraFront = facing, cameraCanSwitch = data.optBoolean("cameraCanSwitch", false), cameraSwitching = data.optBoolean("cameraSwitching", false), cameraError = cameraError)
                 }
                 val query = canonicalUuid(data.optString("query"))
                 if (cameraStatusAnswersPending(pendingAction, pendingId, query)) {

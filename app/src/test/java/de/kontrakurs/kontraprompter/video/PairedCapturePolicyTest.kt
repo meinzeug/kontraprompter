@@ -4,6 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PairedCapturePolicyTest {
+    @Test fun `valid camera status clears only the stale disconnected notice`() {
+        assertNull(pairedMessageAfterStatus(PAIRED_DISCONNECTED_MESSAGE, null))
+        assertEquals("Kamera meldet Fehler", pairedMessageAfterStatus(PAIRED_DISCONNECTED_MESSAGE, "Kamera meldet Fehler"))
+        assertEquals("Befehl nicht bestätigt", pairedMessageAfterStatus("Befehl nicht bestätigt", null))
+        assertNull(pairedMessageAfterStatus(null, null))
+    }
+
     @Test fun `shutter command remains tied to its phase take and approved connection`() {
         assertTrue(shutterRequestMatches("recording", "take-1", "recording", "take-1", false, true))
         assertFalse(shutterRequestMatches("recording", "take-1", "recording", "take-2", false, true))
