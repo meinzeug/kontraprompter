@@ -67,6 +67,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
@@ -304,14 +305,18 @@ private fun KontraApp(activity: MainActivity) {
     }
     var cameraPermissionError by remember { mutableStateOf(false) }
     var cameraBusyError by remember { mutableStateOf(false) }
-    fun disconnectFromUi() {
+    var recoverySession by remember { mutableStateOf<LiveSession?>(null) }
+    fun disconnectFromUi(recoveryTarget: LiveSession? = null) {
         val active = session
         if (active == null) { page = "roles"; return }
-        if (!active.host && active.lan.state.value.ready) {
+        if (recoveryTarget != null && recoveryTarget !== active) return
+        if (!active.host) {
+            val ready = active.lan.state.value.ready
             val paired = active.pairedCapture.state.value
-            if (!mayDisconnectRemote(ready = true, pending = paired.pending, phase = paired.phase)) {
-                android.widget.Toast.makeText(activity, "Kameraaufnahme läuft oder ihr Status ist unklar. Bitte zuerst auf der Kamera prüfen.", android.widget.Toast.LENGTH_LONG).show()
-                return
+            if (!mayDisconnectRemote(ready, paired.pending, paired.phase)) {
+                if (!ready && recoveryTarget == null) recoverySession = active
+                else if (ready || recoveryTarget == null) android.widget.Toast.makeText(activity, "Kameraaufnahme läuft oder ihr Status ist unklar. Bitte zuerst auf der Kamera prüfen.", android.widget.Toast.LENGTH_LONG).show()
+                if (ready || recoveryTarget == null) return
             }
         }
         if (!active.closeIfIdle()) {
@@ -463,41 +468,51 @@ private fun KontraApp(activity: MainActivity) {
     }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val drawerScope = rememberCoroutineScope()
+    var drawerOpenJob by remember { mutableStateOf<Job?>(null) }
     val uploadState by cloud.coordinator.state.collectAsState()
     val drawerAllowed = canShowDrawer(page, session?.host == true, uploadState is CloudUploadState.Running)
     fun drawerAllowedNow(): Boolean = canShowDrawer(page, session?.host == true, cloud.coordinator.state.value is CloudUploadState.Running)
-    LaunchedEffect(drawerAllowed) { if (!drawerAllowed && drawerState.isOpen) drawerState.close() }
     CompositionLocalProvider(
         LocalRemoteIndicator provides if (remoteEnabled) RemoteIndicator(remoteStatus) { remoteEnabled = false; remoteStatus = "Aus" } else null,
         LocalCameraIndicator provides session?.let { CameraIndicator(lanState.status, lanState.status == "Videoverbindung hergestellt") { page = "connection" } },
-        LocalDrawerOpen provides if (drawerAllowed) ({ if (drawerAllowedNow()) drawerScope.launch { drawerState.open() } }) else null,
     ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val expandedWindow = maxWidth >= 840.dp
-        ModalNavigationDrawer(
-            drawerState = drawerState,
-            gesturesEnabled = drawerAllowed,
-            drawerContent = {
-                ModalDrawerSheet(Modifier.widthIn(max = if (expandedWindow) 360.dp else 320.dp)) {
-                    Spacer(Modifier.height(20.dp))
-                    Text("KONTRAPROMPTER", modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp), style = MaterialTheme.typography.titleMedium)
-                    DrawerDestination.entries.forEach { destination ->
-                        NavigationDrawerItem(
-                            label = { Text(destination.label) },
-                            icon = { Text(destination.symbol, modifier = Modifier.clearAndSetSemantics {}) },
-                            selected = destination.isCurrent(page),
-                            onClick = {
-                                if (drawerAllowedNow()) {
-                                    if (destination == DrawerDestination.HELP) helpReturn = if (page == "editor") "editor" else "roles"
-                                    page = destination.route
-                                }
-                                drawerScope.launch { drawerState.close() }
-                            },
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                        )
+        LaunchedEffect(drawerAllowed, expandedWindow) {
+            if (!drawerAllowed || expandedWindow) {
+                drawerOpenJob?.cancelAndJoin()
+                drawerOpenJob = null
+                drawerState.close()
+            }
+        }
+        fun selectDestination(destination: DrawerDestination) {
+            if (drawerAllowedNow()) {
+                if (destination == DrawerDestination.HELP && page != "help") helpReturn = page
+                page = destination.route
+            }
+            drawerOpenJob?.cancel()
+            drawerScope.launch { drawerState.close() }
+        }
+        CompositionLocalProvider(
+            LocalDrawerOpen provides if (drawerAllowed && !expandedWindow) ({
+                if (drawerAllowedNow()) {
+                    drawerOpenJob?.cancel()
+                    drawerOpenJob = drawerScope.launch {
+                        if (drawerAllowedNow()) drawerState.open()
+                        if (!drawerAllowedNow()) drawerState.close()
                     }
                 }
+            }) else null,
+        ) {
+        PermanentNavigationDrawer(
+            drawerContent = {
+                if (expandedWindow && drawerAllowed) PermanentDrawerNavigationView(page = page, onSelect = ::selectDestination)
             },
+        ) {
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            gesturesEnabled = drawerAllowed && !expandedWindow,
+            drawerContent = { ModalDrawerNavigationView(state = drawerState, page = page, onSelect = ::selectDestination) },
         ) {
     AppBackground {
         when (page) {
@@ -639,7 +654,18 @@ private fun KontraApp(activity: MainActivity) {
         }
     }
         }
+        }
+        }
     }
+    }
+    recoverySession?.let { target ->
+        AlertDialog(
+            onDismissRequest = { recoverySession = null },
+            title = { Text("Kamerastatus unbekannt") },
+            text = { Text("Die Verbindung ist unterbrochen. Eine Aufnahme kann auf dem Kameragerät weiterlaufen. Prüfe dort den Zustand und stoppe die Aufnahme bei Bedarf, bevor du diese Sitzung verlässt.") },
+            confirmButton = { TextButton(onClick = { recoverySession = null; disconnectFromUi(target) }) { Text("Geprüft – Sitzung verlassen") } },
+            dismissButton = { TextButton(onClick = { recoverySession = null }) { Text("Zurück") } },
+        )
     }
 }
 
