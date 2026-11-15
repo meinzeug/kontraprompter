@@ -165,3 +165,22 @@ AAC-Ton mit 48 kHz. Ihre SHA-256-Summe war
 `267c309d2aa7364b2dd99f1331160dcc962714a0e28723e30ffb8c6feb0c2ec7`.
 Für diese zusätzliche Aufnahme wurde kein erneuter Originalexport verglichen;
 der bytegleiche Originalvergleich ist oben für die vorherige Aufnahme belegt.
+
+## Statusanzeige nach Neukopplung
+
+Die Release-APK mit der Korrektur des veralteten Trennungshinweises wurde auf
+beiden Geräten als Update installiert. Ihre SHA-256-Summe ist
+`21526ddcca71d65d777d0f3c576b93bbed1c2862fdb676dc73dfbe6581948d6b`.
+Ein vollständiger CI-Lauf bestand mit 174 Tests. Nach Trennung und manueller
+Neukopplung meldete das Samsung „Kamera bereit“ und eine hergestellte
+Videoverbindung; der alte Trennungshinweis war nicht mehr sichtbar. Start,
+Pause, Fortsetzen und Stopp einer weiteren Aufnahme wurden vom Samsung aus
+geprüft. Die Aufnahme wurde lokal gespeichert und ihr Upload zum Skript vom
+Server bestätigt. Beide Geräte waren anschließend bei Videomaker angemeldet;
+die Web-Fernsteuerung des Teleprompters war aktiviert.
+
+Diese APK wurde danach auf Videomaker veröffentlicht. Ein vollständiger
+authentifizierter HTTPS-Download hatte dieselbe SHA-256-Summe wie die auf
+beiden Geräten installierte Datei. Alle 21 Projekte und 24 Aufnahmen der
+Serverprüfung waren vorhanden. Die Beschriftung der Weboberfläche kann bis zum
+separaten Web-Update weiterhin „Debug“ anzeigen.
