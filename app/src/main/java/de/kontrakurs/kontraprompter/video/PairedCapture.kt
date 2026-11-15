@@ -99,8 +99,14 @@ internal class PairedCapture(
             delay(8_000)
             synchronized(lock) {
                 if (pendingId == requestId) {
-                    pendingId = null; pendingAction = null
-                    _state.value = _state.value.copy(pending = false, message = "Keine Bestätigung. Bitte Kamerastatus prüfen; der Befehl wird nicht automatisch wiederholt.")
+                    // Sending is asynchronous: even a status query after timeout may
+                    // overtake an unsent start. Keep that start fenced until its ACK
+                    // and a later, correlated status arrive, or the session is reset.
+                    val keepPending = retainPendingAfterTimeout(pendingAction)
+                    if (!keepPending) { pendingId = null; pendingAction = null }
+                    _state.value = _state.value.copy(pending = keepPending, message = if (keepPending)
+                        "Keine Startbestätigung. Bitte Aufnahme direkt an der Kamera prüfen und bei Bedarf dort stoppen. Bleibt der Status ungeklärt, Verbindung unterbrechen und Sitzung bewusst verlassen."
+                    else "Keine Bestätigung. Bitte Kamerastatus prüfen; der Befehl wird nicht automatisch wiederholt.")
                     lan.send("capture_query", "")
                 }
             }
@@ -144,8 +150,8 @@ internal class PairedCapture(
                 if (isCurrentCaptureAck(pendingId, request)) {
                     val accepted = data.optBoolean("accepted", false)
                     if (cameraAckNeedsStatus(pendingAction, accepted)) {
-                        // Admission is not a completed switch. Query an authoritative snapshot tied
-                        // to this request; status may arrive before or after the acknowledgement.
+                        // Admission is not completion. Ask for a snapshot tied to
+                        // this request after receiving its acknowledgement.
                         lan.send("capture_query", JSONObject().put("request", request).toString())
                     } else {
                         pendingId = null; pendingAction = null; timeout?.cancel(); timeout = null
@@ -169,11 +175,11 @@ internal class PairedCapture(
                     val facing = when (data.optString("cameraFacing")) { "front" -> true; "back" -> false; else -> null }
                     val cameraError = data.optString("cameraError").take(200).takeIf { it.isNotBlank() }
                     _state.value = _state.value.copy(phase = phase, recordingId = id, message = pairedMessageAfterStatus(_state.value.message, failure), cameraFront = facing, cameraCanSwitch = data.optBoolean("cameraCanSwitch", false), cameraSwitching = data.optBoolean("cameraSwitching", false), cameraError = cameraError)
-                }
-                val query = canonicalUuid(data.optString("query"))
-                if (cameraStatusAnswersPending(pendingAction, pendingId, query)) {
-                    pendingId = null; pendingAction = null; timeout?.cancel(); timeout = null
-                    _state.value = _state.value.copy(pending = false)
+                    val query = canonicalUuid(data.optString("query"))
+                    if (cameraStatusAnswersPending(pendingAction, pendingId, query)) {
+                        pendingId = null; pendingAction = null; timeout?.cancel(); timeout = null
+                        _state.value = _state.value.copy(pending = false)
+                    }
                 }
             }
         }
