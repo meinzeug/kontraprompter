@@ -15,12 +15,16 @@ für die spätere Seitenmigration. Compose-Vorschauen zeigen Hell, Dunkel,
 Flächen für beliebige Videobilder bereit; der vorhandene Livebildpfad wird
 dadurch nicht verändert.
 
-Die App verwendet weiterhin bewusst ihr bisheriges dunkles `KontraTheme`.
+Der App-Einstieg verwendet nun `MaterialExpressiveTheme` mit Expressive-Motion
+und dem bisherigen dunklen `KontraTheme`-Farbschema, unabhängig von der
+Systemeinstellung. Typografie und Formen des bisherigen Einstiegs bleiben
+explizit gesetzt. Expressive-Komponenten können dennoch anders aussehen oder
+animieren und müssen visuell und hinsichtlich Bedienung geprüft werden.
 Bestehende Seiten enthalten feste helle Vordergrundfarben und dunkle Flächen;
 ein globales Umschalten auf ein helles dynamisches Schema ohne Migration würde
 Kontraste und die Lesbarkeit über Video gefährden. Erst nach schrittweiser
 Umstellung jeder Seite und Geräte-/Barrierefreiheitstests darf der App-Einstieg
-das adaptive Theme verwenden. Die neue Funktion aktiviert keine Navigation,
+die hellen oder dynamischen Paletten verwenden. Die neue Funktion aktiviert keine Navigation,
 Aufnahme oder Einstellung.
 
 `ThemeContrastTest` prüft die ausdrücklich definierten Text-/Hintergrundpaare

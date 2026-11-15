@@ -374,7 +374,8 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
         synchronized(guard) {
             if (closed) return
             closed = true
-            // Stop the direct peer independently of recorder finalization.
+            // On an active take, the video owner remains alive until finalization.
+            // Stop the direct peer independently; never wait for the recorder here.
             _video.value?.invalidatePrimaryPeer()
             _video.value?.stopAnyBrowserPreview()
             stopWhenStarted = true

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import de.kontrakurs.kontraprompter.cloud.CloudUploadCoordinator
@@ -106,16 +107,16 @@ internal fun CloudUploadScreen(recording: SavedRecording, client: StudioClient, 
             finally { autoBusy = false }
         }
     }
-    AppPage("Video zu Videomaker", "CLOUD-UPLOAD", "Wähle ausdrücklich das Skript, zu dem dieses Video gehören soll.", onBack = ::leave, showRemote = false) {
+    AppPage(stringResource(R.string.upload_title), stringResource(R.string.upload_eyebrow), stringResource(R.string.upload_description), onBack = ::leave, showRemote = false) {
         Text(if (recording.partial) "Unvollständiges Teilvideo · ${recording.durationUs / 1_000_000} Sek." else "Lokale Aufnahme · ${recording.durationUs / 1_000_000} Sek.", style = MaterialTheme.typography.titleMedium)
-        if (recording.partial) Text("Teilvideos können derzeit nur lokal exportiert werden.", color = MaterialTheme.colorScheme.error)
-        Text("Das Original bleibt auf diesem Gerät. Ein Cloud-Erfolg erscheint erst nach bestätigter Prüfung des Servers.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+        if (recording.partial) StudioMessage("Teilvideos können derzeit nur lokal exportiert werden.", error = true)
+        StudioMessage(stringResource(R.string.upload_original_note))
         Text(if (MANUAL_UPLOAD_CONTINUATION_ENABLED) "Beim Verlassen wird der Upload unterbrochen. Ein ausdrücklich aktivierter Auftrag kann nach Anmeldung beim erneuten Öffnen dieser Seite fortgesetzt werden." else "Beim Verlassen dieser Seite oder wenn Android die App neu erstellt, wird ein laufender Upload abgebrochen. Du kannst ihn anschließend erneut versuchen.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
         if (projects == null) {
-            AppPanel {
-                Text("Bei Videomaker anmelden", style = MaterialTheme.typography.titleMedium)
-                OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Studio-Passwort") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, enabled = !loading, modifier = Modifier.fillMaxWidth())
-                MainAction(if (loading) "Verbinde …" else "Anmelden", enabled = password.isNotEmpty() && !loading) {
+            StudioSurface {
+                Text(stringResource(R.string.upload_sign_in_title), style = MaterialTheme.typography.titleLarge)
+                OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text(stringResource(R.string.studio_password)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true, enabled = !loading, modifier = Modifier.fillMaxWidth())
+                MainAction(stringResource(if (loading) R.string.studio_connecting else R.string.studio_sign_in), enabled = password.isNotEmpty() && !loading) {
                     val entered = password; password = ""
                     scope.launch {
                         loading = true; error = null
@@ -134,26 +135,26 @@ internal fun CloudUploadScreen(recording: SavedRecording, client: StudioClient, 
                 }
             }
         } else if (selected == null) {
-            Text("Skript auswählen", style = MaterialTheme.typography.titleMedium)
-            if (projects!!.isEmpty()) Text("Keine Skripte vorhanden.", color = SoftText)
-            projects!!.forEach { project -> ScriptTile(project.title, "Als Ziel auswählen") { selectionRevision++; selected = project } }
-            QuietAction(if (loading) "Lade …" else "Skripte aktualisieren", enabled = !loading) {
+            Text(stringResource(R.string.upload_choose_script), style = MaterialTheme.typography.titleLarge)
+            if (projects!!.isEmpty()) StudioSurface { StudioMessage(stringResource(R.string.upload_empty), announce = true) }
+            projects!!.forEach { project -> StudioProjectTile(project.title, stringResource(R.string.upload_choose_target)) { selectionRevision++; selected = project } }
+            QuietAction(stringResource(if (loading) R.string.studio_loading else R.string.studio_refresh), enabled = !loading) {
                 scope.launch { loading = true; error = null; try { projects = client.projects() } catch (e: Exception) { error = e.message ?: "Skripte nicht erreichbar." }; loading = false }
             }
         } else {
             val project = selected!!
             val currentJournal = matchingJournal(journal, recording.id, project.id)
-            AppPanel {
+            StudioSurface {
                 Text("Ziel: ${project.title}", style = MaterialTheme.typography.titleMedium)
                 val lastFailure = (state as? CloudUploadState.Failed)?.takeIf { it.recordingId == recording.id && it.projectId == project.id }
                 val deleted = currentJournal?.conflictReason == RECORDING_DELETED || lastFailure?.kind == RECORDING_DELETED
                 if (currentJournal?.conflictReason == RECORDING_DELETED && lastFailure?.kind != RECORDING_DELETED)
-                    Text(RECORDING_DELETED_MESSAGE, color = MaterialTheme.colorScheme.error)
+                    StudioMessage(RECORDING_DELETED_MESSAGE, error = true, announce = true)
                 when (val status = state) {
-                    is CloudUploadState.Running -> if (status.recordingId == recording.id && status.projectId == project.id) Text(if (status.sent == 0L) "Aufnahme wird geprüft …" else "Übertragen: ${(status.sent * 100 / status.total).coerceIn(0, 100)} % · Serverbestätigung ausstehend", color = SoftText) else Text("Ein anderer Upload wird noch beendet.", color = SoftText)
-                    is CloudUploadState.Confirmed -> if (showCoordinatorConfirmation(status, recording.id, project.id)) Text("Übertragung für dieses Skript bestätigt. Das Original bleibt lokal.", color = MaterialTheme.colorScheme.primary)
-                    is CloudUploadState.Failed -> if (status.recordingId == recording.id && status.projectId == project.id) Text(status.message, color = MaterialTheme.colorScheme.error)
-                    CloudUploadState.Idle -> if (currentJournal?.phase == "confirmed") Text("Eine frühere Übertragung wurde bestätigt.", color = SoftText) else if (currentJournal?.phase != null && !deleted) Text("Eine frühere Übertragung ist nicht bestätigt; erneut versuchen ist sicher.", color = SoftText)
+                    is CloudUploadState.Running -> if (status.recordingId == recording.id && status.projectId == project.id) StudioMessage(if (status.sent == 0L) "Aufnahme wird geprüft …" else "Übertragen: ${(status.sent * 100 / status.total).coerceIn(0, 100)} % · Serverbestätigung ausstehend") else StudioMessage("Ein anderer Upload wird noch beendet.", announce = true)
+                    is CloudUploadState.Confirmed -> if (showCoordinatorConfirmation(status, recording.id, project.id)) StudioMessage("Übertragung für dieses Skript bestätigt. Das Original bleibt lokal.", announce = true)
+                    is CloudUploadState.Failed -> if (status.recordingId == recording.id && status.projectId == project.id) StudioMessage(status.message, error = true, announce = true)
+                    CloudUploadState.Idle -> if (currentJournal?.phase == "confirmed") StudioMessage("Eine frühere Übertragung wurde bestätigt.") else if (currentJournal?.phase != null && !deleted) StudioMessage("Eine frühere Übertragung ist nicht bestätigt; erneut versuchen ist sicher.")
                 }
                 if (MANUAL_UPLOAD_CONTINUATION_ENABLED && !recording.partial && recording.projectId == null && !running) {
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -171,7 +172,7 @@ internal fun CloudUploadScreen(recording: SavedRecording, client: StudioClient, 
                     }
                 }
                 continuationMessage?.let { Text(it, color = SoftText, style = MaterialTheme.typography.bodySmall) }
-                if (running) QuietAction("Upload abbrechen") {
+                if (running) QuietAction(stringResource(R.string.upload_cancel)) {
                     val runningJob = job
                     if (MANUAL_UPLOAD_CONTINUATION_ENABLED && autoResume) scope.launch(start = CoroutineStart.UNDISPATCHED) {
                         val result = runCatching { withContext(NonCancellable) { continuation.pause(recording.id) } }
@@ -183,7 +184,7 @@ internal fun CloudUploadScreen(recording: SavedRecording, client: StudioClient, 
                         }
                     } else runningJob?.cancel()
                 }
-                else MainAction("Video hochladen", enabled = currentJournal != null && !currentJournal.failed && !recording.partial && !deleted) {
+                else MainAction(stringResource(R.string.upload_send), enabled = currentJournal != null && !currentJournal.failed && !recording.partial && !deleted) {
                     if (job?.isActive != true) job = scope.launch {
                         try {
                             if (MANUAL_UPLOAD_CONTINUATION_ENABLED && autoResume) {
@@ -195,9 +196,9 @@ internal fun CloudUploadScreen(recording: SavedRecording, client: StudioClient, 
                         catch (e: Exception) { error = e.message?.take(220) ?: "Upload nicht bestätigt. Das Original bleibt lokal." }
                     }
                 }
-                if (currentJournal == null) Text("Uploadstatus wird geprüft …", color = SoftText)
-                if (currentJournal?.failed == true) Text("Der Uploadstatus ist beschädigt. Bitte exportiere die lokale Aufnahme; es wird nichts überschrieben.", color = MaterialTheme.colorScheme.error)
-                QuietAction("Anderes Skript wählen", enabled = !running) {
+                if (currentJournal == null) StudioMessage(stringResource(R.string.upload_checking), announce = true)
+                if (currentJournal?.failed == true) StudioMessage("Der Uploadstatus ist beschädigt. Bitte exportiere die lokale Aufnahme; es wird nichts überschrieben.", error = true, announce = true)
+                QuietAction(stringResource(R.string.upload_change_script), enabled = !running) {
                     selectionRevision++
                     if (MANUAL_UPLOAD_CONTINUATION_ENABLED) scope.launch {
                         try {
@@ -210,7 +211,7 @@ internal fun CloudUploadScreen(recording: SavedRecording, client: StudioClient, 
                 }
             }
         }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+        error?.let { StudioMessage(it, error = true, announce = true) }
         Spacer(Modifier.height(8.dp))
     }
 }

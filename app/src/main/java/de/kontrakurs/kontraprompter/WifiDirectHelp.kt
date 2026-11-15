@@ -27,7 +27,7 @@ internal fun WifiDirectHelp() {
 
 @Composable
 internal fun WifiDirectGuide(expanded: Boolean, onToggle: () -> Unit) {
-    AppPanel {
+    CameraConnectionCard {
         val expandedLabel = stringResource(if (expanded) R.string.wifi_direct_expanded else R.string.wifi_direct_collapsed)
         TextButton(onClick = onToggle, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics { stateDescription = expandedLabel }) {
             Text(stringResource(R.string.wifi_direct_title))

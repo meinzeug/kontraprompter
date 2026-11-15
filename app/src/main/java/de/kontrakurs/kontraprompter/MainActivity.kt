@@ -18,6 +18,8 @@ import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
@@ -42,6 +44,9 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import de.kontrakurs.kontraprompter.cloud.CloudUploadState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,6 +74,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
@@ -138,6 +144,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         setContent {
             KontraTheme {
                 KontraApp(this)
@@ -156,6 +166,7 @@ private fun KontraApp(activity: MainActivity) {
     val selected = scripts.find { it.id == selectedId } ?: scripts.first()
     var page by rememberSaveable { mutableStateOf("roles") }
     var helpReturn by rememberSaveable { mutableStateOf("roles") }
+    var settingsReturn by rememberSaveable { mutableStateOf("editor") }
     var session by remember { mutableStateOf<LiveSession?>(null) }
     LaunchedEffect(page) { if (page == "roles") cameraPreferFront = preferences.getBoolean("camera_prefer_front", true) }
     val cloud: CloudUploadViewModel = viewModel()
@@ -347,7 +358,8 @@ private fun KontraApp(activity: MainActivity) {
             "studio", "editor" -> page = "scripts"
             "recordings" -> page = "roles"
             "upload" -> page = "recordings"
-            "settings", "calibration", "prompter" -> page = "editor"
+            "settings" -> page = settingsReturn
+            "calibration", "prompter" -> page = "editor"
             else -> page = "roles"
         }
     }
@@ -478,50 +490,105 @@ private fun KontraApp(activity: MainActivity) {
         activity.window.attributes = attrs
         onDispose { activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); val a = activity.window.attributes; a.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE; activity.window.attributes = a }
     }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val drawerScope = rememberCoroutineScope()
+    var drawerOpenJob by remember { mutableStateOf<Job?>(null) }
+    val uploadState by cloud.coordinator.state.collectAsState()
+    val drawerAllowed = canShowDrawer(page, session?.host == true, uploadState is CloudUploadState.Running)
+    fun drawerAllowedNow(): Boolean = canShowDrawer(page, session?.host == true, cloud.coordinator.state.value is CloudUploadState.Running)
     CompositionLocalProvider(
         LocalRemoteIndicator provides if (remoteEnabled) RemoteIndicator(remoteStatus) { remoteEnabled = false; remoteStatus = "Aus" } else null,
-        LocalCameraIndicator provides session?.let { CameraIndicator(lanState.status, lanState.status == "Videoverbindung hergestellt") { page = "connection" } }
+        LocalCameraIndicator provides session?.let { CameraIndicator(lanState.status, lanState.status == "Videoverbindung hergestellt") { page = "connection" } },
     ) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val expandedWindow = maxWidth >= 840.dp
+        LaunchedEffect(drawerAllowed, expandedWindow) {
+            if (!drawerAllowed || expandedWindow) {
+                drawerOpenJob?.cancelAndJoin()
+                drawerOpenJob = null
+                drawerState.close()
+            }
+        }
+        fun selectDestination(destination: DrawerDestination) {
+            if (drawerAllowedNow()) {
+                if (destination == DrawerDestination.HELP && page != "help") helpReturn = drawerReturnOrigin(destination, page, helpReturn, settingsReturn)
+                if (destination == DrawerDestination.SETTINGS && page != "settings") settingsReturn = drawerReturnOrigin(destination, page, helpReturn, settingsReturn)
+                page = destination.route
+            }
+            drawerOpenJob?.cancel()
+            drawerScope.launch { drawerState.close() }
+        }
+        CompositionLocalProvider(
+            LocalShellVisible provides drawerAllowed,
+            LocalDrawerOpen provides if (drawerAllowed && !expandedWindow) ({
+                if (drawerAllowedNow()) {
+                    drawerOpenJob?.cancel()
+                    drawerOpenJob = drawerScope.launch {
+                        if (drawerAllowedNow()) drawerState.open()
+                        if (!drawerAllowedNow()) drawerState.close()
+                    }
+                }
+            }) else null,
+        ) {
+        PermanentNavigationDrawer(
+            drawerContent = {
+                if (expandedWindow && drawerAllowed) PermanentDrawerNavigationView(page = page, onSelect = ::selectDestination)
+            },
+        ) {
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            gesturesEnabled = drawerAllowed && !expandedWindow,
+            drawerContent = { ModalDrawerNavigationView(state = drawerState, page = page, onBack = {
+                drawerOpenJob?.cancel()
+                drawerScope.launch { drawerState.close() }
+            }, onSelect = ::selectDestination) },
+        ) {
     AppBackground {
         when (page) {
-            "roles" -> AppPage("Bereit für deinen Auftritt.", "KONTRAPROMPTER", "Verbinde Kamera und Text – und behalte alles im Blick.") {
+            "roles" -> AppPage("Dein Studio", "KONTRAPROMPTER", "Wähle, wie du dieses Gerät beim Dreh einsetzen möchtest.") {
                 if (directPeerStopStatus == DirectPeerStop.State.PENDING || directPeerStopStatus == DirectPeerStop.State.FAILED) DirectPeerStopNotice(directPeerStopStatus)
-                Spacer(Modifier.height(8.dp))
-                Text("Dieses Gerät verwenden als", style = MaterialTheme.typography.titleMedium, color = SoftText)
-                RoleTile("Teleprompter", "Skripte lesen und fernsteuern", camera = false) { page = "scripts" }
-                Toggle("Frontkamera verwenden (aus: Rückkamera)", cameraPreferFront) { cameraPreferFront = it; preferences.edit().putBoolean("camera_prefer_front", it).apply() }
-                Text("Die Auswahl gilt für die nächste Kamerasitzung. Fehlt die gewählte Kamera, wird die andere verwendet. Bei aktiver Aufnahme bleibt sie unverändert.", color = SoftText, style = MaterialTheme.typography.bodySmall)
-                RoleTile("Kamera", "Livebild für den Teleprompter", camera = true) {
+                var cameraSettingsOpen by rememberSaveable { mutableStateOf(false) }
+                StudioRoleChoice("Teleprompter", "Skripte lesen und die Aufnahme steuern", camera = false, primary = true) { page = "scripts" }
+                StudioRoleChoice("Kamera", "Video und Ton auf diesem Gerät aufnehmen", camera = true, primary = false) {
                     if (!mayStartCamera(session != null)) android.widget.Toast.makeText(activity, "Bitte die bestehende Verbindung zuerst bewusst trennen.", android.widget.Toast.LENGTH_LONG).show()
                     else if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startHost()
                     else cameraPermission.launch(Manifest.permission.CAMERA)
                 }
-                Action("Aufnahmen") { page = "recordings" }
-                Action("Hilfe & Aufbau") { helpReturn = "roles"; page = "help" }
+                TextButton(onClick = { cameraSettingsOpen = !cameraSettingsOpen }, modifier = Modifier.heightIn(min = 48.dp).semantics { stateDescription = if (cameraSettingsOpen) "Aufgeklappt" else "Zugeklappt" }) {
+                    Text(if (cameraSettingsOpen) "Kameraeinstellungen schließen" else "Kamera einrichten")
+                }
+                if (cameraSettingsOpen) {
+                    Toggle("Frontkamera verwenden (aus: Rückkamera)", cameraPreferFront) { cameraPreferFront = it; preferences.edit().putBoolean("camera_prefer_front", it).apply() }
+                    Text("Die Auswahl gilt für die nächste Kamerasitzung. Fehlt die gewählte Kamera, wird die andere verwendet. Bei aktiver Aufnahme bleibt sie unverändert.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { page = "recordings" }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Aufnahmen") }
+                    TextButton(onClick = { helpReturn = "roles"; page = "help" }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Hilfe & Aufbau") }
+                }
                 if (cameraPermissionError) Text("Für die Kamera-Vorschau ist die Kameraerlaubnis erforderlich.", color = Color(0xffff7777))
                 if (cameraBusyError) Text("Die vorherige Aufnahme oder Kamera wird noch abgeschlossen. Bitte erneut versuchen.", color = Color(0xffffcd8a))
-                Spacer(Modifier.height(4.dp))
-                Text("Live-Vorschau zwischen zwei Geräten. Aufnahmen mit Ton bleiben zunächst auf dem Kameragerät.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+                Text("Aufnahmen bleiben zunächst auf dem Kameragerät.", color = SoftText, style = MaterialTheme.typography.bodySmall)
             }
             "help" -> HelpScreen(onBack = { page = helpReturn })
             "connection" -> session?.let { active ->
                 ConnectionScreen(active, cloud, onClose = { disconnectFromUi() }, onScripts = { page = "scripts" })
             } ?: Page("Nicht verbunden", "VERBINDUNG", onBack = { page = "roles" }) { Action("Zur Rollenwahl") { page = "roles" } }
             "scripts" -> Page("Deine Skripte", "TELEPROMPTER", onBack = { page = "roles" }) {
+                WorkflowHeading(stringResource(R.string.workflow_scripts_sources))
                 MainAction("Skripte aus Videomaker öffnen") { page = "studio" }
                 Action(if (session == null) "Kamera verbinden" else "Verbindung anzeigen") {
                     if (session == null) session = LiveSession(activity, false)
                     page = "connection"
                 }
                 Action("Neues Skript") { val s = Script(); scripts = scripts + s; repository.save(scripts); select(s.id); page = "editor" }
-                Spacer(Modifier.height(6.dp))
-                Text("Auf diesem Gerät", style = MaterialTheme.typography.titleMedium, color = SoftText)
+                WorkflowHeading(stringResource(R.string.workflow_scripts_local))
                 scripts.forEach { script ->
                     ScriptTile(script.title.ifBlank { "Ohne Titel" }, "${script.text.length} Zeichen") { select(script.id); page = "editor" }
                 }
             }
             "recordings" -> Page("Aufnahmen", "LOKAL GESPEICHERT", onBack = { page = "roles" }) {
-                if (recordings.isEmpty() && unverified.isEmpty()) Text("Noch keine Aufnahmen auf diesem Gerät.", color = SoftText)
+                if (recordings.isEmpty() && unverified.isEmpty()) WorkflowEmpty("Noch keine Aufnahmen auf diesem Gerät.")
+                if (recordings.isNotEmpty()) WorkflowHeading(stringResource(R.string.workflow_recordings_saved))
                 recordings.forEach { item ->
                     AppPanel {
                         Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(item.createdAtMs)), style = MaterialTheme.typography.titleMedium)
@@ -532,6 +599,7 @@ private fun KontraApp(activity: MainActivity) {
                         if (!item.partial) Action("In Videomaker hochladen") { uploadRecordingId = item.id; recordingsLoaded = false; page = "upload" }
                     }
                 }
+                if (unverified.isNotEmpty()) WorkflowHeading(stringResource(R.string.workflow_recordings_recovery))
                 unverified.forEach { item ->
                     AppPanel {
                         Text("Nicht geprüfte Aufnahmedatei", style = MaterialTheme.typography.titleMedium)
@@ -555,23 +623,25 @@ private fun KontraApp(activity: MainActivity) {
             "editor" -> Page("Skript bearbeiten", "LOKAL GESPEICHERT", onBack = { page = "scripts" }) {
                 selected.generationNotice?.let { GenerationNoticePanel(it) }
                 if (selected.generationNotice != null && selected.studioProjectId == null) Text("Diese lokale Kopie ist keinem aktuellen Studio-Skript zugeordnet. Für die Aufnahme kann bei aktiver Anmeldung ein eigenes Aufnahmeprojekt angelegt werden.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                WorkflowHeading(stringResource(R.string.workflow_editor_text))
                 OutlinedTextField(value = selected.title, onValueChange = { update(selected.copy(title = it)) }, label = { Text("Titel") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = selected.text, onValueChange = { update(selected.copy(text = it)) }, label = { Text("Skripttext") }, modifier = Modifier.fillMaxWidth().height(260.dp))
+                OutlinedTextField(value = selected.text, onValueChange = { update(selected.copy(text = it)) }, label = { Text("Skripttext") }, modifier = Modifier.fillMaxWidth().heightIn(min = 260.dp, max = 420.dp))
                 MainAction("Teleprompter öffnen") { page = "prompter" }
+                WorkflowHeading(stringResource(R.string.workflow_editor_tools))
                 Action("TXT oder Markdown importieren") { importer.launch(arrayOf("text/*", "application/octet-stream")) }
-                Action("Einstellungen") { page = "settings" }
+                Action("Einstellungen") { settingsReturn = "editor"; page = "settings" }
                 Action("Spiegelung kalibrieren") { page = "calibration" }
                 Action("Hilfe & Aufbau") { helpReturn = "editor"; page = "help" }
             }
-            "settings" -> Page("Einstellungen", "TELEPROMPTER", onBack = { page = "editor" }) {
-                Text("Text und Tempo", style = MaterialTheme.typography.titleLarge)
+            "settings" -> Page("Einstellungen", "TELEPROMPTER", onBack = { page = settingsReturn }) {
+                WorkflowHeading(stringResource(R.string.workflow_settings_text))
                 SettingSlider("Schriftgröße", fontSize, 20f..100f, "${fontSize.toInt()} sp") { fontSize = it }
                 SettingSlider("Scrolltempo", speed, 5f..160f, "${speed.toInt()} dp/s") { speed = it }
                 SettingSlider("Textbreite", width, .35f..1f, "${(width * 100).toInt()} %") { width = it }
                 SettingSlider("Zeilenabstand", lineSpacing, 1f..2f, "${(lineSpacing * 100).toInt()} %") { lineSpacing = it }
                 SettingSlider("Texthintergrund", backgroundOpacity, 0f..1f, "${(backgroundOpacity * 100).toInt()} %") { backgroundOpacity = it }
                 SettingSlider("Displayhelligkeit", brightness, .05f..1f, "${(brightness * 100).toInt()} %") { brightness = it }
-                Text("Kamerabild", style = MaterialTheme.typography.titleLarge)
+                WorkflowHeading(stringResource(R.string.workflow_settings_video))
                 Toggle("Video horizontal spiegeln", videoH) { videoH = it }
                 Toggle("Video vertikal spiegeln", videoV) { videoV = it }
                 Toggle("Video füllt Bild (Beschnitt)", videoFill) { videoFill = it }
@@ -580,7 +650,7 @@ private fun KontraApp(activity: MainActivity) {
                 SettingSlider("Video-Helligkeit", videoBrightness, 0f..1f, "${(videoBrightness * 100).toInt()} %") { videoBrightness = it }
                 Toggle("Aufnahme und Teleprompter synchron", recordingScrollSync) { recordingScrollSync = it; preferences.edit().putBoolean("recording_scroll_sync", it).apply() }
                 Text("Bei bestätigter Aufnahme startet oder pausiert der Text automatisch. Bei Stopp bleibt er stehen.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
-                Text("Bluetooth-Auslöser", style = MaterialTheme.typography.titleLarge)
+                WorkflowHeading(stringResource(R.string.workflow_settings_remote))
                 Text("Vor der Aufnahme startet ein kurzer Druck die Kamera. Während der Aufnahme startet oder pausiert ein kurzer Druck nur den Teleprompter; ein schneller Doppeldruck pausiert oder setzt die Aufnahme fort. Der ITFIT Selfie P007 wird automatisch erkannt. Andere Auslöser mit Lautstärke- oder Tastatureingaben bitte unten auswählen. Eingebaute Tasten bleiben unverändert.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 Text("Für ausgewählte Auslöser mit Enter oder ähnlichen Tasten im Prompter zuerst „Enter-Auslöser nicht bereit – aktivieren“ antippen. Bei Fokusverlust erneut aktivieren.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 if (Build.VERSION.SDK_INT >= 29) {
@@ -599,7 +669,7 @@ private fun KontraApp(activity: MainActivity) {
                     }
                     QuietAction("Geräteliste aktualisieren") { inputRefresh++ }
                 } else Text("Externe Auslöser werden ab Android 10 unterstützt.", color = SoftText)
-                Text("Anzeige und Spiegelung", style = MaterialTheme.typography.titleLarge)
+                WorkflowHeading(stringResource(R.string.workflow_settings_display))
                 Toggle("Text horizontal spiegeln", textH) { textH = it }
                 Toggle("Text vertikal spiegeln", textV) { textV = it }
                 Toggle("Fettschrift", bold) { bold = it }
@@ -608,7 +678,7 @@ private fun KontraApp(activity: MainActivity) {
                 Action("Text drehen: $textRotation°") { textRotation = (textRotation + 90) % 360 }
                 Action("Countdown: $countdown Sekunden") { countdown = when (countdown) { 3 -> 5; 5 -> 10; else -> 3 } }
                 Text("Fit zeigt das ganze Bild mit möglichen Balken. Fill füllt die Fläche und kann das Bild beschneiden.", color = Color.LightGray)
-                Action("Zurück zum Editor") { page = "editor" }
+                Action("Zurück") { page = settingsReturn }
             }
             "calibration" -> Page("Spiegelung kalibrieren", "AM SPIEGELGLAS", onBack = { page = "editor" }) {
                 Text("Prüfe die Lesbarkeit im tatsächlichen Aufbau. Glas und Geräteausrichtung können unterschiedliche Einstellungen erfordern.")
@@ -620,6 +690,10 @@ private fun KontraApp(activity: MainActivity) {
                 Action("Drehen: $textRotation°") { textRotation = (textRotation + 90) % 360 }
             }
             "prompter" -> key(selected.id) { Prompter(selected.text, selected.generationNotice, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, pairedCapture, recordingScrollSync, selected.studioProjectId != null, activity, selectedVolumeRemote, inputRefresh, { session?.pairedCapture?.toggle(selected.studioProjectId) }, { session?.pairedCapture?.request("stop") }, { session?.pairedCapture?.request("switch_camera") }, remoteActions) { playbackStatus = it } }
+        }
+    }
+        }
+        }
         }
     }
     }
@@ -644,7 +718,10 @@ private fun Page(title: String, eyebrow: String, onBack: (() -> Unit)? = null, c
 }
 @Composable private fun SettingSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, display: String, change: (Float) -> Unit) {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Panel).padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(label, style = MaterialTheme.typography.bodyLarge); Text(display, color = SoftText, style = MaterialTheme.typography.labelLarge) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+            Text(display, color = SoftText, style = MaterialTheme.typography.labelLarge)
+        }
         Slider(value = value, onValueChange = change, valueRange = range)
     }
 }
@@ -802,13 +879,13 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
         val showNotice = notice?.needsAttention() == true
         if (showCameraStatus || remote != null || showNotice) {
             if (canPlacePrompterStatusSideBySide(landscapeControls, remote?.status)) {
-                Row(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
+                Row(Modifier.align(Alignment.TopStart).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
                     if (showCameraStatus) Box(Modifier.weight(1f)) { CameraStatus() }
                     if (remote != null) Box(Modifier.weight(1f)) { RemoteBanner(remote) }
                     if (showNotice && notice != null) Box(Modifier.weight(1f)) { PrompterGenerationNotice(notice, compact = true) }
                 }
             } else {
-                Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.align(Alignment.TopStart).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (showCameraStatus) CameraStatus()
                     if (remote != null) RemoteBanner(remote)
                     if (showNotice && notice != null) PrompterGenerationNotice(notice, compact = true)
@@ -817,7 +894,7 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
         }
         if (focusLine) Box(Modifier.align(Alignment.CenterStart).width(22.dp).height(3.dp).background(Red))
         if (remaining > 0) Text("$remaining", Modifier.align(Alignment.Center), color = Red, fontSize = 100.sp, fontWeight = FontWeight.Black)
-        if (controls) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xf022252c)).padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (controls) PrompterOverlay(Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)).padding(12.dp)) {
             if (lanState.role == "client" && lanState.ready && keyboardDescriptor != null) KeyboardRemoteReady(activity, keyboardDescriptor, keyboardConnected)
             val showCaptureControls = lanState.role == "client" && lanState.ready
             if (landscapeControls && showCaptureControls) {

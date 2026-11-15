@@ -53,3 +53,7 @@ private fun ThemeExample() {
 
 @Preview(name = "Breit · 840 dp", showBackground = true, widthDp = 840)
 @Composable private fun ExpandedThemePreview() { KontraAdaptiveTheme(darkTheme = true, dynamicColor = false) { ThemeExample() } }
+
+@Preview(name = "App-Einstieg · helles System", showBackground = true, uiMode = Configuration.UI_MODE_NIGHT_NO, widthDp = 320, fontScale = 2f)
+@Preview(name = "App-Einstieg · dunkles System", showBackground = true, uiMode = Configuration.UI_MODE_NIGHT_YES, widthDp = 840)
+@Composable private fun AppEntryThemePreview() { KontraTheme { ThemeExample() } }

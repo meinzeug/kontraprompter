@@ -1,0 +1,9 @@
+# Direkter Verbindungstest mit zwei Smartphones
+
+Am 15. November 2026 wurden ein Xiaomi 2409BRN2CY als Kamera und ein Samsung SM-A526B als Teleprompter über USB bedient. Auf beiden Geräten war dieselbe Test-APK installiert (SHA-256 `9328e980fa2df55c0e8b417403cad3af1760fe120dadf42ed2565424ddc34fc8`). Die Kamera zeigte vor dem Test keine laufende Aufnahme. Es wurde keine Aufnahme gestartet, gelöscht oder zurückgesetzt und keine Netzwerkkonfiguration geändert.
+
+Die Gerätesuche auf dem Samsung fand den Xiaomi-Kameradienst und übernahm Adresse und Port. Der aktuelle Sitzungscode wurde ausschließlich in das geschützte Eingabefeld übertragen. Der Verbindungsversuch in der App endete mit **„Verbindung fehlgeschlagen. Bitte Kamera und Netzwerk prüfen.“** Die Kamera wartete weiterhin auf das Anzeigegerät; eine gegenseitige Bestätigung und ein Livebild kamen nicht zustande.
+
+Danach wurde die direkte TCP-Verbindung vom Samsung zum zuvor aufgelösten Ziel mit `toybox nc -w 3 -q 1 <Kameraadresse> <Kameraport>` bei geschlossenem Standard-Eingang geprüft. Sie scheiterte mit **`nc: connect: No route to host`**. Der aufgelöste Port war in der Xiaomi-Listenerliste sichtbar, die aufgelöste Adresse war zu diesem Zeitpunkt dem Xiaomi zugeordnet. Die Route auf dem Samsung führte über WLAN; die Nachbarauflösung für das Ziel war `FAILED`. Ein erster Aufruf mit `-q 0` wurde von `nc` wegen ungültiger Option abgelehnt und wird nicht als Netztest gewertet.
+
+Bestehende ADB-Reverse-Regeln wurden nicht verändert und für diese direkte App- und TCP-Prüfung nicht verwendet. Die Beobachtung belegt einen fehlgeschlagenen direkten Verbindungsaufbau; sie identifiziert keine konkrete Ursache in Router, WLAN oder Geräten. Ein Livebild, Mikrofon, Aufnahme oder Start/Pause/Fortsetzen/Stopp und damit auch die Laufzeitwirkung der ausstehenden Status-Fixes wurden nicht geprüft. Sitzungscodes und konkrete Netzwerkadressen sind hier nicht enthalten.

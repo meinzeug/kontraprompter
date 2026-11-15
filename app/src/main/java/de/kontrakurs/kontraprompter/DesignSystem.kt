@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -32,10 +34,13 @@ data class RemoteIndicator(val status: String, val onStop: () -> Unit)
 val LocalRemoteIndicator = staticCompositionLocalOf<RemoteIndicator?> { null }
 data class CameraIndicator(val status: String, val connected: Boolean, val onShow: () -> Unit)
 val LocalCameraIndicator = staticCompositionLocalOf<CameraIndicator?> { null }
+internal val LocalDrawerOpen = staticCompositionLocalOf<(() -> Unit)?> { null }
+internal val LocalShellVisible = staticCompositionLocalOf { false }
 private val DarkColors = darkColorScheme(
     primary = Accent, onPrimary = Color(0xff24090b),
     primaryContainer = Color(0xff54292d), onPrimaryContainer = Color(0xffffdcda),
     secondary = Color(0xffd7c2c1), onSecondary = Color(0xff392b2b),
+    secondaryContainer = Color(0xff4a292d), onSecondaryContainer = Color(0xffffdcda),
     surface = Panel, onSurface = Color(0xfff4f5f7),
     surfaceVariant = PanelRaised, onSurfaceVariant = SoftText,
     background = Ink, onBackground = Color(0xfff4f5f7),
@@ -54,10 +59,14 @@ fun KontraTheme(content: @Composable () -> Unit) {
         bodyMedium = default.bodyMedium.copy(lineHeight = 21.sp),
         labelLarge = default.labelLarge.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.1.sp),
     )
-    MaterialTheme(colorScheme = DarkColors, typography = type, shapes = Shapes(
-        extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(12.dp),
-        medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(24.dp), extraLarge = RoundedCornerShape(28.dp)
-    ), content = content)
+    // Existing pages contain fixed light text: keep their exact dark palette
+    // until each page has been migrated and checked in light and dynamic color.
+    CompositionLocalProvider(LocalKontraSpacing provides KontraSpacing()) {
+        MaterialExpressiveTheme(colorScheme = DarkColors, motionScheme = MotionScheme.expressive(), typography = type, shapes = Shapes(
+            extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(12.dp),
+            medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(24.dp), extraLarge = RoundedCornerShape(28.dp)
+        ), content = content)
+    }
 }
 
 @Composable
@@ -67,27 +76,49 @@ fun AppBackground(content: @Composable BoxScope.() -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppPage(title: String, eyebrow: String, description: String? = null, onBack: (() -> Unit)? = null, backLabel: String = "Zurück", showRemote: Boolean = true, showCamera: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
     val remote = LocalRemoteIndicator.current
     val camera = LocalCameraIndicator.current
+    val openDrawer = LocalDrawerOpen.current
+    val shellVisible = LocalShellVisible.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        Column(
-            Modifier.fillMaxHeight().widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 26.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            if (onBack != null) BackAction(onBack, label = backLabel)
-            if (showRemote && remote != null) RemoteBanner(remote)
-            if (showCamera && camera != null) CameraBanner(camera)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(Modifier.size(7.dp).background(Accent, RoundedCornerShape(50)))
-                Text(eyebrow, color = SoftText, style = MaterialTheme.typography.labelMedium, letterSpacing = 1.1.sp, fontWeight = FontWeight.Bold)
+        Column(Modifier.fillMaxHeight().widthIn(max = 640.dp).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing)) {
+            if (shellVisible) {
+                TopAppBar(
+                    title = { Text(if (title == "Bereit für deinen Auftritt.") "Start" else title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    navigationIcon = {
+                        if (openDrawer != null) IconButton(onClick = openDrawer, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                            Icon(ShellIcons.Menu, contentDescription = "Menü öffnen")
+                        }
+                    },
+                    actions = {
+                        if (onBack != null) IconButton(onClick = onBack, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                            Icon(ShellIcons.Back, contentDescription = backLabel)
+                        }
+                    },
+                    windowInsets = WindowInsets(0, 0, 0, 0),
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                )
             }
-            Text(title, style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.onBackground)
-            if (description != null) Text(description, color = SoftText, style = MaterialTheme.typography.bodyLarge)
-            Spacer(Modifier.height(2.dp))
-            content()
-            Spacer(Modifier.height(28.dp))
+            Column(
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (!shellVisible && onBack != null) BackAction(onBack, label = backLabel)
+                if (showRemote && remote != null) RemoteBanner(remote)
+                if (showCamera && camera != null) CameraBanner(camera)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.size(7.dp).background(Accent, RoundedCornerShape(50)))
+                    Text(eyebrow, color = SoftText, style = MaterialTheme.typography.labelMedium, letterSpacing = 1.1.sp, fontWeight = FontWeight.Bold)
+                }
+                if (!shellVisible || title == "Bereit für deinen Auftritt.") Text(title, style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.onBackground)
+                if (description != null) Text(description, color = SoftText, style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.height(2.dp))
+                content()
+                Spacer(Modifier.height(28.dp))
+            }
         }
     }
 }
@@ -154,6 +185,21 @@ fun QuietAction(label: String, enabled: Boolean = true, onClick: () -> Unit) {
 fun BackAction(onClick: () -> Unit, label: String = "Zurück") {
     TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 0.dp), modifier = Modifier.heightIn(min = 48.dp)) {
         Text("‹  $label", color = Color(0xffff9a97), style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+fun StudioRoleChoice(title: String, subtitle: String, camera: Boolean, primary: Boolean, onClick: () -> Unit) {
+    val background = if (primary) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant
+    val foreground = if (primary) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    Surface(onClick = onClick, modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp), shape = MaterialTheme.shapes.large, color = background) {
+        Row(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Icon(if (camera) ShellIcons.Camera else ShellIcons.Prompter, contentDescription = null, modifier = Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, color = foreground)
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = foreground)
+            }
+        }
     }
 }
 
