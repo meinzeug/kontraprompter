@@ -195,6 +195,7 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
                 else MainAction("Kopplung bestätigen") { session.lan.approve() }
             }
         }
+        if (!state.authenticated) WifiDirectHelp()
         if (state.ready && !session.host) MainAction("Zu Skripten und Prompter", onClick = onScripts)
         Text("Hier siehst du das Livebild. Die Aufnahme erfolgt am Kameragerät; Ton wird nicht live übertragen.", color = SoftText, style = MaterialTheme.typography.bodySmall)
         QuietAction("Trennen und zur Rollenwahl", onClick = onClose)
@@ -310,6 +311,7 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
                     Text("Adresse: ${state.addresses.joinToString().ifBlank { "Keine IPv4-Adresse gefunden" }}\nPort: ${state.port}", color = SoftText, style = MaterialTheme.typography.bodySmall)
                     Text("Beide Geräte müssen sich im lokalen Netz direkt erreichen können. Der Code gilt höchstens fünf Minuten und nur für eine Verbindung.", color = SoftText, style = MaterialTheme.typography.bodySmall)
                 }
+                WifiDirectHelp()
             } else if (state.authenticated && (!state.localApproved || !state.remoteApproved)) {
                 CameraConnectionCard {
                     Text("Kopplung bestätigen", style = MaterialTheme.typography.titleMedium)

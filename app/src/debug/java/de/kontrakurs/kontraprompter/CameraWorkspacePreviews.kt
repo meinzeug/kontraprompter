@@ -35,3 +35,16 @@ private fun CameraRecordingPreview() {
         }
     }
 }
+
+@Preview(name = "Wi-Fi Direct Hilfe – 200 %", widthDp = 320, heightDp = 640, fontScale = 2f, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "Wi-Fi Direct Hilfe – breit", widthDp = 840, heightDp = 480, uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Composable
+private fun WifiDirectHelpPreview() {
+    KontraTheme {
+        AppBackground {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+                WifiDirectGuide(expanded = true, onToggle = {})
+            }
+        }
+    }
+}

@@ -1,4 +1,12 @@
 <resources>
+    <string name="wifi_direct_title">Kamera nicht erreichbar? Wi-Fi Direct</string>
+    <string name="wifi_direct_expanded">Aufgeklappt</string>
+    <string name="wifi_direct_collapsed">Zugeklappt</string>
+    <string name="wifi_direct_safety">Vorher eine laufende Aufnahme auf der Kamera stoppen und vollständig speichern lassen. Die Systemeinstellungen können die aktuelle Sitzung beenden.</string>
+    <string name="wifi_direct_step_one">1. Auf beiden Geräten in den WLAN-Einstellungen „Wi-Fi Direct“ öffnen und die beiden Geräte dort manuell koppeln. Die Bezeichnung kann je nach Gerät anders lauten.</string>
+    <string name="wifi_direct_step_two">2. Danach in KontraPrompter auf der Kamera eine neue Kamerasitzung starten. Die angezeigten Adressen werden beim Start ermittelt.</string>
+    <string name="wifi_direct_step_three">3. Am Teleprompter die Wi-Fi-Direct-IP-Adresse der Kamera manuell eingeben, zusammen mit dem angezeigten Port und Sitzungscode. Nicht den automatischen Suchtreffer verwenden: Er kann die andere WLAN-Adresse enthalten. Beide Geräte bestätigen anschließend die Kopplung.</string>
+    <string name="wifi_direct_caveat">Welche angezeigte Adresse zu Wi-Fi Direct gehört, steht gegebenenfalls in den Netzwerkdetails des Kamerageräts. Internet und Studio können während der Umstellung unterbrochen werden.</string>
     <string name="studio_title">Deine Studio-Skripte</string>
     <string name="studio_eyebrow">VIDEOMAKER</string>
     <string name="studio_description">Öffne ein Skript aus deinem Studio auf diesem Gerät.</string>
