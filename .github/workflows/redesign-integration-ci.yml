@@ -32,6 +32,8 @@ jobs:
           ./gradlew --no-daemon --max-workers=1 --info --stacktrace :app:assembleDebug | tee build-info.txt
       - name: Unit tests
         run: ./gradlew --no-daemon --max-workers=1 --stacktrace :app:testDebugUnitTest
+      - name: Assemble release
+        run: ./gradlew --no-daemon --max-workers=1 --stacktrace :app:assembleRelease
       - name: Android lint
         run: ./gradlew --no-daemon --max-workers=1 --stacktrace :app:lintDebug
       - name: Save resolution and reports
