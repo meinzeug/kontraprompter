@@ -221,3 +221,15 @@ begrenzt, ist ungeklärt. Ein aussagekräftiger Vergleich mit guter Beleuchtung
 und getrennten Messungen von Kameraeingang und Encoderausgabe steht noch aus.
 Der Kandidat wurde deshalb nicht veröffentlicht. Auf beiden Geräten wurde
 anschließend wieder die oben dokumentierte Release-APK installiert.
+
+Ein darauf folgender, ausschließlich für die Diagnose aktivierter Testbuild
+zeichnete bei einer weiteren Aufnahme begrenzte Bildzähler auf: Am
+Recorder-Callback kamen 621 Bilder mit etwa 14,17 fps an; 17 davon fielen in
+die Vorbereitung, die übrigen 604 wurden angenommen und als 604 Videopuffer
+vom Encoder ausgegeben. Die Erfassung am Recorder-Callback ist keine direkte
+Sensormessung; die Encoderpuffer sind für sich genommen kein MP4-Nachweis.
+Die Aufnahme wurde regulär lokal abgeschlossen. Direkt anschließend meldete
+Android für den aktiven Kameraclient eine automatische Zielspanne von 5 bis
+30 fps, etwa 70,0 ms Belichtungszeit und 70,46 ms Bilddauer bei ISO 6300.
+Die Messung grenzt den Engpass vor der Encoderausgabe ein; ein Vergleich bei
+besserer Beleuchtung und eine Prüfung einer festen Bildrate stehen aus.
