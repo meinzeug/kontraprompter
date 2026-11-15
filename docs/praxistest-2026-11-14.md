@@ -317,3 +317,25 @@ verändert. Anonymer Download und Download nach Abmeldung waren gesperrt. Die
 vorherige APK wurde separat gesichert. Der Downloadname kann in der alten
 Weboberfläche weiterhin „Debug“ enthalten, obwohl die APK nicht debuggbar ist.
 Die Anmeldung und Kopplung werden dadurch noch nicht dauerhaft gespeichert.
+
+## Kompakter Status im Teleprompter
+
+Die überarbeitete Statusanzeige wurde mit der Release-APK auf beiden Geräten
+geprüft. Im Hochformat waren Aufnahmezustand und Studioverbindung sichtbar;
+der geöffnete Detaildialog zeigte Verbindung, Skriptzuordnung und Kameraauswahl.
+Eine erneute Aufnahme wurde vom Samsung aus gestartet, pausiert, fortgesetzt
+und auf dem Xiaomi gespeichert. Der Upload einer 4.229.987 Bytes großen
+Testdatei wurde auf dem Server gefunden.
+
+Im Querformat waren Aufnahme-, Stopp- und Promptertasten erreichbar. Bei
+sichtbarer Bedienleiste blieb jedoch wenig Platz für den Skripttext; nach dem
+Ausblenden der Leiste war mehr Text sichtbar. Die ursprünglichen
+Drehungseinstellungen des Samsung wurden wiederhergestellt. Ein vollständiger
+TalkBack-Test und eine Prüfung mit sehr großer Systemschrift stehen aus.
+
+Die getestete APK wurde auf Videomaker veröffentlicht. Der authentifizierte
+HTTPS-Download war 30.443.217 Bytes groß und hatte die SHA-256-Summe
+`d4cf8d7e7fc84494af3cb27d7a2c36b2a03fe525a511f2efa005f3e56daa1d18`.
+Bei der Bestandsprüfung waren alle 21 Projekte und 31 Aufnahmen vorhanden;
+die vorherige APK wurde gesichert. Die ältere Weboberfläche kann weiterhin
+„Debug“ im Downloadnamen anzeigen, obwohl die APK nicht debuggbar ist.
