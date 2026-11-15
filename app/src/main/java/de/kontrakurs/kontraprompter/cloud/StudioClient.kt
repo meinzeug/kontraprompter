@@ -40,10 +40,16 @@ class StudioClient {
     fun hasSession(): Boolean = cookie.get() != null
 
     /** Kept only for the duration of one manual continuation attempt. */
-    internal class ManualUploadSession internal constructor(internal val cookie: String)
-    internal fun manualUploadSession(): ManualUploadSession? = cookie.get()?.let(::ManualUploadSession)
-    internal fun manualUploadSessionMatches(session: ManualUploadSession): Boolean = cookie.get() == session.cookie
-    internal fun <T> withManualUploadSession(session: ManualUploadSession, action: () -> T): T? = cookie.withCurrent(session.cookie, action)
+    internal class ManualUploadSession internal constructor(internal val token: SessionCookie.Snapshot) {
+        internal constructor(cookie: String) : this(SessionCookie.Snapshot(cookie))
+        internal val cookie: String get() = token.cookie
+    }
+    internal fun manualUploadSession(): ManualUploadSession? = cookie.snapshot()?.let(::ManualUploadSession)
+    internal fun manualUploadSessionMatches(session: ManualUploadSession): Boolean = cookie.matches(session.token)
+    internal fun <T> withManualUploadSession(session: ManualUploadSession, action: () -> T): T? = cookie.withCurrent(session.token, action)
+    internal fun invalidateManualUploadSession(session: ManualUploadSession) = cookie.invalidate(session.token)
+    internal fun onUploadSessionSet(action: () -> Unit) = cookie.onSessionSet(action)
+    internal fun <T> withoutUploadSession(action: () -> T): T? = cookie.withoutSession(action)
     /** Random bearer sessions are bound only by a one-way, domain-separated digest. */
     internal fun manualUploadSessionBinding(session: ManualUploadSession): String =
         hex(MessageDigest.getInstance("SHA-256").digest(("kontraprompter-manual-upload-session-v1\u0000" + session.cookie).toByteArray(Charsets.UTF_8)))
@@ -124,11 +130,12 @@ class StudioClient {
         val worker = Thread({
             try {
                 if (recording.partial) throw UploadException("partial", "Unvollständige Teilvideos können derzeit nur lokal exportiert werden.")
-                val session = cookie.get() ?: throw UploadException("auth", "Bitte erneut bei Videomaker anmelden.")
-                if (requiredSession != null && requiredSession.cookie != session) throw UploadException("auth", "Die Studio-Sitzung hat sich geändert. Bitte erneut anmelden.")
+                val bound = requiredSession ?: manualUploadSession() ?: throw UploadException("auth", "Bitte erneut bei Videomaker anmelden.")
+                val session = bound.cookie
                 fun ensureSession() {
-                    requireUploadSession(session, cookie.get())
+                    if (!manualUploadSessionMatches(bound)) throw UploadException("auth", "Studio-Sitzung geändert; Serverbeleg prüfen. Die Aufnahme bleibt lokal.")
                 }
+                ensureSession()
                 if (recording.bytes !in 1..(1024L * 1024 * 1024) || !recording.file.isFile || recording.file.length() != recording.bytes)
                     throw UploadException("file_changed", "Lokale Aufnahme ist nicht vollständig vorhanden. Das Original bleibt lokal.")
                 check(entry.recordingId == recording.id && entry.size == recording.bytes && entry.sha256 == recording.sha256)
@@ -187,7 +194,7 @@ class StudioClient {
                     waitingForResponse.set(true)
                     val code = connection.responseCode
                     ensureSession()
-                    if (code !in 200..299) throw uploadFailure(code, session, connection, entry.cameraRecordingId != null)
+                    if (code !in 200..299) throw uploadFailure(code, bound, connection, entry.cameraRecordingId != null)
                     val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
                         val result = StringBuilder(); val block = CharArray(2048)
                         while (true) { val count = input.read(block); if (count < 0) break; check(result.length + count <= 16_384) { "Serverbestätigung ist ungültig." }; result.append(block, 0, count) }
@@ -199,11 +206,11 @@ class StudioClient {
                     val receipt = UploadReceipt(response.getString("id"), response.getString("projectId"), (rawSize as Number).toLong(), response.getString("sha256"))
                     check(receiptMatches(entry, receipt)) { "Serverbestätigung stimmt nicht mit der Aufnahme überein." }
                     ensureSession()
-                    if (delivered.compareAndSet(false, true) && continuation.isActive) continuation.resume(ManualUploadSession(session))
+                    if (delivered.compareAndSet(false, true) && continuation.isActive) continuation.resume(bound)
                 } catch (error: IOException) {
                     if (error is UploadException) throw error
                     val status = runCatching { connection.responseCode }.getOrNull()
-                    if (status != null && status !in 200..299) throw uploadFailure(status, session, connection, entry.cameraRecordingId != null)
+                    if (status != null && status !in 200..299) throw uploadFailure(status, bound, connection, entry.cameraRecordingId != null)
                     throw error
                 } finally { watchdog.shutdownNow(); active.compareAndSet(connection, null); connection.disconnect() }
             } catch (error: Exception) { if (delivered.compareAndSet(false, true) && continuation.isActive) continuation.resumeWithException(error) }
@@ -215,14 +222,14 @@ class StudioClient {
 
     private fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-    private fun uploadFailure(status: Int, session: String, connection: HttpURLConnection, cameraClaim: Boolean): UploadException = when (status) {
-        401, 403 -> { cookie.invalidate(session); UploadException("auth", "Sitzung abgelaufen. Bitte erneut anmelden.") }
+    private fun uploadFailure(status: Int, session: ManualUploadSession, connection: HttpURLConnection, cameraClaim: Boolean): UploadException = when (status) {
+        401, 403 -> UploadException("auth", "Sitzung abgelaufen. Bitte erneut anmelden.", invalidateSession = true)
         404 -> UploadException("project_missing", "Skript nicht gefunden oder Upload-Endpunkt nicht verfügbar. Die Aufnahme bleibt lokal.")
         409 -> {
             val code = runCatching { uploadConflictCode(connection.errorStream) }.getOrNull()
-            checkDeletedResponseSession(code, cookie.get() == session)
+            checkDeletedResponseSession(code, manualUploadSessionMatches(session))
             when (val kind = uploadConflictKind(code, cameraClaim)) {
-                RECORDING_DELETED -> UploadException(kind, RECORDING_DELETED_MESSAGE, ManualUploadSession(session))
+                RECORDING_DELETED -> UploadException(kind, RECORDING_DELETED_MESSAGE, session)
                 "manifest_pending" -> UploadException(kind, "Der Gerätenachweis fehlt noch. Die Aufnahme bleibt lokal und wird erneut gemeldet.")
                 "manifest_mismatch" -> UploadException(kind, "Der Gerätenachweis stimmt nicht mit der Aufnahme überein. Das Original bleibt lokal.")
                 "manifest_partial" -> UploadException(kind, "Das Teilvideo kann derzeit nur lokal exportiert werden.")
@@ -441,7 +448,7 @@ class StudioClient {
 
 data class StudioProject(val id: String, val title: String, val text: String, val generationNotice: GenerationNotice = GenerationNotice(GenerationNoticeStatus.UNKNOWN))
 data class StudioCommand(val id: String, val type: String, val projectId: String, val remainingMs: Long, val value: Double? = null)
-internal class UploadException(val kind: String, message: String, val boundSession: StudioClient.ManualUploadSession? = null) : IOException(message)
+internal class UploadException(val kind: String, message: String, val boundSession: StudioClient.ManualUploadSession? = null, val invalidateSession: Boolean = false) : IOException(message)
 internal class CameraDeviceTicketException(message: String) : IOException(message)
 internal class CameraProtocolConflictException(message: String) : IOException(message)
 internal class CameraRegistrationRequiredException : IOException("Dieses Kameragerät ist noch nicht registriert.")

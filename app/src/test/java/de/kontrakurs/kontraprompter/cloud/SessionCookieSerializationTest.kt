@@ -23,4 +23,23 @@ class SessionCookieSerializationTest {
         assertNull(cookie.withCurrent("old") { wrote = true })
         assertFalse(wrote); assertEquals("new", cookie.get())
     }
+    @Test fun `same cookie on a new login has a different upload generation`() {
+        val cookie = SessionCookie(); cookie.set("same")
+        val old = cookie.snapshot()!!
+        cookie.set(null); cookie.set("same")
+        val replacement = cookie.snapshot()!!
+        assertFalse(cookie.matches(old)); assertTrue(cookie.matches(replacement))
+        var wrote = false
+        assertNull(cookie.withCurrent(old) { wrote = true })
+        cookie.invalidate(old)
+        assertFalse(wrote); assertTrue(cookie.matches(replacement)); assertEquals("same", cookie.get())
+    }
+    @Test fun `unauthorized invalidation cannot overtake a newer login`() {
+        val cookie = SessionCookie(); cookie.set("old"); val old = cookie.snapshot()!!
+        cookie.set("new"); val newer = cookie.snapshot()!!
+        cookie.invalidate(old)
+        assertTrue(cookie.matches(newer)); assertEquals("new", cookie.get())
+        cookie.withCurrent(newer) { cookie.invalidate(newer) }
+        assertNull(cookie.get())
+    }
 }
