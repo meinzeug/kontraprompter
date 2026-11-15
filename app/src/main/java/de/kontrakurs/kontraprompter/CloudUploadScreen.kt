@@ -136,7 +136,7 @@ internal fun CloudUploadScreen(recording: SavedRecording, client: StudioClient, 
             }
         } else if (selected == null) {
             Text(stringResource(R.string.upload_choose_script), style = MaterialTheme.typography.titleLarge)
-            if (projects!!.isEmpty()) StudioSurface { StudioMessage(stringResource(R.string.upload_empty)) }
+            if (projects!!.isEmpty()) StudioSurface { StudioMessage(stringResource(R.string.upload_empty), announce = true) }
             projects!!.forEach { project -> StudioProjectTile(project.title, stringResource(R.string.upload_choose_target)) { selectionRevision++; selected = project } }
             QuietAction(stringResource(if (loading) R.string.studio_loading else R.string.studio_refresh), enabled = !loading) {
                 scope.launch { loading = true; error = null; try { projects = client.projects() } catch (e: Exception) { error = e.message ?: "Skripte nicht erreichbar." }; loading = false }
@@ -149,11 +149,11 @@ internal fun CloudUploadScreen(recording: SavedRecording, client: StudioClient, 
                 val lastFailure = (state as? CloudUploadState.Failed)?.takeIf { it.recordingId == recording.id && it.projectId == project.id }
                 val deleted = currentJournal?.conflictReason == RECORDING_DELETED || lastFailure?.kind == RECORDING_DELETED
                 if (currentJournal?.conflictReason == RECORDING_DELETED && lastFailure?.kind != RECORDING_DELETED)
-                    StudioMessage(RECORDING_DELETED_MESSAGE, error = true)
+                    StudioMessage(RECORDING_DELETED_MESSAGE, error = true, announce = true)
                 when (val status = state) {
-                    is CloudUploadState.Running -> if (status.recordingId == recording.id && status.projectId == project.id) StudioMessage(if (status.sent == 0L) "Aufnahme wird geprüft …" else "Übertragen: ${(status.sent * 100 / status.total).coerceIn(0, 100)} % · Serverbestätigung ausstehend", announce = false) else StudioMessage("Ein anderer Upload wird noch beendet.")
-                    is CloudUploadState.Confirmed -> if (showCoordinatorConfirmation(status, recording.id, project.id)) StudioMessage("Übertragung für dieses Skript bestätigt. Das Original bleibt lokal.")
-                    is CloudUploadState.Failed -> if (status.recordingId == recording.id && status.projectId == project.id) StudioMessage(status.message, error = true)
+                    is CloudUploadState.Running -> if (status.recordingId == recording.id && status.projectId == project.id) StudioMessage(if (status.sent == 0L) "Aufnahme wird geprüft …" else "Übertragen: ${(status.sent * 100 / status.total).coerceIn(0, 100)} % · Serverbestätigung ausstehend") else StudioMessage("Ein anderer Upload wird noch beendet.", announce = true)
+                    is CloudUploadState.Confirmed -> if (showCoordinatorConfirmation(status, recording.id, project.id)) StudioMessage("Übertragung für dieses Skript bestätigt. Das Original bleibt lokal.", announce = true)
+                    is CloudUploadState.Failed -> if (status.recordingId == recording.id && status.projectId == project.id) StudioMessage(status.message, error = true, announce = true)
                     CloudUploadState.Idle -> if (currentJournal?.phase == "confirmed") StudioMessage("Eine frühere Übertragung wurde bestätigt.") else if (currentJournal?.phase != null && !deleted) StudioMessage("Eine frühere Übertragung ist nicht bestätigt; erneut versuchen ist sicher.")
                 }
                 if (MANUAL_UPLOAD_CONTINUATION_ENABLED && !recording.partial && recording.projectId == null && !running) {
@@ -196,8 +196,8 @@ internal fun CloudUploadScreen(recording: SavedRecording, client: StudioClient, 
                         catch (e: Exception) { error = e.message?.take(220) ?: "Upload nicht bestätigt. Das Original bleibt lokal." }
                     }
                 }
-                if (currentJournal == null) StudioMessage(stringResource(R.string.upload_checking))
-                if (currentJournal?.failed == true) StudioMessage("Der Uploadstatus ist beschädigt. Bitte exportiere die lokale Aufnahme; es wird nichts überschrieben.", error = true)
+                if (currentJournal == null) StudioMessage(stringResource(R.string.upload_checking), announce = true)
+                if (currentJournal?.failed == true) StudioMessage("Der Uploadstatus ist beschädigt. Bitte exportiere die lokale Aufnahme; es wird nichts überschrieben.", error = true, announce = true)
                 QuietAction(stringResource(R.string.upload_change_script), enabled = !running) {
                     selectionRevision++
                     if (MANUAL_UPLOAD_CONTINUATION_ENABLED) scope.launch {
@@ -211,7 +211,7 @@ internal fun CloudUploadScreen(recording: SavedRecording, client: StudioClient, 
                 }
             }
         }
-        error?.let { StudioMessage(it, error = true) }
+        error?.let { StudioMessage(it, error = true, announce = true) }
         Spacer(Modifier.height(8.dp))
     }
 }
