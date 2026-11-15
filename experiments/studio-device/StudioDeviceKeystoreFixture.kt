@@ -11,6 +11,14 @@ import java.util.UUID
 
 /** Hardware fixture only: temporary shell-UID key, no app data or production alias. */
 fun main(args: Array<String>) {
+    if (args.size == 2 && args[0] == "CHECK") {
+        val alias = args[1]
+        require(alias.matches(Regex("^videomaker-studio-test-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")))
+        Class.forName("android.security.keystore2.AndroidKeyStoreProvider").getMethod("install").invoke(null)
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        println("FIXTURE_ALIAS_PRESENT=${store.containsAlias(alias)}")
+        return
+    }
     require(args.size == 1)
     val device = args[0]
     val alias = "videomaker-studio-test-${UUID.randomUUID()}"
