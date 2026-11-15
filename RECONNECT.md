@@ -116,3 +116,43 @@ Zulassung jedes Kommandos sind damit nicht nachgewiesen. TLS-Session-Caches,
 absolute Handshake-Fristen, Android-Provider und die Identitätsbindung müssen
 separat geprüft werden. Die Fixture baut weder einen WebRTC-Peer neu auf noch
 berührt sie eine laufende Aufnahme oder erteilt eine Webvorschau-Freigabe.
+
+## Testmodell für doppelt bestätigte Schlüsselbindung
+
+Ein zusätzlicher, ausschließlich unter `app/src/test` liegender Entwurf modelliert
+zwei P-256-Geräteschlüssel, eine neue zufällige Sitzungschallenge und getrennte
+Rollen. Jede Rolle signiert ein längencodiertes Transkript aus Paarungs-ID,
+Rolle, beiden Schlüsseln und Challenge. Ein lokales Modell nimmt die Bindung
+nur nach zwei passenden Signaturen und zwei simulierten ausdrücklichen
+Bestätigungen an. Dieselbe Modell-Sperre serialisiert diese Annahme mit dem
+lokalen Disconnect. Ein getrennter synthetischer Autoritätsanker führt den
+Vertrauenszustand und eine Epoche; ein veralteter Snapshot wird nach Widerruf
+bei erneutem Vergleich abgewiesen und eine widerrufene Paarungs-ID nicht erneut
+aktiviert. Öffentliche Schlüsseleingaben werden vor ihrer Verwendung kopiert.
+
+Acht gezielte JVM-Tests mit synthetisch erzeugten Schlüsseln bestanden: fehlende
+oder abgelehnte Zustimmung, vertauschte Rollen/Schlüssel/angezeigte Pins,
+ungeeignete Kurve, Replay in eine neue Sitzung, Disconnect vor Annahme,
+Widerruf vor einer verzögerten modellierten Verbindungszulassung, erneutes
+Einlesen simulierter Zustände sowie Änderungen an Eingabearrays. Ein eigener
+Negativtest zeigt ausdrücklich: Werden **Autoritätsanker und Snapshot zusammen
+auf einen alten Stand zurückgesetzt**, kann das Modell eine alte Bindung wieder
+zulassen. Der synthetische Anker ist kein dauerhaftes Dateiformat, keine
+Hardwaregarantie und kein implementierter externer Dienst.
+
+Dies ist weder eine Implementierung dauerhafter Smartphone-Kopplung noch ein
+Beweis menschlicher Zustimmung: Die beiden Bestätigungen sind boolesche
+Testeingaben; die Signaturen beweisen ausschließlich Schlüsselbesitz und
+Übereinstimmung über das Transkript. Der Testkanal ist nicht an die bestehende
+QR-/LAN-Sitzung gebunden. Wirkliche Erstbestätigung benötigt eine verständliche
+Kontrolle beider Schlüssel auf beiden Geräten und einen untrennbar an genau die
+lebende bestätigte Kanal-Generation gebundenen Commit. Dafür fehlen
+AndroidKeyStore-Integration, ein dauerhaft vor Zurückrollen geschützter
+Widerrufs-/Epochenanker, sichere Schlüsselrotation und -löschung, Behandlung von
+fehlerhafter/unvollständiger Speicherung und ein wiederholbarer
+Android-/Provider-Nachweis. Auch die Modellabfrage `permits` ist nur eine
+Momentaufnahme: Ein Widerruf nach der Abfrage kann sie nicht rückwirkend
+zurücknehmen. Zulassung, Socket-Schließen und jeder sicherheitsrelevante Befehl
+müssen in der künftigen Integration passend serialisiert und getestet werden.
+Die Fixture stellt keine Netzwerkverbindung her, erneuert keinen WebRTC-Peer,
+berührt keinen Recorder und erteilt keine Webvorschau-Freigabe.
