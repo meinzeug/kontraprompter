@@ -73,7 +73,7 @@ fun AppPage(title: String, eyebrow: String, description: String? = null, onBack:
     val camera = LocalCameraIndicator.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
-            Modifier.fillMaxHeight().widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 26.dp),
+            Modifier.fillMaxHeight().widthIn(max = 640.dp).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 26.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (onBack != null) BackAction(onBack, label = backLabel)

@@ -264,6 +264,7 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
         val previewHeight = (maxHeight * 0.43f).coerceIn(210.dp, 380.dp)
         Column(
             Modifier.fillMaxHeight().widthIn(max = 640.dp).fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.safeDrawing)
                 .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {

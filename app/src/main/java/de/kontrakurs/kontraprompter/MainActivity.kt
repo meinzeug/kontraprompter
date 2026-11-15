@@ -18,6 +18,8 @@ import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
@@ -132,6 +134,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The current app theme is dark; keep system-bar icons legible on all supported versions.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         setContent {
             KontraTheme {
                 KontraApp(this)
@@ -739,13 +746,13 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
         val showNotice = notice?.needsAttention() == true
         if (showCameraStatus || remote != null || showNotice) {
             if (canPlacePrompterStatusSideBySide(landscapeControls, remote?.status)) {
-                Row(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
+                Row(Modifier.align(Alignment.TopStart).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
                     if (showCameraStatus) Box(Modifier.weight(1f)) { CameraStatus() }
                     if (remote != null) Box(Modifier.weight(1f)) { RemoteBanner(remote) }
                     if (showNotice && notice != null) Box(Modifier.weight(1f)) { PrompterGenerationNotice(notice, compact = true) }
                 }
             } else {
-                Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.align(Alignment.TopStart).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (showCameraStatus) CameraStatus()
                     if (remote != null) RemoteBanner(remote)
                     if (showNotice && notice != null) PrompterGenerationNotice(notice, compact = true)
@@ -754,7 +761,7 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
         }
         if (focusLine) Box(Modifier.align(Alignment.CenterStart).width(22.dp).height(3.dp).background(Red))
         if (remaining > 0) Text("$remaining", Modifier.align(Alignment.Center), color = Red, fontSize = 100.sp, fontWeight = FontWeight.Black)
-        if (controls) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xf022252c)).padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (controls) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)).padding(12.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xf022252c)).padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (lanState.role == "client" && lanState.ready && keyboardDescriptor != null) KeyboardRemoteReady(activity, keyboardDescriptor, keyboardConnected)
             val showCaptureControls = lanState.role == "client" && lanState.ready
             if (landscapeControls && showCaptureControls) {
