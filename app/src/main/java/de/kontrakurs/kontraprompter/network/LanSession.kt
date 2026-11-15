@@ -14,6 +14,8 @@ import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketTimeoutException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val SERVICE_TYPE = "_kontraprompter._tcp."
@@ -55,18 +57,23 @@ class LanSession(context: Context) : AutoCloseable {
     private var connectGeneration = 0L
     private var activeAttempt: Long? = null
     private var connectOwner: DiscoveryServices.Selection<FoundDevice>? = null
-    private val approvalLock = Any()
+    // Serializes application callbacks with installation of a subsequent channel.
+    // Never acquire it while holding socketLock; callbacks can acquire other locks.
+    private val deliveryLock = Any()
+    private var disconnecting = false
     private var server: ServerSocket? = null
     private var pendingSocket: Socket? = null
     private var pendingAttempt: Long? = null
     @Volatile private var channel: AuthenticatedChannel? = null
+    private class PendingApproval(val connection: AuthenticatedChannel) { val done = CountDownLatch(1) }
+    private var pendingApproval: PendingApproval? = null
     private var registration: NsdManager.RegistrationListener? = null
     private var discovery: NsdManager.DiscoveryListener? = null
     private val discoveryEventLock = Any()
     private val discovered = DiscoveryServices<FoundDevice>()
     private var resolveTimeout: Job? = null
     @Volatile var onReady: (() -> Unit)? = null
-    @Volatile var onMessage: ((String, String) -> Unit)? = null
+    @Volatile var onMessage: ((Any, String, String) -> Unit)? = null
     @Volatile var onDisconnect: (() -> Unit)? = null
     private val deviceName = (Build.MANUFACTURER + " " + Build.MODEL).take(24)
 
@@ -218,11 +225,16 @@ class LanSession(context: Context) : AutoCloseable {
                 check(isCurrent(endpoint)) { "Suchergebnis veraltet" }
                 candidate.soTimeout = 15_000
                 val connection = AuthenticatedChannel.client(candidate, token, deviceName)
-                val installed = discovered.ifCurrent(endpoint.selection) {
-                    val ok = installWithoutClose(connection, candidate, attempt)
-                    if (ok) discovered.detach(endpoint.selection, candidate)
-                    ok
-                } ?: false
+                // Do not hold the selection lock while waiting for an older
+                // application callback. Revocation must remain able to close
+                // the pending socket even if that callback is blocked.
+                val installed = synchronized(deliveryLock) {
+                    discovered.ifCurrent(endpoint.selection) {
+                        val ok = installWithoutClose(connection, candidate, attempt)
+                        if (ok) discovered.detach(endpoint.selection, candidate)
+                        ok
+                    } ?: false
+                }
                 if (installed) authenticated(connection) else { connection.close(); error("Suchergebnis veraltet") }
             } catch (_: Exception) {
                 clearPending(candidate); runCatching { candidate.close() }
@@ -272,8 +284,10 @@ class LanSession(context: Context) : AutoCloseable {
         pending?.let { runCatching { it.close() } }
     }
     private fun authenticated(connection: AuthenticatedChannel) {
-        if (closed.get()) return
-        _state.update { it.copy(status = "Gegenseitige Bestätigung erforderlich", error = null, token = "", authenticated = true, remoteName = connection.remoteName) }
+        synchronized(socketLock) {
+            if (closed.get() || !connected.get() || channel !== connection) return
+            _state.update { it.copy(status = "Gegenseitige Bestätigung erforderlich", error = null, token = "", authenticated = true, remoteName = connection.remoteName) }
+        }
         scope.launch {
             try { while (isActive && !closed.get() && channel === connection) { delay(5000); connection.send("ping", android.os.SystemClock.elapsedRealtime().toString()) } } catch (_: Exception) { disconnect("Verbindung unterbrochen", connection) }
         }
@@ -286,24 +300,62 @@ class LanSession(context: Context) : AutoCloseable {
                         val elapsed = android.os.SystemClock.elapsedRealtime() - sent
                         if (elapsed in 0..60_000) _state.update { it.copy(rttMs = elapsed) }
                     }
-                    "approve" -> synchronized(approvalLock) { _state.update { it.copy(remoteApproved = true) }; checkReady() }
-                    else -> if (_state.value.ready) onMessage?.invoke(type, payload) else throw IllegalStateException("Nachricht vor Bestätigung")
+                    "approve" -> applyApproval(connection, local = false)
+                    else -> deliverApprovedMessage(connection, type, payload)
                 }
             }
         } catch (_: Exception) { if (!closed.get()) disconnect("Verbindung verloren. Bitte erneut koppeln.", connection) }
     }
     fun approve() {
-        val connection = channel ?: return
-        scope.launch {
-            try { synchronized(approvalLock) { connection.send("approve", ""); _state.update { it.copy(localApproved = true) }; checkReady() } }
+        val pending = synchronized(socketLock) {
+            val current = channel ?: return
+            if (closed.get() || !connected.get() || !_state.value.authenticated || _state.value.localApproved || pendingApproval != null) return
+            PendingApproval(current).also { pendingApproval = it }
+        }
+        val connection = pending.connection
+        val job = scope.launch {
+            // Socket I/O must not hold the lifecycle lock: a blocked send must
+            // never prevent disconnect from invalidating the connection.
+            try { connection.send("approve", ""); applyApproval(connection, local = true) }
             catch (_: Exception) { disconnect("Bestätigung konnte nicht gesendet werden.", connection) }
+            finally { finishApproval(pending) }
+        }
+        // Also release the receiver if the coroutine was cancelled before starting.
+        job.invokeOnCompletion { finishApproval(pending) }
+    }
+    private fun finishApproval(pending: PendingApproval) {
+        synchronized(socketLock) { if (pendingApproval === pending) pendingApproval = null }
+        pending.done.countDown()
+    }
+
+    /** The peer may send SDP immediately after reading our still-flushing approval. */
+    private fun deliverApprovedMessage(connection: AuthenticatedChannel, type: String, payload: String) {
+        val pending = synchronized(socketLock) {
+            if (closed.get() || !connected.get() || channel !== connection) throw IllegalStateException("Verbindung beendet")
+            pendingApproval?.takeIf { it.connection === connection }
+        }
+        // Never hold socketLock while waiting: disconnect/close must wake this wait.
+        if (pending != null && !pending.done.await(15, TimeUnit.SECONDS)) throw IllegalStateException("Bestätigung dauert zu lange")
+        synchronized(deliveryLock) {
+            if (!isApprovedConnection(connection)) throw IllegalStateException("Nachricht vor Bestätigung")
+            onMessage?.invoke(connection, type, payload)
         }
     }
-    private fun checkReady() {
-        val s = _state.value
-        if (s.localApproved && s.remoteApproved && readyDelivered.compareAndSet(false, true)) {
-            _state.update { it.copy(ready = true, status = "Gekoppelt; Video wird vorbereitet") }
-            onReady?.invoke()
+    /** Approval results are bound to the exact channel, including after a blocked send. */
+    private fun applyApproval(connection: AuthenticatedChannel, local: Boolean) {
+        synchronized(deliveryLock) {
+            val becameReady = synchronized(socketLock) {
+                if (closed.get() || !connected.get() || channel !== connection || !_state.value.authenticated) return
+                _state.update { if (local) it.copy(localApproved = true) else it.copy(remoteApproved = true) }
+                val s = _state.value
+                if (s.localApproved && s.remoteApproved && readyDelivered.compareAndSet(false, true)) {
+                    _state.update { it.copy(ready = true, status = "Gekoppelt; Video wird vorbereitet") }
+                    true
+                } else false
+            }
+            // The callback stays outside socketLock, but must complete before a
+            // different channel can be installed or receive application messages.
+            if (becameReady && isApprovedConnection(connection)) onReady?.invoke()
         }
     }
     fun send(type: String, payload: String): Boolean {
@@ -326,14 +378,23 @@ class LanSession(context: Context) : AutoCloseable {
     internal fun isApprovedConnection(marker: Any): Boolean = synchronized(socketLock) {
         !closed.get() && connected.get() && _state.value.ready && channel === marker
     }
+    /** The callback must only perform quick in-memory admission, never I/O. */
+    internal fun <T> admitOnApprovedConnection(marker: Any, admit: () -> T): T? = synchronized(socketLock) {
+        if (closed.get() || !connected.get() || !_state.value.ready || channel !== marker) null else admit()
+    }
     private fun disconnect(message: String, expected: AuthenticatedChannel) {
         synchronized(socketLock) {
             if (closed.get() || channel !== expected || !connected.compareAndSet(true, false)) return
+            disconnecting = true
             channel = null
+            pendingApproval?.done?.countDown(); pendingApproval = null
+            _state.update { it.copy(status = "Nicht verbunden", error = message, authenticated = false, ready = false, localApproved = false, remoteApproved = false, rttMs = null) }
         }
         runCatching { expected.close() }
-        _state.update { it.copy(status = "Nicht verbunden", error = message, authenticated = false, ready = false, localApproved = false, remoteApproved = false, rttMs = null) }
-        onDisconnect?.invoke()
+        synchronized(deliveryLock) {
+            try { if (!closed.get()) onDisconnect?.invoke() }
+            finally { synchronized(socketLock) { disconnecting = false } }
+        }
     }
     fun report(status: String, error: String? = null) { _state.update { it.copy(status = status, error = error) } }
     fun reportFirstCameraFrame() { _state.update(::firstCameraFrame) }
@@ -362,12 +423,16 @@ class LanSession(context: Context) : AutoCloseable {
     }
     private fun clearPending(socket: Socket) = synchronized(socketLock) { if (pendingSocket === socket) { pendingSocket = null; pendingAttempt = null } }
     private fun installWithoutClose(connection: AuthenticatedChannel, socket: Socket, attempt: Long? = null): Boolean = synchronized(socketLock) {
-        if (closed.get() || pendingSocket !== socket || (attempt != null && (connectGeneration != attempt || activeAttempt != attempt))) false
+        if (closed.get() || disconnecting || channel != null || pendingSocket !== socket || (attempt != null && (connectGeneration != attempt || activeAttempt != attempt))) false
         else { pendingSocket = null; pendingAttempt = null; activeAttempt = null; connectOwner = null; channel = connection; connected.set(true); true }
     }
     private fun install(connection: AuthenticatedChannel, socket: Socket, attempt: Long? = null): Boolean {
-        val ok = installWithoutClose(connection, socket, attempt)
-        if (!ok) runCatching { connection.close() }
+        val ok = synchronized(deliveryLock) { installWithoutClose(connection, socket, attempt) }
+        if (!ok) {
+            clearPending(socket)
+            runCatching { connection.close() }
+            if (attempt != null) reportConnectionAttempt(attempt, "Verbindung konnte nicht übernommen werden. Bitte erneut versuchen.")
+        }
         return ok
     }
     private fun isNumericIp(value: String): Boolean {
@@ -384,6 +449,7 @@ class LanSession(context: Context) : AutoCloseable {
         if (!closed.compareAndSet(false, true)) return
         synchronized(discoveryEventLock) { resolveTimeout?.cancel(); resolveTimeout = null; discovered.close() }
         synchronized(socketLock) {
+            pendingApproval?.done?.countDown(); pendingApproval = null
             runCatching { pendingSocket?.close() }; pendingSocket = null; pendingAttempt = null
             runCatching { channel?.close() }; channel = null
             runCatching { server?.close() }; server = null
