@@ -50,8 +50,8 @@ Ein späterer Bau vom Hauptverzeichnis des Speech-WIP aus wäre beispielsweise
 Ein solcher Build lädt gegebenenfalls Abhängigkeiten und muss bei knappen
 Ressourcen abgestimmt werden. Der Instrumentierungslauf würde eine separate
 Fixture-App und Test-APK auf einem geeigneten Testgerät installieren und ist
-hier ausdrücklich **noch nicht ausgeführt oder freigegeben**. Auch der Build
-und eine vollständige Analyse der aufgelösten Abhängigkeiten stehen noch aus.
+hier ausdrücklich **noch nicht ausgeführt oder freigegeben**. Eine vollständige
+Analyse der aufgelösten Abhängigkeiten steht noch aus.
 
 Auf dem Speech-WIP baut der Workflow `.github/workflows/vosk-fixture.yml`
 ausschließlich diese isolierte App und ihre Test-APK, ohne das Modell zu
@@ -60,3 +60,15 @@ kopieren oder einen Android-Instrumentierungstest zu starten. Das Prüfschema
 die vier nativen ABI-Paare sowie die abwesenden Mikrofon-/Internetpermissions in
 den APK-Manifests. Die fertigen APK-Dateien sind nur kurzlebige CI-Artefakte,
 keine KontraPrompter-Releases.
+
+Der isolierte CI-Run 43673659245 zum Commit `e76fa04` war erfolgreich. Die
+Fixture-App hat 40.926.499 Bytes, SHA-256
+`fb6e0f0a2efca4d92a41f1873f2a3e91cee35f90d8f1bab0a6612088b7e1ef28`;
+die Test-APK ohne Modell hat 1.657.331 Bytes, SHA-256
+`31d8b6713b0129f06d7416c7d4558de8d77185b0c04620fbe72ad52b9fce387b`.
+Beide enthalten laut Manifestprüfung weder `RECORD_AUDIO` noch `INTERNET`;
+alle vier ABI-Paare sind in der Fixture-App vorhanden. Der Build ist kein
+Gerätetest: Die Test-APK enthält absichtlich kein Modell und kann den
+Instrumentierungstest so noch nicht erfolgreich ausführen. Für einen späteren
+Test muss das geprüfte Modell vor einem erneuten Fixture-Build bereitgestellt
+werden; die daraus entstehende APK hat einen anderen Hash.
