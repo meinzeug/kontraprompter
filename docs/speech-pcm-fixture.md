@@ -199,3 +199,32 @@ Transkript weder ausgegeben noch gespeichert. Da weder die Skriptfassung zum
 Aufnahmezeitpunkt noch der tatsächlich gesprochene Wortlaut unabhängig
 verifiziert wurden, ist dies kein Genauigkeitsmaß und kein Beleg für eine
 zuverlässige Positionssteuerung.
+
+### Lokale Analysesitzung für Recorder-PCM (isolierter WIP)
+
+`LocalSpeechSession` im Android-Testquellbaum verbindet den dortigen gehärteten
+`PcmTee` mit `BoundedPcmDecoder`, `SpokenScriptCursor` und demselben lokalen
+Zustell-Fence. Sie verwendet keinen eigenen `AudioRecord`, kein Netzwerk und ist
+in der App nicht aufrufbar. Der Recorder-Audiopfad und die unveränderte App
+verwenden weiterhin nicht diesen Testadapter. Die JVM-Fixture wird mit
+`bash scripts/test-local-speech-session.sh` ausgeführt; Decoder und PCM sind
+dabei künstlich, nicht Vosk- oder Gerätetests.
+
+Jede Sitzung hat eigene Queue, Decoder, Kanal-/Aufnahme-/Skriptbindung und
+Audioepoche. Nur finale Dekoderresultate können über den Fence eine lokale
+Wortposition ändern. Pufferverlust, fehlerhafter Decoderstatus, eine Lücke,
+falsche Aufnahme oder Invalidation sperren die Sitzung dauerhaft. Pause, Seek,
+Kanalwechsel und Aufnahmestopp müssen die alte Sitzung zuerst invalidieren;
+ein neuer Beginn benötigt frische Queue, Decoder und Fence. Ein neuer
+Prozess muss ebenso ohne Fortsetzung alter transienter Analyse starten. Die
+Fixture simuliert neue Instanzen, sie testet keinen echten Prozess-/Geräteneustart.
+
+Der Testadapter ist keine Produktionsintegration: Der vorhandene Recorder-Tap
+nutzt noch eine andere Implementierung; Identität, Lebenszyklus und die atomare
+Anwendung im tatsächlichen UI müssen gemeinsam verdrahtet und geprüft werden.
+Der lokale CAS widerruft keine bereits an ein anderes Gerät gelieferte Position.
+Für die verteilte Anwendung fehlen verschlüsselter authentifizierter Kanal,
+paarungs- und skriptgebundene Epochen sowie Tests für verspätete Nachrichten,
+Trennung und Neustart. Kein Transkript darf über den vorhandenen unverschlüsselten
+LAN-Kanal gesendet werden. Belastung, Fehlerszenarien von Vosk, echte Stimme und
+Echtzeitverhalten auf dem Recorder sind nicht nachgewiesen; Aufnahme hat Vorrang.
