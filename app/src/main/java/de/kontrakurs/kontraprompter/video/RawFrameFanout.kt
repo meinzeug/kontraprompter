@@ -60,9 +60,20 @@ internal class RawFrameFanout<T> : RawFrameSource<T> {
 
     fun close() {
         check(insideCallback.get() != true) { "A raw camera callback cannot close its source" }
-        val slot = synchronized(monitor) { closed = true; current ?: draining }
+        val (slot, notifyFailure) = synchronized(monitor) {
+            if (closed) draining to false
+            else {
+                closed = true
+                val active = current
+                if (active != null) {
+                    current = null
+                    draining = active
+                    active to true
+                } else draining to false
+            }
+        }
         if (slot != null) {
-            runCatching { slot.onFailure() }
+            if (notifyFailure) runCatching { slot.onFailure() }
             detach(slot.owner)
         }
     }
