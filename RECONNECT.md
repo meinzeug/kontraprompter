@@ -82,3 +82,37 @@ Ein lokaler Entwurf leitete aus dem gemeinsamen Sitzungsschlüssel und beiden fr
 Für eine belastbare Umsetzung müssen Bestätigungen beider Seiten, dieselbe noch gültige Kanalgeneration und die Annahme oder der Widerruf der Vertrauensentscheidung gemeinsam serialisiert werden. Die bestätigten öffentlichen Schlüssel müssen als kontrollierte Kopien gespeichert werden; ein später verändertes Eingabearray darf nach einem Vergleich nicht ungeprüft als Pin dienen. Eine dauerhafte, gegen Wiederherstellung alter Daten abgesicherte Vertrauens- und Widerrufsverwaltung, die beim Widerruf auch bestehende TLS-Sessions und Sockets berücksichtigt, ist noch nicht implementiert.
 
 Der aktuelle Sitzungscode authentisiert einen kurzfristigen Kanal, aber kein dauerhaftes Gerät. Ist er vor der Erstkopplung abgeflossen, kann eine andere Partei mit diesem Code einen eigenen authentisierten Kanal aufbauen; Gerätenamen allein lösen dieses Problem nicht. Vor Freigabe sind deshalb eine verständliche, beidseitig vergleichbare Geräte-/Schlüsselbestätigung, langlebige gerätegebundene Schlüssel und ein unabhängig überprüfter Kopplungsablauf erforderlich. Alte Nachweise dürfen einen Widerruf nicht aufheben. Bis dahin gibt es keine automatische Wiederanbindung und keine stillschweigende Webvorschau-Freigabe.
+
+## Test-Fixture für erneute gepinnte Verbindungen
+
+Auf Android-main `8866a00` wurde ein **nur unter `app/src/test` liegender**
+Kandidat untersucht. `PinnedReconnectFixture` ruft für jeden Versuch den
+bestehenden gegenseitig gepinnten TLS-Transport auf und übernimmt einen Socket
+nur, wenn derselbe lokale Versuch nach dem Handshake noch aktuell und nicht
+widerrufen ist. Disconnect invalidiert die Generation, ein lokaler Widerruf
+verweigert weitere Versuche; bereits übernommene Sockets werden geschlossen.
+Die IP-Adresse dient nur zur Erreichbarkeit, nicht als Geräteidentität. Die
+zuvor vertrauenswürdig festgelegten Schlüssel-Pins sind eine Voraussetzung der
+Fixture und werden durch sie nicht erzeugt oder bestätigt.
+
+Fünf neue JVM-Tests mit realem TLS über Loopback und ausschließlich öffentlichen
+synthetischen Testzertifikaten bestanden: erneuter Handshake nach Disconnect,
+Ablehnung eines falschen Pins, wieder eingespielte TLS-Challenge-Antwort,
+Widerruf während ein Handshake-Ergebnis vor Installation angehalten ist sowie
+ein alter verzögerter Versuch neben einer neuen Verbindung. Neun bestehende
+TLS-Tests bestanden im selben gezielten Kotlin-/JUnit-Lauf. Dies sind keine
+Android-Build-, WLAN-, Smartphone- oder End-to-End-Tests.
+
+Die Fixture ist **keine aktivierte oder fertig abgesicherte Kopplung**: Die
+heutige QR-Bestätigung bindet noch keine dauerhaften beidseitigen Schlüssel;
+AndroidKeyStore-Erzeugung, vertrauenswürdige Erstbestätigung und nachweisbar
+persistenter Widerruf einschließlich Prozessneustart, Key-Rotation und
+Backup-/Restore-Schutz fehlen. Ein laufender `connect()`-Aufruf kann noch nicht
+sofort abgebrochen werden; ein veraltetes Ergebnis wird erst nach seiner
+Rückkehr geschlossen. Der raw Socket kann bei gleichzeitigem Disconnect oder
+Widerruf bereits geschlossen sein, bevor der Aufrufer ihn erhält. Das
+Socket-Schließen wird bestmöglich versucht; ausstehende I/O und die atomare
+Zulassung jedes Kommandos sind damit nicht nachgewiesen. TLS-Session-Caches,
+absolute Handshake-Fristen, Android-Provider und die Identitätsbindung müssen
+separat geprüft werden. Die Fixture baut weder einen WebRTC-Peer neu auf noch
+berührt sie eine laufende Aufnahme oder erteilt eine Webvorschau-Freigabe.
