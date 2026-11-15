@@ -2,9 +2,9 @@ package de.kontrakurs.kontraprompter.network
 
 import java.net.Socket
 
-/** Android may include the DNS-SD local domain and a final root dot. */
+/** Android may include one leading separator, the local domain and a final root dot. */
 internal fun isKontraPrompterServiceType(value: String?): Boolean {
-    val type = value?.removeSuffix(".") ?: return false
+    val type = value?.removePrefix(".")?.removeSuffix(".") ?: return false
     return type.equals("_kontraprompter._tcp", ignoreCase = true) ||
         type.equals("_kontraprompter._tcp.local", ignoreCase = true)
 }

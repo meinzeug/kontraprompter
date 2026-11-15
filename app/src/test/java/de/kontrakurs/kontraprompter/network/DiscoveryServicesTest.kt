@@ -9,9 +9,9 @@ import java.net.Socket
 
 class DiscoveryServicesTest {
     @Test fun `android service types accept only local and unqualified DNS SD forms`() {
-        listOf("_kontraprompter._tcp", "_kontraprompter._tcp.", "_kontraprompter._tcp.local", "_kontraprompter._tcp.local.", "_KontraPrompter._TCP.LOCAL.")
+        listOf("_kontraprompter._tcp", "_kontraprompter._tcp.", "_kontraprompter._tcp.local", "_kontraprompter._tcp.local.", "_KontraPrompter._TCP.LOCAL.", "._kontraprompter._tcp", "._kontraprompter._tcp.local.")
             .forEach { assertTrue("expected valid service type: $it", isKontraPrompterServiceType(it)) }
-        listOf(null, "", "_kontraprompter._udp.local", "_other._tcp.local", "_kontraprompter._tcp.local.evil", "_kontraprompter._tcp.local..", " _kontraprompter._tcp.local")
+        listOf(null, "", "_kontraprompter._udp.local", "_other._tcp.local", "_kontraprompter._tcp.local.evil", "_kontraprompter._tcp.local..", ".._kontraprompter._tcp", "._kontraprompter._tcp.local.evil", " _kontraprompter._tcp.local")
             .forEach { assertFalse("expected invalid service type: $it", isKontraPrompterServiceType(it)) }
     }
 
