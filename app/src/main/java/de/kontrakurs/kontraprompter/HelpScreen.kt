@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.font.FontWeight
@@ -90,7 +91,7 @@ private fun HelpSection(title: String, content: @Composable () -> Unit) {
     Column {
         ListItem(
             onClick = { expanded = !expanded },
-            trailingContent = { Text(if (expanded) "−" else "+", style = MaterialTheme.typography.titleLarge) },
+            trailingContent = { Text(if (expanded) "−" else "+", modifier = Modifier.clearAndSetSemantics {}, style = MaterialTheme.typography.titleLarge) },
             colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
             modifier = Modifier.fillMaxWidth().heightIn(min = spacing.touchTarget)
                 .semantics { stateDescription = expandedLabel },
