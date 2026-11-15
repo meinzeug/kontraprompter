@@ -24,7 +24,7 @@ jobs:
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;35.0.0"'
       - name: Test and build experimental debug APK
         run: |
-          ./gradlew --no-daemon --max-workers=1 :app:testDebugUnitTest :app:assembleDebug -PexperimentalFixedCameraFps=true -PframeDiagnostics=true
+          ./gradlew --no-daemon --max-workers=1 --stacktrace :app:testDebugUnitTest :app:assembleDebug -PexperimentalFixedCameraFps=true -PframeDiagnostics=true
           grep -F 'EXPERIMENTAL_FIXED_CAMERA_FPS = true' app/build/generated/source/buildConfig/debug/de/kontrakurs/kontraprompter/BuildConfig.java
           grep -F 'FRAME_RATE_DIAGNOSTICS = true' app/build/generated/source/buildConfig/debug/de/kontrakurs/kontraprompter/BuildConfig.java
           bash experiments/webrtc-camera2/test-build-probe.sh
@@ -41,4 +41,14 @@ jobs:
             app/build/outputs/apk/debug/app-debug.apk
             app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: error
+          retention-days: 2
+      - name: Preserve diagnostics if a build step fails
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: experimental-camera-fps-failure-${{ github.sha }}
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            build/reports/problems/
+          if-no-files-found: warn
           retention-days: 2
