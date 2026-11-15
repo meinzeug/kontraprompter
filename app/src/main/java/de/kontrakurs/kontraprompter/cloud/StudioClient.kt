@@ -35,7 +35,7 @@ import de.kontrakurs.kontraprompter.requireProjectString
 
 /** HTTPS-only, in-memory session. No password or session cookie is persisted. */
 class StudioClient {
-    companion object { private const val BASE = "https://videomaker.dorfspy.de" }
+    companion object { private const val BASE = "https://127.0.0.1:3395" }
     private val cookie = SessionCookie()
 
     /** Reports only whether this app process currently holds a studio session. */

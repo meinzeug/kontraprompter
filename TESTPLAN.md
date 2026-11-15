@@ -132,3 +132,17 @@ Xiaomi-Kameraprozess blieb bestehen; die App meldete anschließend die
 Samsung-Verbindung und Videomaker-Anmeldung. Der Test deckt einen Kill nach
 persistiertem `admitting` ab, keinen Kill während eines AtomicFile-Systemcalls,
 keinen Codec-/Aufnahmelauf, keine Web-End-to-End-Kette und keinen Rollback.
+
+### Geräte-/Loopback-Fixture (ausschließlich isolierter Testbranch)
+
+Der Branch `wip/camera-device-loopback-e2e-20261115` ist eine Testkopie und darf
+nicht in die Produktiv-App übernommen werden: `StudioClient` zeigt dort fest auf
+`https://127.0.0.1:3395`, vertraut nur der eigens erzeugten Test-CA und die
+Testinstanz von `LiveSession` startet kein LAN/NSD. Die eigene Android-App-ID
+`.journalfixture` besitzt ihren eigenen Keystore; Projekt, Identität, Journal,
+Serverdaten und Testzertifikate sind synthetisch. Die Instrumentierung liefert
+synthetische Recorderereignisse in den echten LiveSession-Ereignispfad, meldet
+die tatsächliche Journal-/Controller-Telemetrie über den echten StudioClient
+an die lokale Testinstanz und liest den Serverzustand zurück. Sie startet weder
+Kamera noch Codec und beweist deshalb keine tatsächliche Aufnahme. Ein
+bestandener Build ist kein Geräte- oder End-to-End-Ergebnis.
