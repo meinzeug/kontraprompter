@@ -16,7 +16,7 @@ class StudioIdentityInstrumentation : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         var identityId: String? = null
-        var ownKeyAttempted = false
+        var ownPublicKey: ByteArray? = null
         var outcome = Activity.RESULT_CANCELED
         var lock: FixtureExclusiveLock? = null
         try {
@@ -45,8 +45,11 @@ class StudioIdentityInstrumentation : Instrumentation() {
                 }
                 override fun createKey(id: String): StudioIdentityKey {
                     check(id == identityId && !underlying.hasAnyDeviceKey())
-                    ownKeyAttempted = true
-                    return underlying.createKey(id)
+                    val key = underlying.createKey(id)
+                    // A thrown generation has unknown ownership; leave its
+                    // alias for inspection instead of guessing in cleanup.
+                    ownPublicKey = key.publicKeyDer.copyOf()
+                    return key
                 }
             }
             val first = StudioDeviceIdentity(observed)
@@ -61,6 +64,7 @@ class StudioIdentityInstrumentation : Instrumentation() {
             check(keys.containsAlias(alias))
             check(keys.getKey(alias,null).encoded == null)
             // Test only our own new fixture key loss; no regular-app key is visible.
+            check(keys.getCertificate(alias).publicKey.encoded.contentEquals(ready.publicKeyDer))
             keys.deleteEntry(alias)
             check(first.load() == StudioIdentityState.RecoveryRequired)
             check(first.createAfterExplicitConsent() == StudioIdentityState.RecoveryRequired)
@@ -77,8 +81,6 @@ class StudioIdentityInstrumentation : Instrumentation() {
                     require(UUID.fromString(id).toString() == id)
                     val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
                     val alias = "videomaker-studio-device-v1-$id"
-                    if (ownKeyAttempted && keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)
-                    check(!keyStore.containsAlias(alias))
                     val dir = File(targetContext.filesDir,"studio-device-auth")
                     val allowed = setOf("identity.json","identity.json.bak","identity.json.new")
                     if (dir.exists()) check(dir.isDirectory && checkNotNull(dir.list()).all { it in allowed })
@@ -91,6 +93,12 @@ class StudioIdentityInstrumentation : Instrumentation() {
                         FixtureMarkerOwner(item.name,marker.getString("id"),marker.getInt("version"))
                     }
                     check(fixtureMarkersOwned(id,owners))
+                    if (keyStore.containsAlias(alias)) {
+                        val actual = checkNotNull(keyStore.getCertificate(alias)?.publicKey?.encoded)
+                        check(fixtureKeyOwned(ownPublicKey,actual))
+                        keyStore.deleteEntry(alias)
+                    }
+                    check(!keyStore.containsAlias(alias))
                     for (item in markers) check(item.delete())
                     if (dir.exists()) check(dir.isDirectory && dir.delete())
                     result.putBoolean("fixture_cleanup_ok",true)

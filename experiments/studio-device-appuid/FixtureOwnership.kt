@@ -15,6 +15,10 @@ internal fun fixtureMarkersOwned(id: String, markers: List<FixtureMarkerOwner>):
     return markers.map { it.name }.toSet().size == markers.size && markers.all { it.name in names && it.id == id && it.version == 1 }
 }
 
+/** No key is harmless; an existing key is ours only with a captured exact public key. */
+internal fun fixtureKeyOwned(expected: ByteArray?, actual: ByteArray?): Boolean =
+    actual == null || (expected != null && expected.contentEquals(actual))
+
 internal class FixtureExclusiveLock private constructor(private val file: RandomAccessFile, private val lock: FileLock) : Closeable {
     override fun close() { try { lock.release() } finally { file.close() } }
     companion object {

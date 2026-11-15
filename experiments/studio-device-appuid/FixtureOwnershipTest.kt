@@ -24,4 +24,12 @@ class FixtureOwnershipTest {
             val next=checkNotNull(FixtureExclusiveLock.tryAcquire(file));next.close()
         } finally { check(file.delete());check(directory.delete()) }
     }
+
+    @Test fun `unknown or replaced key is never considered owned`() {
+        val own=byteArrayOf(1,2,3)
+        assertTrue(fixtureKeyOwned(own,own.copyOf()))
+        assertTrue(fixtureKeyOwned(null,null))
+        assertFalse(fixtureKeyOwned(null,own))
+        assertFalse(fixtureKeyOwned(own,byteArrayOf(1,2,4)))
+    }
 }
