@@ -93,7 +93,20 @@ enthält die App-APK (40.926.499 Bytes, SHA-256
 `8b9cdcdaea3070adcd31f61c112b7929094842a9076300e86e4bf2163d2a9d39`)
 und Test-APK (47.748.405 Bytes, SHA-256
 `d692f6d1f62e2ab39c995d87f342d5de2c34764bf279c4cf7fab4801a24b9c60`).
-Dieser neuere JNA-Kandidat wurde auf keinem Gerät installiert oder ausgeführt.
+Die anschließenden isolierten Gerätetests dieses Kandidaten stehen unten.
+
+Der integerbasierte Kandidat wurde anschließend isoliert auf beiden Geräten
+ausgeführt. Mit den oben angegebenen CI-APKs, ohne Mikrofon- oder
+Internetberechtigung und ausschließlich mit künstlicher Stille und dem
+synthetischen deutschen Testsatz bestanden echte Android-/JNA-Decoderläufe:
+
+- Samsung `R5CR60Q07YN`: 1 Instrumentierungstest, 9,595 Sekunden, erfolgreich.
+- Xiaomi `HEHU4TQSINOJEQG6`: 1 Instrumentierungstest, 18,934 Sekunden, erfolgreich.
+
+Die nur für den Test installierten separaten Fixture-Pakete wurden anschließend
+entfernt. Die Tests bestätigen die Verarbeitung dieser künstlichen Signale über
+das integerbasierte JNA-Binding; sie belegen keinen echten nativen `-1`-Fehler,
+keine Verbindung zum Recorder oder eine funktionierende Live-Sprachfolge.
 
 Ein späterer Bau vom Hauptverzeichnis des Speech-WIP aus wäre beispielsweise
 `./gradlew -p experiments/vosk-android-fixture :app:assembleDebug :app:assembleDebugAndroidTest`.
