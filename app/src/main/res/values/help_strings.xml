@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="help_description">Kamerahandy und Prompterhandy – vom Aufbau bis zur fertigen Aufnahme.</string>
+    <string name="help_title">Hilfe &amp; Aufbau</string>
+    <string name="help_eyebrow">DESVIEW T3</string>
+    <string name="help_quick_start">Schnellstart</string>
+    <string name="help_paragraph_01">1. Beide Handys mit demselben WLAN verbinden und KontraPrompter öffnen.</string>
+    <string name="help_paragraph_02">2. Auf dem Kamerahandy „Kamera“, auf dem Prompterhandy „Teleprompter“ wählen. Die Kamera auf dem Prompterhandy suchen oder Adresse und Port eingeben, danach den Sitzungscode übertragen und auf beiden Geräten bestätigen.</string>
+    <string name="help_paragraph_03">3. Handys am T3 befestigen, Skript öffnen und Spiegelung am Glas prüfen. Eine kurze Probe mit Bild und Ton aufnehmen.</string>
+    <string name="help_paragraph_04">Kamerahandy als Kamera hinter dem Spiegelglas befestigen. Das ausgewählte Objektiv soll mittig durch das Glas filmen und nicht von der Halterung verdeckt werden.</string>
+    <string name="help_paragraph_05">Prompterhandy mit dem Bildschirm zum Spiegelglas in die untere Halterung setzen. Beide Geräte sicher befestigen. Mit einer kurzen Probe prüfen, ob kein Rahmen und keine Spiegelung im Bild zu sehen ist.</string>
+    <string name="help_paragraph_06">Auf dem Prompterhandy im Skript „Spiegelung kalibrieren“ öffnen. Bei Bedarf Text horizontal oder vertikal spiegeln oder drehen, bis er im Glas richtig lesbar ist. Die Video-Spiegelung ist getrennt einstellbar.</string>
+    <string name="help_paragraph_07">Auf dem Kamerahandy „Kamera“ öffnen und die Kameraerlaubnis erteilen. Der angezeigte Sitzungscode ist höchstens fünf Minuten gültig und wie ein Passwort zu behandeln.</string>
+    <string name="help_paragraph_08">Auf dem Prompterhandy unter „Teleprompter“ → „Kamera verbinden“ die gefundene Kamera auswählen. Die Suche übernimmt Adresse und Port; anschließend den Sitzungscode vom Kamerahandy eingeben und „Verbinden“ wählen.</string>
+    <string name="help_paragraph_09">Wird die Kamera nicht gefunden, Adresse und Port vom Kamerahandy ebenfalls eingeben. Die angezeigte Gegenstelle auf beiden Geräten bestätigen und „Zu Skripten und Prompter“ wählen. Beide Geräte müssen sich im lokalen Netz direkt erreichen können; ein gemeinsames WLAN allein reicht nicht immer aus.</string>
+    <string name="help_paragraph_10">Auf dem Prompterhandy unter „Skripte aus Videomaker öffnen“ anmelden und ein Skript auswählen. Eine Kopie wird auf dem Gerät geöffnet; lokale Änderungen werden nicht ins Studio zurückgeschrieben.</string>
+    <string name="help_paragraph_11">Tempo, Schriftgröße und Spiegelung findest du in den Einstellungen. Mit „Start“ und „Pause“ steuerst du den Text; „Anfang“ setzt ihn zurück. Das Studio-Dashboard kann nach ausdrücklicher Aktivierung den Teleprompter steuern.</string>
+    <string name="help_paragraph_12">Die Studio-Anmeldung wird nicht dauerhaft gespeichert. Nach einem App-Neustart oder Sitzungsablauf kann eine erneute Anmeldung nötig sein.</string>
+    <string name="help_paragraph_13">Im verbundenen Prompter startet „Aufnahme starten“ die Kameraaufnahme. Die Mikrofonfreigabe muss auf dem Kamerahandy erteilt sein. Mit derselben Taste pausierst du und setzt fort; „Stopp“ beendet und speichert das Video.</string>
+    <string name="help_paragraph_14">Auf dem Kamerahandy zeigt der Aufnahmestatus, ob Video und Ton laufen, pausieren oder gespeichert werden. Bei Verbindungsverlust läuft eine bereits gestartete Aufnahme weiter. Die App muss für die Kamerasitzung im Vordergrund bleiben.</string>
+    <string name="help_paragraph_15">Optional kannst du in den Einstellungen „Aufnahme und Teleprompter synchron“ aktivieren. Der Text startet oder pausiert dann mit der bestätigten Aufnahme; beim Stopp bleibt er stehen.</string>
+    <string name="help_paragraph_16">Den Auslöser zuerst in den Android-Bluetooth-Einstellungen mit dem Prompterhandy koppeln. Ab Android 10 wird der ITFIT Selfie P007 unterstützt; andere externe Auslöser können in den App-Einstellungen ausgewählt werden.</string>
+    <string name="help_paragraph_17">Vor der Aufnahme startet ein kurzer Druck die Kamera. Während der Aufnahme pausiert oder startet ein kurzer Druck nur den Teleprompter. Ein schneller Doppeldruck pausiert oder setzt die Aufnahme fort. Zum endgültigen Beenden „Stopp“ in der App verwenden.</string>
+    <string name="help_paragraph_18">Für Enter, Leertaste oder Steuerkreuz-Mitte zuerst im Prompter „Enter-Auslöser nicht bereit – aktivieren“ auswählen. Nur solange die Taste den Eingabefokus hält, ist der Auslöser bereit. Nach Fokusverlust, verdeckten Bedienelementen, Geräte- oder Verbindungswechsel erneut aktivieren. Ohne Bereitschaft die Bildschirmtasten verwenden.</string>
+    <string name="help_paragraph_19">Senden verschiedene Tasten desselben Geräts kurz hintereinander unterschiedliche Tastentypen, kann die zweite Eingabe zum Schutz vor Doppelaktionen verworfen werden.</string>
+    <string name="help_paragraph_20">Bei ausgewählten externen Auslösern können auch Enter, Leertaste oder Steuerkreuz-Mitte verwendet werden. Eingebaute und virtuelle Tastaturen bleiben unverändert. Prüfe die Tasten deines Auslösers vor der Aufnahme.</string>
+    <string name="help_paragraph_21">Die fertige Aufnahme liegt zunächst auf dem Kamerahandy. Unter „Aufnahmen“ kannst du sie exportieren oder nach Anmeldung einem Studio-Skript zuordnen und hochladen. Das lokale Original bleibt erhalten.</string>
+    <string name="help_paragraph_22">Für geeignete Fernaufnahmen prüft die App bei aktiver Studio-Anmeldung und geöffneter App den automatischen Upload. Beachte den angezeigten Status und gib eine Aufnahme bei Bedarf erneut frei. Während der Aufnahme findet kein Live-Upload statt.</string>
+    <string name="help_paragraph_23">Ton ist in der fertigen Aufnahme, wird aber noch nicht live zum Prompter übertragen. Sprachgesteuertes Folgen, dauerhafte automatische Kopplung und ein Server-Fallback für getrennte WLAN-Geräte sind noch nicht verfügbar. Kamera-Aufnahmebefehle über das Webdashboard sind noch nicht freigegeben.</string>
+    <string name="help_section_01">Desview T3 aufbauen</string>
+    <string name="help_section_02">Kamera verbinden</string>
+    <string name="help_section_03">Skript und Studio</string>
+    <string name="help_section_04">Aufnahme bedienen</string>
+    <string name="help_section_05">Bluetooth-Auslöser</string>
+    <string name="help_section_06">Speichern und Grenzen</string>
+    <string name="help_expanded">Aufgeklappt</string>
+    <string name="help_collapsed">Zugeklappt</string>
+</resources>
