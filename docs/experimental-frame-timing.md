@@ -1,0 +1,9 @@
+# Experimentelle Messung der Bildrate
+
+Dieser WIP baut auf dem noch nicht freigegebenen Rohbild-Recorder auf. Normale Builds enthalten keine aktive Ausgabe. Nur ein gesonderter Diagnosebuild mit `-PframeDiagnostics=true` aktiviert die Messung. Er ist weder eine Produktionsfreigabe noch ein automatischer Gerätetest.
+
+Je Aufnahme werden in festen Histogrammen maximal 1002 Abstandsklassen und einige Zähler im Arbeitsspeicher geführt. Nach abgeschlossenem Encoderablauf schreibt `KpFrameTiming` genau eine Logzeile: Anzahl, Zahl ungültiger Zeitstempel, mittlere Bildrate über die aktive Aufnahmezeit, P50/P95 in ganzzahligen Millisekunden und maximaler Abstand. Werte von `1001` in den Perzentilen bedeuten mindestens 1001 ms. Eine fortlaufende Zeitstempelliste, Aufnahmen, Ton, Projekt- oder Gerätekennungen und Kamerainhalte werden nicht protokolliert. Bei vorzeitigem Abbruch oder hängendem Encoder kann die Zeile fehlen.
+
+`camera` zählt gültige Rohbilder, die bei konfigurierter und laufender Aufnahme vor dem Recorder-Renderer angenommen werden. Vorbereitungsbilder, Pausen und nach dem Stopp verworfene Bilder zählen nicht. `encoder` zählt ausgegebene AVC-Puffer mit Nutzdaten, ohne Codec-Konfiguration; das ist kein Nachweis einer fertigen MP4. Beide verwenden die projizierte Aufnahmezeit, sodass Pausen nicht als Bildlücken erscheinen. Die daraus abgeleiteten Werte zeigen keine isolierte Renderer-Verlustzahl. WebRTC legt die tatsächlich gewählte Camera-API und den aktiven FPS-Bereich hier nicht zuverlässig offen; aus dem angeforderten Wert darf nicht auf die Auswahl geschlossen werden.
+
+Für eine spätere kontrollierte Messung jeweils gleiche Kamerarichtung, Einstellungen und Dauer bei wenig und bei mehr Licht verwenden. Rohbildrate und Encoder-Ausgabe getrennt auswerten und die fertige MP4 und Tonspur unabhängig prüfen. Während des Tests dürfen keine Aufnahmen überschrieben oder gelöscht werden.

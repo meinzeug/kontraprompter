@@ -13,8 +13,10 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        // Diagnostic-only opt-in. Never enable this for a normal release.
+        buildConfigField("boolean", "FRAME_RATE_DIAGNOSTICS", providers.gradleProperty("frameDiagnostics").map { (it == "true").toString() }.getOrElse("false"))
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     packaging { jniLibs { useLegacyPackaging = true } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
