@@ -32,8 +32,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -598,6 +600,8 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
     val scope = rememberCoroutineScope()
     var playing by remember { mutableStateOf(false) }
     var controls by remember { mutableStateOf(true) }
+    var statusHeightPx by remember { mutableIntStateOf(0) }
+    var controlsHeightPx by remember { mutableIntStateOf(0) }
     var remaining by remember { mutableIntStateOf(0) }
     var countdownJob by remember { mutableStateOf<Job?>(null) }
     LaunchedEffect(playing, remaining) { onPlaybackStatus(if (remaining > 0) "Countdown" else if (playing) "Läuft" else "Pausiert") }
@@ -641,16 +645,20 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
     }
     LaunchedEffect(scroll.value) { savePosition(scroll.value) }
     val transform = LayerTransform(horizontal, vertical, rotation)
+    val showStatus = controls || remote != null || notice?.needsAttention() == true || (lanState.role == "client" && lanState.ready && (keyboardDescriptor != null || pairedCapture.phase in setOf("preparing", "recording", "paused", "finalizing")))
+    val screenDensity = LocalDensity.current
+    val statusHeight = with(screenDensity) { (if (showStatus) statusHeightPx else 0).toDp() }
+    val controlsHeight = with(screenDensity) { (if (controls) controlsHeightPx else 0).toDp() }
     Box(Modifier.fillMaxSize().background(Color.Black).clickable { controls = !controls }) {
         if (video != null) LivePreview(video, videoH, videoV, videoRotation, videoFill, videoOpacity, Modifier.fillMaxSize())
-        Box(Modifier.fillMaxSize().graphicsLayer { scaleX = transform.scaleX; scaleY = transform.scaleY; rotationZ = transform.rotation.toFloat() }, contentAlignment = Alignment.TopCenter) {
+        Box(Modifier.fillMaxSize().padding(top = statusHeight, bottom = controlsHeight).clipToBounds().graphicsLayer { scaleX = transform.scaleX; scaleY = transform.scaleY; rotationZ = transform.rotation.toFloat() }, contentAlignment = Alignment.TopCenter) {
             Column(Modifier.fillMaxSize().verticalScroll(scroll), horizontalAlignment = Alignment.CenterHorizontally) {
                 Spacer(Modifier.height(180.dp))
                 Text(text.ifBlank { "Füge im Editor deinen Text ein." }, modifier = Modifier.fillMaxWidth(width).background(Color.Black.copy(alpha = opacity)).padding(8.dp), color = Color.White, fontSize = fontSize.sp, lineHeight = (fontSize * lineSpacing).sp, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal)
                 Spacer(Modifier.height(400.dp))
             }
         }
-        if (controls || remote != null || notice?.needsAttention() == true || (lanState.role == "client" && lanState.ready && (keyboardDescriptor != null || pairedCapture.phase in setOf("preparing", "recording", "paused", "finalizing")))) Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (showStatus) Column(Modifier.align(Alignment.TopStart).fillMaxWidth().onSizeChanged { statusHeightPx = it.height }.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (remote != null) RemoteBanner(remote)
             notice?.let { PrompterGenerationNotice(it) }
             if (lanState.role == "client" && lanState.ready) {
@@ -684,9 +692,9 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
                 color = Color.White, style = MaterialTheme.typography.labelMedium
             )
         }
-        if (focusLine) Box(Modifier.align(Alignment.CenterStart).width(22.dp).height(3.dp).background(Red))
+        if (focusLine) Box(Modifier.fillMaxSize().padding(top = statusHeight, bottom = controlsHeight), contentAlignment = Alignment.CenterStart) { Box(Modifier.width(22.dp).height(3.dp).background(Red)) }
         if (remaining > 0) Text("$remaining", Modifier.align(Alignment.Center), color = Red, fontSize = 100.sp, fontWeight = FontWeight.Black)
-        if (controls) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xf022252c)).padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (controls) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { controlsHeightPx = it.height }.padding(12.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xf022252c)).padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
           if (lanState.role == "client" && lanState.ready && keyboardDescriptor != null) KeyboardRemoteReady(activity, keyboardDescriptor, keyboardConnected)
           if (lanState.role == "client" && lanState.ready) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             val toggleLabel = when (pairedCapture.phase) { "recording" -> "Aufnahme pausieren"; "paused" -> "Aufnahme fortsetzen"; else -> "Aufnahme starten" }
