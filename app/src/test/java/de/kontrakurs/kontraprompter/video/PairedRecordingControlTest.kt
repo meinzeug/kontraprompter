@@ -256,4 +256,30 @@ class PairedRecordingControlTest {
         } finally { f.close() }
     }
 
+    @Test fun `a web owner cannot preempt an active paired take`() {
+        val f = Fixture(); val id = UUID.randomUUID().toString()
+        try {
+            f.state.value = LocalRecording.Recording(id)
+            assertFalse(f.session.setRemoteExclusive(true))
+            assertTrue(f.session.pausePairedRecording(f.marker, id))
+            assertTrue(f.session.resumePairedRecording(f.marker, id))
+            assertTrue(f.session.stopPairedRecording(f.marker, id))
+            assertEquals(1, f.control.pauses); assertEquals(1, f.control.resumes); assertEquals(1, f.control.stops)
+        } finally { f.close() }
+    }
+
+    @Test fun `web ownership and a paired start cannot both win admission`() {
+        val f = Fixture(); val id = UUID.randomUUID().toString()
+        val gate = CountDownLatch(1); val done = CountDownLatch(2)
+        val paired = AtomicBoolean(false); val web = AtomicBoolean(false)
+        try {
+            Thread { try { check(gate.await(5, TimeUnit.SECONDS)); paired.set(f.session.startPairedRecording(f.marker, id, null)) } finally { done.countDown() } }.apply { isDaemon = true; start() }
+            Thread { try { check(gate.await(5, TimeUnit.SECONDS)); web.set(f.session.setRemoteExclusive(true)) } finally { done.countDown() } }.apply { isDaemon = true; start() }
+            gate.countDown(); assertTrue(done.await(10, TimeUnit.SECONDS))
+            assertNotEquals("Only one owner may win", paired.get(), web.get())
+            if (paired.get()) assertEquals(LocalRecording.Preparing(id), f.state.value)
+            else { assertEquals(LocalRecording.Idle, f.state.value); assertTrue(f.queued.isEmpty()) }
+        } finally { gate.countDown(); f.close() }
+    }
+
 }
