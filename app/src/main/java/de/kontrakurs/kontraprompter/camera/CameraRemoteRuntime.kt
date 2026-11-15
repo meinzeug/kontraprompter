@@ -45,6 +45,10 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
     val recoveryRequired: StateFlow<Boolean> = _recoveryRequired
     private val _uploadStatus = MutableStateFlow("")
     val uploadStatus: StateFlow<String> = _uploadStatus
+    init {
+        client.onUploadSessionSet { _uploadStatus.value = "" }
+        client.onUploadSessionInvalidated { _uploadStatus.value = "" }
+    }
     // Last defense: a child failure must never crash the Android process.
     private val handler = CoroutineExceptionHandler { _, _ -> _status.value = "Websteuerung gestört. Lokale Aufnahmen bleiben erhalten." }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + handler)
@@ -139,6 +143,7 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
         if (uploadJob?.isActive == true || SystemClock.elapsedRealtime() < nextUploadCheck) return
         nextUploadCheck = SystemClock.elapsedRealtime() + 30_000
         uploadJob = scope.launch {
+            val bound = client.manualUploadSession() ?: return@launch
             try {
             val candidate = withContext(Dispatchers.IO) {
                 val captures = try { journal.snapshot().captures.filter(::cameraUploadEligible).asReversed() }
@@ -153,22 +158,22 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
                 }
             }
             if (candidate != null) {
-                _uploadStatus.value = "Video wird zu Videomaker übertragen …"
-                uploads.upload(candidate.first, candidate.second)
-                _uploadStatus.value = when (val state = uploads.state.value) {
-                    is CloudUploadState.Confirmed -> "Video für das Skript bestätigt · Original bleibt lokal"
-                    is CloudUploadState.Failed -> {
-                        if (state.kind == "manifest_pending") {
-                            try { withContext(Dispatchers.IO) { journal.retryReport(candidate.first.id, "ready") } }
-                            catch (error: Exception) { session.stopRecording(); throw error }
-                        }
-                        state.message
+                if (client.withManualUploadSession(bound) { _uploadStatus.value = "Video wird zu Videomaker übertragen …"; true } != true) return@launch
+                val result = uploads.upload(candidate.first, candidate.second, bound)
+                if (result is CloudUploadState.Failed && result.kind == "manifest_pending") {
+                    try { withContext(Dispatchers.IO) { client.withManualUploadSession(bound) { journal.retryReport(candidate.first.id, "ready") } } }
+                    catch (error: Exception) { session.stopRecording(); throw error }
+                }
+                client.withManualUploadSession(bound) {
+                    _uploadStatus.value = when (result) {
+                        is CloudUploadState.Confirmed -> "Video für das Skript bestätigt · Original bleibt lokal"
+                        is CloudUploadState.Failed -> result.message
+                        else -> "Upload nicht bestätigt · Original bleibt lokal"
                     }
-                    else -> "Upload nicht bestätigt · Original bleibt lokal"
                 }
             }
             } catch (error: CancellationException) { throw error }
-            catch (_: Exception) { _uploadStatus.value = "Uploadstatus nicht lesbar. Das Original bleibt lokal." }
+            catch (_: Exception) { client.withManualUploadSession(bound) { _uploadStatus.value = "Uploadstatus nicht lesbar. Das Original bleibt lokal." } }
         }
     }
 

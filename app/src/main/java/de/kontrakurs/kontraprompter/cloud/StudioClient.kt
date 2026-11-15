@@ -49,6 +49,7 @@ class StudioClient {
     internal fun <T> withManualUploadSession(session: ManualUploadSession, action: () -> T): T? = cookie.withCurrent(session.token, action)
     internal fun invalidateManualUploadSession(session: ManualUploadSession) = cookie.invalidate(session.token)
     internal fun onUploadSessionSet(action: () -> Unit) = cookie.onSessionSet(action)
+    internal fun onUploadSessionInvalidated(action: () -> Unit) = cookie.onSessionInvalidated(action)
     internal fun <T> withoutUploadSession(action: () -> T): T? = cookie.withoutSession(action)
     /** Random bearer sessions are bound only by a one-way, domain-separated digest. */
     internal fun manualUploadSessionBinding(session: ManualUploadSession): String =

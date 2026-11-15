@@ -109,6 +109,10 @@ internal class LanAutoUploader(context: Context, private val client: StudioClien
     private val blockedProjectImports = mutableSetOf<String>()
     private val _status = MutableStateFlow(LanAutoUploadStatus())
     val status: StateFlow<LanAutoUploadStatus> = _status
+    init {
+        client.onUploadSessionSet { _status.value = LanAutoUploadStatus() }
+        client.onUploadSessionInvalidated { _status.value = LanAutoUploadStatus() }
+    }
 
     fun start(scope: CoroutineScope) = scope.launch {
         while (isActive) {
@@ -133,18 +137,20 @@ internal class LanAutoUploader(context: Context, private val client: StudioClien
             if (unsaved != null) { blocked = LanAutoUploadStatus(recording.id, project, unsaved); continue }
             if (journal?.phase in setOf("project_missing", "conflict")) { blocked = LanAutoUploadStatus(recording.id, project, uploadBlockedMessage(journal?.conflictReason)); continue }
             val session = client.manualUploadSession()
-            if (session == null) { _status.value = LanAutoUploadStatus(recording.id, project, "Für den automatischen Upload Kamera bei Videomaker anmelden."); return@withLock }
+            if (session == null) { client.withoutUploadSession { _status.value = LanAutoUploadStatus(recording.id, project, "Für den automatischen Upload Kamera bei Videomaker anmelden.") }; return@withLock }
             val binding = client.manualUploadSessionBinding(session)
             if (project == null) {
                 if (recording.id in blockedProjectImports) { blocked = LanAutoUploadStatus(recording.id, null, "Aufnahmeprojekt muss geprüft werden. Das Original bleibt lokal."); continue }
-                _status.value = LanAutoUploadStatus(recording.id, null, "Aufnahmeprojekt wird vorbereitet …")
+                if (client.withManualUploadSession(session) { _status.value = LanAutoUploadStatus(recording.id, null, "Aufnahmeprojekt wird vorbereitet …"); true } != true) return@withLock
                 project = try { client.ensureLanRecordingProject(recording.id, session) }
                 catch (error: CancellationException) { throw error }
                 catch (error: UploadException) {
-                    if (error.kind == "conflict") blockedProjectImports.add(recording.id)
-                    _status.value = LanAutoUploadStatus(recording.id, null, error.message ?: "Aufnahmeprojekt nicht bestätigt. Das Original bleibt lokal."); return@withLock
+                    client.withManualUploadSession(session) {
+                        if (error.kind == "conflict") blockedProjectImports.add(recording.id)
+                        _status.value = LanAutoUploadStatus(recording.id, null, error.message ?: "Aufnahmeprojekt nicht bestätigt. Das Original bleibt lokal.")
+                    }; return@withLock
                 }
-                catch (_: Exception) { _status.value = LanAutoUploadStatus(recording.id, null, "Aufnahmeprojekt nicht bestätigt. Das Original bleibt lokal."); return@withLock }
+                catch (_: Exception) { client.withManualUploadSession(session) { _status.value = LanAutoUploadStatus(recording.id, null, "Aufnahmeprojekt nicht bestätigt. Das Original bleibt lokal.") }; return@withLock }
             }
             val target = project ?: continue
             // An idempotent project lookup can recover a target after local intent loss.
@@ -161,19 +167,19 @@ internal class LanAutoUploader(context: Context, private val client: StudioClien
                 blocked = LanAutoUploadStatus(recording.id, target, if (initial == LanUploadDecision.SESSION_CHANGED) "Studio-Sitzung geändert. Upload für diese Aufnahme erneut freigeben." else "Aufnahme oder Uploadauftrag hat sich geändert.", reauthorizeRequired = initial == LanUploadDecision.SESSION_CHANGED)
                 continue
             }
-            _status.value = LanAutoUploadStatus(recording.id, target, if (recording.origin == RecordingOrigin.LAN_UNASSIGNED) "Aufnahmeprojekt wird geprüft …" else "Skriptzuordnung wird geprüft …")
+            if (client.withManualUploadSession(session) { _status.value = LanAutoUploadStatus(recording.id, target, if (recording.origin == RecordingOrigin.LAN_UNASSIGNED) "Aufnahmeprojekt wird geprüft …" else "Skriptzuordnung wird geprüft …"); true } != true) return@withLock
             val available = try { client.projects().any { it.id == target } } catch (error: CancellationException) { throw error }
-            catch (_: Exception) { _status.value = LanAutoUploadStatus(recording.id, target, "Videomaker nicht erreichbar oder Anmeldung abgelaufen. Das Original bleibt lokal."); return@withLock }
-            if (!client.manualUploadSessionMatches(session)) { _status.value = LanAutoUploadStatus(recording.id, target, "Studio-Sitzung hat sich geändert. Das Original bleibt lokal."); return@withLock }
+            catch (_: Exception) { client.withManualUploadSession(session) { _status.value = LanAutoUploadStatus(recording.id, target, "Videomaker nicht erreichbar oder Anmeldung abgelaufen. Das Original bleibt lokal.") }; return@withLock }
+            if (!client.manualUploadSessionMatches(session)) return@withLock
             if (!available) { blocked = LanAutoUploadStatus(recording.id, target, "Zugehöriges Skript ist nicht verfügbar. Das Original bleibt lokal."); continue }
-            if (intent == null) withContext(Dispatchers.IO) { intents.bind(recording, target, binding) }
-            _status.value = LanAutoUploadStatus(recording.id, target, "Aufnahme wird zu Videomaker übertragen …")
+            if (intent == null && withContext(Dispatchers.IO) { client.withManualUploadSession(session) { intents.bind(recording, target, binding); true } } != true) return@withLock
+            if (client.withManualUploadSession(session) { _status.value = LanAutoUploadStatus(recording.id, target, "Aufnahme wird zu Videomaker übertragen …"); true } != true) return@withLock
             val result = uploads.upload(recording, target, session)
-            _status.value = when (result) {
+            client.withManualUploadSession(session) { _status.value = when (result) {
                 is CloudUploadState.Confirmed -> if (confirmedFor(result, recording.id, target)) LanAutoUploadStatus(recording.id, target, if (recording.origin == RecordingOrigin.LAN_UNASSIGNED) "Video im Aufnahmeprojekt ohne Skript bestätigt · Original bleibt lokal" else "Video für das Skript bestätigt · Original bleibt lokal") else LanAutoUploadStatus(recording.id, target, "Serverbeleg passt nicht; Original bleibt lokal.")
                 is CloudUploadState.Failed -> LanAutoUploadStatus(recording.id, target, result.message)
                 else -> LanAutoUploadStatus(recording.id, target, "Upload nicht bestätigt · Original bleibt lokal")
-            }
+            } }
             return@withLock // one upload at a time; network failures retry on the next tick
         }
         _status.value = blocked ?: LanAutoUploadStatus()

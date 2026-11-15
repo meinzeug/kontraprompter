@@ -42,4 +42,16 @@ class SessionCookieSerializationTest {
         cookie.withCurrent(newer) { cookie.invalidate(newer) }
         assertNull(cookie.get())
     }
+    @Test fun `new login clears previous status while old invalidation cannot clear new status`() {
+        val cookie = SessionCookie(); var visible = "old upload"
+        cookie.onSessionSet { visible = "" }
+        cookie.onSessionInvalidated { visible = "signed out" }
+        cookie.set("old"); val old = cookie.snapshot()!!
+        visible = "old upload"
+        cookie.set("new"); assertEquals("", visible)
+        visible = "new upload"; cookie.invalidate(old)
+        assertEquals("new upload", visible)
+        cookie.invalidate(cookie.snapshot()!!)
+        assertEquals("signed out", visible)
+    }
 }
