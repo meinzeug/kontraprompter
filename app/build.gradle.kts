@@ -12,7 +12,7 @@ android {
     useLibrary("android.test.runner")
     useLibrary("android.test.base")
     defaultConfig {
-        applicationId = "de.kontrakurs.kontraprompter.journalv4fixture"
+        applicationId = "de.kontrakurs.kontraprompter.journalv4real"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

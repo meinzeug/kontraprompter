@@ -75,6 +75,8 @@ internal class RtcMp4Recorder(
         private const val MAX_CLOCK_DRIFT_US = 250_000L
         private const val DATA_STALL_MS = 4_000L
         private val resourceGate = RecordingResourceGate()
+        // Fixture branch only: report the real recorder's resource release to the test.
+        internal fun fixtureRecorderAvailable(): Boolean = resourceGate.isAvailable()
     }
 
     private val app = context.applicationContext

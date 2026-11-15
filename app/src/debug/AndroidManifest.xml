@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
-    <application android:label="de.kontrakurs.kontraprompter.journalv4fixture" android:networkSecurityConfig="@xml/camera_fixture_network" tools:replace="android:label">
+    <application android:label="de.kontrakurs.kontraprompter.journalv4real" android:networkSecurityConfig="@xml/camera_fixture_network" tools:replace="android:label">
         <service android:name="de.kontrakurs.kontraprompter.camera.FixtureJournalProcess" android:exported="false" android:process=":journal_fixture_crash" />
     </application>
 </manifest>

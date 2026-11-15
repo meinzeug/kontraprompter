@@ -13,7 +13,7 @@ import android.util.AtomicFile
 import java.io.File
 import java.util.UUID
 
-/** Only the separate .journalv4fixture test application and random cache files are used. */
+/** Only the separate .journalv4real test application and random cache files are used. */
 class CameraJournalAtomicFileTest : InstrumentationTestCase() {
     private class FixtureContext(base: Context, private val testFiles: File) : ContextWrapper(base) {
         override fun getApplicationContext(): Context = this
@@ -27,7 +27,7 @@ class CameraJournalAtomicFileTest : InstrumentationTestCase() {
     }
     private inline fun inFixture(test: (Context, File, String) -> Unit) {
         val target = instrumentation.targetContext
-        check(target.packageName.endsWith(".journalv4fixture")) { "Requires separate test application" }
+        check(target.packageName.endsWith(".journalv4real")) { "Requires separate test application" }
         val files = File(target.cacheDir, "journal-fixture-${freshId()}")
         check(files.mkdir())
         try { test(FixtureContext(target, files), files, freshId()) }

@@ -12,7 +12,7 @@ import java.util.UUID
 /** Exists only in the isolated fixture debug APK, never in the release application. */
 class FixtureJournalProcess : Service() {
     override fun onBind(intent: Intent): IBinder {
-        check(packageName.endsWith(".journalv4fixture"))
+        check(packageName.endsWith(".journalv4real"))
         val name = checkNotNull(intent.getStringExtra("folder"))
         check(name.matches(Regex("journal-fixture-[0-9a-f-]{36}")))
         val files = File(cacheDir, name).canonicalFile

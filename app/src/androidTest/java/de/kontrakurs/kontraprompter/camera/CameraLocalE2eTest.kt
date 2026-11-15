@@ -40,7 +40,7 @@ class CameraLocalE2eTest : InstrumentationTestCase() {
     }
     fun testSyntheticRecorderEventsReachRealServerThroughJournalAndStudioClient() = runBlocking {
         val target = instrumentation.targetContext
-        check(target.packageName == "de.kontrakurs.kontraprompter.journalv4fixture")
+        check(target.packageName == "de.kontrakurs.kontraprompter.journalv4real")
         val files = File(target.cacheDir, "camera-e2e-${id()}"); check(files.mkdir())
         val context = FixtureContext(target, files)
         var session: LiveSession? = null; var controller: RemoteCameraController? = null
