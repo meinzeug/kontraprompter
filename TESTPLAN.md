@@ -105,3 +105,12 @@ Lösch- und Erfolgsbelege behebt diesen älteren Randfall nicht. Das atomare
 Vergleichen und Aktualisieren des Uploadjournals serialisiert Zugriffe über
 `UploadJournal` im selben App-Prozess; fremde Prozesse oder externe Änderungen
 sind damit nicht geschützt. Ein abweichender Auftrag wird nicht überschrieben.
+
+### Getrennte Android-Uploadjournal-Fixture
+
+Der Testbranch `wip/upload-deleted-journal-fixture-v2-20261115` verwendet nur das
+separate Paket `.uploadfixture` und zufällige Cache-Dateien. Er prüft alte
+Version-1-Journale mit zufälliger Upload-ID, erneutes Öffnen des dauerhaft
+gespeicherten Löschgrunds, abweichende Zielprojekte, beschädigte/fehlende
+optionale Felder, einen simulierten AtomicFile-Schreibfehler sowie den echten
+Android-JSON-Parser. Ein Build allein belegt keine Geräteausführung.
