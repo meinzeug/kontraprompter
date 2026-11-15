@@ -1,0 +1,33 @@
+name: Isolated camera journal test fixture
+on:
+  push:
+    branches: [wip/upload-deleted-journal-ci-v2-20261115]
+permissions:
+  contents: read
+jobs:
+  fixture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK packages
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;35.0.0"'
+      - name: Run JVM tests and compile isolated instrumentation APKs
+        run: |
+          ./gradlew --no-daemon --max-workers=1 --stacktrace :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+          sha256sum app/build/outputs/apk/debug/*.apk app/build/outputs/apk/androidTest/debug/*.apk
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: isolated-upload-journal-fixture-${{ github.sha }}
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/androidTest/debug/*.apk
+            app/build/reports/tests/
+          if-no-files-found: error
+          retention-days: 2
