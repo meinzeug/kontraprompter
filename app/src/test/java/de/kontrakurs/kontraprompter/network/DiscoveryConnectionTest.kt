@@ -16,18 +16,22 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import sun.misc.Unsafe
 
 /** Real loopback TCP, with an intentionally incomplete authentication handshake. */
 class DiscoveryConnectionTest {
+    private fun <T> allocate(type: Class<T>): T {
+        val unsafeClass = Class.forName("sun.misc.Unsafe")
+        val unsafe = unsafeClass.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null)
+        return type.cast(unsafeClass.getMethod("allocateInstance", Class::class.java).invoke(unsafe, type))!!
+    }
+
     private fun set(target: Any, name: String, value: Any?) {
         target.javaClass.getDeclaredField(name).apply { isAccessible = true }.set(target, value)
     }
 
     @Test fun `resolved endpoint is applied before loading clears and cannot apply twice`() {
-        val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
-        val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession
-        val item = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
+        val lan = allocate(LanSession::class.java)
+        val item = allocate(FoundDevice::class.java)
         val discovery = DiscoveryServices<FoundDevice>()
         discovery.found("camera", item); val selection = discovery.select(item)!!
         val state = MutableStateFlow(LanState(role = "client", discoveryResolving = true))
@@ -42,9 +46,8 @@ class DiscoveryConnectionTest {
     }
 
     @Test fun `resolve timeout clears loading and rejects a later endpoint`() {
-        val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
-        val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession
-        val item = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
+        val lan = allocate(LanSession::class.java)
+        val item = allocate(FoundDevice::class.java)
         val discovery = DiscoveryServices<FoundDevice>()
         discovery.found("camera", item); val selection = discovery.select(item)!!
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -65,10 +68,9 @@ class DiscoveryConnectionTest {
     }
 
     @Test fun `old timeout cannot end a newer selection`() {
-        val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
-        val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession
-        val first = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
-        val second = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
+        val lan = allocate(LanSession::class.java)
+        val first = allocate(FoundDevice::class.java)
+        val second = allocate(FoundDevice::class.java)
         val discovery = DiscoveryServices<FoundDevice>()
         discovery.found("first", first); discovery.found("second", second)
         val old = discovery.select(first)!!
@@ -88,10 +90,9 @@ class DiscoveryConnectionTest {
     }
 
     @Test fun `resolve failure clears loading only for the selected generation`() {
-        val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
-        val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession
-        val first = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
-        val second = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
+        val lan = allocate(LanSession::class.java)
+        val first = allocate(FoundDevice::class.java)
+        val second = allocate(FoundDevice::class.java)
         val discovery = DiscoveryServices<FoundDevice>()
         discovery.found("first", first); discovery.found("second", second)
         val old = discovery.select(first)!!
@@ -119,11 +120,10 @@ class DiscoveryConnectionTest {
     }
 
     @Test fun `discovery invalidation cannot cancel a concurrent manual connection`() {
-        val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
-        val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession
+        val lan = allocate(LanSession::class.java)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val state = MutableStateFlow(LanState(role = "client"))
-        val item = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
+        val item = allocate(FoundDevice::class.java)
         val discovery = DiscoveryServices<FoundDevice>()
         discovery.found("old camera", item); val selection = discovery.select(item)!!
         set(lan, "scope", scope); set(lan, "_state", state)
@@ -166,9 +166,8 @@ class DiscoveryConnectionTest {
     }
 
     @Test fun `losing selection closes the authenticating socket and prevents installation`() {
-        val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
-        val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession
-        val item = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
+        val lan = allocate(LanSession::class.java)
+        val item = allocate(FoundDevice::class.java)
         val discovery = DiscoveryServices<FoundDevice>()
         discovery.found("camera", item)
         val selection = discovery.select(item)!!
@@ -201,9 +200,8 @@ class DiscoveryConnectionTest {
     }
 
     @Test fun `installed discovered connection survives later service loss`() {
-        val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
-        val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession
-        val item = unsafe.allocateInstance(FoundDevice::class.java) as FoundDevice
+        val lan = allocate(LanSession::class.java)
+        val item = allocate(FoundDevice::class.java)
         val discovery = DiscoveryServices<FoundDevice>()
         discovery.found("camera", item)
         val selection = discovery.select(item)!!
