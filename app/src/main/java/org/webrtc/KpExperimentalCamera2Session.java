@@ -66,6 +66,8 @@ class KpExperimentalCamera2Session implements CameraSession {
 
   // Initialized when capture session is created
   @Nullable private CameraCaptureSession captureSession;
+  @Nullable private CameraDevice lastClosedCamera;
+  @Nullable private CameraCaptureSession lastClosedSession;
 
   // State
   private SessionState state = SessionState.RUNNING;
@@ -97,26 +99,25 @@ class KpExperimentalCamera2Session implements CameraSession {
     @Override
     public void onDisconnected(CameraDevice camera) {
       checkIsOnCameraThread();
-      final boolean startFailure = !startupReported && (state != SessionState.STOPPED);
-      state = SessionState.STOPPED;
-      stopInternal();
-      if (startFailure) {
-        callback.onFailure(FailureType.DISCONNECTED, "Camera disconnected / evicted.");
-      } else {
-        events.onCameraDisconnected(KpExperimentalCamera2Session.this);
-      }
+      KpCameraDisconnect.dispatch(state == SessionState.STOPPED, startupReported,
+          () -> closeLateCamera(camera), () -> adoptCamera(camera), () -> state = SessionState.STOPPED,
+          KpExperimentalCamera2Session.this::stopInternal,
+          () -> callback.onFailure(FailureType.DISCONNECTED, "Camera disconnected / evicted."),
+          () -> events.onCameraDisconnected(KpExperimentalCamera2Session.this));
     }
 
     @Override
     public void onError(CameraDevice camera, int errorCode) {
       checkIsOnCameraThread();
+      if (state == SessionState.STOPPED) { closeLateCamera(camera); return; }
+      adoptCamera(camera);
       reportError(getErrorDescription(errorCode));
     }
 
     @Override
     public void onOpened(CameraDevice camera) {
       checkIsOnCameraThread();
-      if (state == SessionState.STOPPED) { camera.close(); return; }
+      if (state == SessionState.STOPPED) { closeLateCamera(camera); return; }
 
       Logging.d(TAG, "Camera opened.");
       cameraDevice = camera;
@@ -145,15 +146,16 @@ class KpExperimentalCamera2Session implements CameraSession {
     @Override
     public void onConfigureFailed(CameraCaptureSession session) {
       checkIsOnCameraThread();
-      session.close();
-      if (state == SessionState.STOPPED) return;
+      if (state == SessionState.STOPPED) { closeLateSession(session); return; }
+      if (captureSession == null) captureSession = session;
+      else if (captureSession != session) closeLateSession(session);
       reportError("Failed to configure capture session.");
     }
 
     @Override
     public void onConfigured(CameraCaptureSession session) {
       checkIsOnCameraThread();
-      if (state == SessionState.STOPPED) { session.close(); return; }
+      if (state == SessionState.STOPPED) { closeLateSession(session); return; }
       Logging.d(TAG, "Camera capture session configured.");
       captureSession = session;
       try {
@@ -319,11 +321,15 @@ class KpExperimentalCamera2Session implements CameraSession {
       reportError("getCameraCharacteristics(): " + e.getMessage());
       return;
     }
-    cameraOrientation = cameraCharacteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
-    isCameraFrontFacing = cameraCharacteristics.get(CameraCharacteristics.LENS_FACING)
-        == CameraMetadata.LENS_FACING_FRONT;
-
-    findCaptureFormat();
+    try {
+      cameraOrientation = cameraCharacteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+      isCameraFrontFacing = cameraCharacteristics.get(CameraCharacteristics.LENS_FACING)
+          == CameraMetadata.LENS_FACING_FRONT;
+      findCaptureFormat();
+    } catch (RuntimeException e) {
+      reportError("Failed to inspect camera capabilities: " + e);
+      return;
+    }
 
     if (captureFormat == null) {
       // findCaptureFormat reports an error already.
@@ -398,22 +404,34 @@ class KpExperimentalCamera2Session implements CameraSession {
     Logging.d(TAG, "Stop internal");
     checkIsOnCameraThread();
 
-    surfaceTextureHelper.stopListening();
-
-    if (captureSession != null) {
-      captureSession.close();
-      captureSession = null;
-    }
-    if (surface != null) {
-      surface.release();
-      surface = null;
-    }
-    if (cameraDevice != null) {
-      cameraDevice.close();
-      cameraDevice = null;
-    }
-
+    final CameraCaptureSession oldSession = captureSession;
+    final Surface oldSurface = surface;
+    final CameraDevice oldCamera = cameraDevice;
+    captureSession = null; surface = null; cameraDevice = null;
+    if (oldSession != null) lastClosedSession = oldSession;
+    if (oldCamera != null) lastClosedCamera = oldCamera;
+    boolean clean = KpCameraCleanup.shared().release(surfaceTextureHelper::stopListening,
+        oldSession == null ? null : oldSession::close,
+        oldSurface == null ? null : oldSurface::release,
+        oldCamera == null ? null : oldCamera::close);
+    if (!clean) Logging.e(TAG, "Camera cleanup uncertain; experimental restarts blocked.");
     Logging.d(TAG, "Stop done");
+  }
+
+  private void adoptCamera(CameraDevice incoming) {
+    cameraDevice = KpCameraOwnership.adopt(cameraDevice, incoming, this::closeLateCamera);
+  }
+
+  private void closeLateCamera(CameraDevice incoming) {
+    if (incoming == null || incoming == lastClosedCamera) return;
+    lastClosedCamera = incoming;
+    KpCameraCleanup.shared().release(incoming::close);
+  }
+
+  private void closeLateSession(CameraCaptureSession incoming) {
+    if (incoming == null || incoming == lastClosedSession) return;
+    lastClosedSession = incoming;
+    KpCameraCleanup.shared().release(incoming::close);
   }
 
   private void reportError(String error) {

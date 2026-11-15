@@ -31,6 +31,10 @@ public class KpExperimentalCamera2Capturer extends CameraCapturer {
       CameraSession.Events events, Context applicationContext,
       SurfaceTextureHelper surfaceTextureHelper, String cameraName, int width, int height,
       int framerate) {
+    if (KpCameraCleanup.shared().isBlocked()) {
+      createSessionCallback.onFailure(CameraSession.FailureType.ERROR, "Kamerafreigabe ungeklärt. App neu starten.");
+      return;
+    }
     KpExperimentalCamera2Session.create(createSessionCallback, events, applicationContext, cameraManager,
         surfaceTextureHelper, cameraName, width, height, framerate, minimumFps);
   }
