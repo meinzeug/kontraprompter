@@ -1,11 +1,11 @@
 package de.kontrakurs.kontraprompter
 
-import android.app.Activity
 import android.Manifest
 import android.content.pm.PackageManager
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.LocalActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Canvas
@@ -91,7 +91,7 @@ fun LivePreview(video: RtcVideo, horizontal: Boolean = false, vertical: Boolean 
 internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel, onClose: () -> Unit, onScripts: () -> Unit) {
     val state by session.lan.state.collectAsState()
     val video by session.video.collectAsState()
-    val secureActivity = LocalContext.current as Activity
+    val secureActivity = checkNotNull(LocalActivity.current) { "Eine Activity ist zum Schutz des Sitzungscodes erforderlich" }
     // The session code is a bearer secret and must stay off screenshots.
     DisposableEffect(secureActivity) {
         val alreadySecure = secureActivity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0
@@ -111,7 +111,7 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
     var token by remember { mutableStateOf("") }
     var showToken by remember { mutableStateOf(false) }
     LaunchedEffect(state.authenticated) { if (state.authenticated) { token = ""; showToken = false } }
-    val activity = LocalContext.current as Activity
+    val activity = secureActivity
     AppPage(
         title = if (session.host) "Deine Kamera" else "Kamera verbinden",
         eyebrow = if (session.host) "LIVE-VORSCHAU" else "VERBINDUNG",
