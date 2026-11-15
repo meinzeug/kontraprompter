@@ -120,3 +120,15 @@ diesen eigenen PID, wartet auf den Verbindungsabbruch und prüft nach erneutem
 Öffnen `uncertain` ohne Aktionswiederholung. Er ist erst nach erfolgreichem
 Build und Geräteausführung belegt; es wird weder ein Codec gestartet noch die
 reguläre Kamera-App beendet.
+
+Der echte Abbruch des eigenen Fixture-Nebenprozesses bestand am 15. November
+2026 auf Samsung SM-A526B und Xiaomi 2409BRN2CY (Testcode `c9095ca`, CI
+`43677828043`). Der Test wartete auf den getrennten Service, beendete dessen
+PID und prüfte nach Neuöffnung `uncertain` sowie die ausbleibende erneute
+START-Aktion. Auf beiden Geräten wurden die beiden separaten Testpakete danach
+entfernt. Auf Xiaomi wurden nur die exakt benannten MIUI-Installationsdialoge
+bestätigt. Die regulären Apps blieben im Vordergrund, der reguläre
+Xiaomi-Kameraprozess blieb bestehen; die App meldete anschließend die
+Samsung-Verbindung und Videomaker-Anmeldung. Der Test deckt einen Kill nach
+persistiertem `admitting` ab, keinen Kill während eines AtomicFile-Systemcalls,
+keinen Codec-/Aufnahmelauf, keine Web-End-to-End-Kette und keinen Rollback.
