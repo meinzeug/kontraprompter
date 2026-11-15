@@ -99,3 +99,16 @@ ist noch kein tatsächliches Töten eines Android-Prozesses. Ein erfolgreicher
 Build alleine beweist keines dieser Laufzeitverhalten. Die Instrumentierung
 darf nur mit expliziter Testpaket-/Datentrennung und nach Gerätefreigabe
 laufen; reguläre App-Daten und Aufnahmen sind nicht zu verändern.
+
+Am 15. November 2026 bestanden die drei Instrumentierungstests auf Samsung
+SM-A526B (Fixture `ee963ac`, CI `43676728811`) und Xiaomi 2409BRN2CY
+(Fixture `cae1fe2`, CI `43677266636`). Die CI-Läufe führten zusätzlich die
+JVM-Tests des echten Ereignishandlers mit synthetischen Recorder-Ereignissen
+aus. Auf beiden Geräten wurden ausschließlich die getrennten Pakete
+`de.kontrakurs.kontraprompter.journalfixture` und `.journalfixture.test`
+installiert und danach entfernt. Auf Xiaomi wurden die MIUI-Dialoge nur für
+den jeweils exakt angezeigten Fixture-Paketnamen bestätigt. Danach blieben
+beide regulären Apps im Vordergrund; Xiaomi meldete die Verbindung zu Samsung
+und die Videomaker-Anmeldung. Die Tests ersetzen keinen tatsächlichen
+Prozess-Kill zwischen Persistenz und Recorderaktion, keinen Codec-/Aufnahme- und
+keinen End-to-End- oder Rollback-Test. Die Produktivfunktion bleibt deaktiviert.
