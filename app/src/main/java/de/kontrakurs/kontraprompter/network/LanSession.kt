@@ -118,7 +118,7 @@ class LanSession(context: Context) : AutoCloseable {
             override fun onStartDiscoveryFailed(type: String, code: Int) { _state.update { it.copy(error = "Suche fehlgeschlagen ($code); manuelle Adresse verwenden.") } }
             override fun onStopDiscoveryFailed(type: String, code: Int) = Unit
             override fun onServiceFound(info: NsdServiceInfo) {
-                if (info.serviceType.trimEnd('.') == SERVICE_TYPE.trimEnd('.')) synchronized(discoveryEventLock) {
+                if (isKontraPrompterServiceType(info.serviceType)) synchronized(discoveryEventLock) {
                     val previous = discovered.currentSelection()
                     val devices = discovered.found(info.serviceName, FoundDevice(info.serviceName, info))
                     val invalidated = previous != null && !discovered.current(previous)
@@ -157,7 +157,7 @@ class LanSession(context: Context) : AutoCloseable {
                 override fun onServiceResolved(info: NsdServiceInfo) {
                     if (!current()) return
                     val host = info.host?.hostAddress
-                    if (info.serviceName != device.name || info.serviceType?.trimEnd('.') != SERVICE_TYPE.trimEnd('.') || info.port !in 1..65535 || host == null) {
+                    if (info.serviceName != device.name || !isKontraPrompterServiceType(info.serviceType) || info.port !in 1..65535 || host == null) {
                         resolutionFailed(selection, "Kameradienst unvollständig oder veraltet. Bitte erneut auswählen.")
                     } else result(DiscoveredEndpoint(host, info.port, selection))
                 }

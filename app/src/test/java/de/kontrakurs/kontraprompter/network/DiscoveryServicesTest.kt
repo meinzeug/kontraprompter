@@ -8,6 +8,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.net.Socket
 
 class DiscoveryServicesTest {
+    @Test fun `android service types accept only local and unqualified DNS SD forms`() {
+        listOf("_kontraprompter._tcp", "_kontraprompter._tcp.", "_kontraprompter._tcp.local", "_kontraprompter._tcp.local.", "_KontraPrompter._TCP.LOCAL.")
+            .forEach { assertTrue("expected valid service type: $it", isKontraPrompterServiceType(it)) }
+        listOf(null, "", "_kontraprompter._udp.local", "_other._tcp.local", "_kontraprompter._tcp.local.evil", "_kontraprompter._tcp.local..", " _kontraprompter._tcp.local")
+            .forEach { assertFalse("expected invalid service type: $it", isKontraPrompterServiceType(it)) }
+    }
+
     @Test fun `service name is session specific and safe for a DNS label`() {
         val first = discoveryServiceName("SM-A526B", ByteArray(8))
         val second = discoveryServiceName("SM-A526B", ByteArray(8) { 1 })
