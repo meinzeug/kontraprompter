@@ -36,8 +36,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -657,8 +660,8 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
         "failed" -> "Aufnahme fehlgeschlagen"
         else -> "Kamerastatus wird ermittelt …"
     }
-    val showCameraStatus = controls || lanState.error != null || (isCameraClient && (
-        pairedCapture.cameraError != null || pairedCapture.message != null || pairedCapture.pending ||
+    val showCameraStatus = controls || lanState.error != null || pairedCapture.pending || (isCameraClient && (
+        pairedCapture.cameraError != null || pairedCapture.message != null ||
             pairedCapture.phase in setOf("failed", "partial") ||
             (lanState.ready && (keyboardDescriptor != null || pairedCapture.phase in setOf("preparing", "recording", "paused", "finalizing", "ready")))
         ))
@@ -678,29 +681,33 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
                     if (lanState.error != null) add("Verbindungsfehler")
                     if (isCameraClient && pairedCapture.cameraError != null) add("Kamerafehler")
                     if (isCameraClient && pairedCapture.message != null) add("Kamerahinweis")
-                    if (isCameraClient && !lanState.ready && pairedCapture.pending) add("Befehl ausstehend")
                     if (isCameraClient && !lanState.ready && pairedCapture.phase == "failed") add("Letzter Aufnahmestatus: Fehler")
                     if (isCameraClient && !lanState.ready && pairedCapture.phase == "partial") add("Letzter Aufnahmestatus: Teilaufnahme")
                     if (isCameraClient && lanState.ready && keyboardDescriptor != null && !controls) add("Enter-Auslöser nicht bereit")
                 }
-                val primary = if (isCameraClient && lanState.ready) capturePhase + (if (pairedCapture.pending) " · Befehl ausstehend" else "")
+                val primary = if (isCameraClient && lanState.ready) capturePhase
                     else if (lanState.role.isEmpty()) "Offline-Prompter" else lanState.status
                 val hasError = lanState.error != null || (isCameraClient && (pairedCapture.cameraError != null || pairedCapture.phase == "failed"))
                 val accessibleStatus = buildString {
+                    if (pairedCapture.pending) append("Befehl ausstehend. ")
                     append(primary)
                     lanState.error?.let { append(". Verbindungsfehler: "); append(it) }
                     if (isCameraClient) {
                         pairedCapture.cameraError?.let { append(". Kamerafehler: "); append(it) }
                         pairedCapture.message?.let { append(". Kamerahinweis: "); append(it) }
-                        if (!lanState.ready && pairedCapture.pending) append(". Befehl ausstehend")
                         if (!lanState.ready && pairedCapture.phase in setOf("failed", "partial")) { append(". Letzter Aufnahmestatus: "); append(capturePhase) }
                         if (lanState.ready && keyboardDescriptor != null && !controls) append(". Enter-Auslöser nicht bereit. Anzeige antippen und aktivieren")
                     }
                     append(". Details öffnen")
                 }
-                Surface(onClick = { statusDetails = true }, modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = accessibleStatus }, shape = RoundedCornerShape(14.dp), color = Color(0xe6202329)) {
+                Surface(onClick = { statusDetails = true }, modifier = Modifier.fillMaxWidth().clearAndSetSemantics {
+                    contentDescription = accessibleStatus
+                    role = Role.Button
+                    onClick(label = "Details öffnen") { statusDetails = true; true }
+                }, shape = RoundedCornerShape(14.dp), color = Color(0xe6202329)) {
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Column(Modifier.weight(1f)) {
+                            if (pairedCapture.pending) Text("Befehl ausstehend", color = Color(0xffffd79b), style = MaterialTheme.typography.labelMedium)
                             Text(primary, color = if (isCameraClient && lanState.ready && pairedCapture.phase == "recording") Color(0xffffb2b2) else Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
                             if (warnings.isNotEmpty()) Text(if (hasError) "Fehler · Details öffnen" else "Hinweis · Details öffnen", color = Color(0xffffc7a8), style = MaterialTheme.typography.labelMedium)
                         }
@@ -739,8 +746,9 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
             Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (lanState.role.isEmpty()) "Offline-Prompter" else lanState.status + (lanState.rttMs?.let { " · RTT $it ms" } ?: ""))
                 lanState.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (pairedCapture.pending) Text("Befehl ausstehend")
                 if (isCameraClient && lanState.ready) {
-                    Text(capturePhase + (if (pairedCapture.pending) " · Befehl ausstehend" else ""))
+                    Text(capturePhase)
                     Text(if (cloudProjectLinked) "Studio-Skript zugeordnet · Speicherung auf der Kamera" else "Lokales Skript · Aufnahme bleibt zunächst auf der Kamera")
                     Text(when {
                         pairedCapture.cameraSwitching -> "Kamera wird gewechselt …"
