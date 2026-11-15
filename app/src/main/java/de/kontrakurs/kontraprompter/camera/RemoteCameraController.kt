@@ -16,7 +16,6 @@ import kotlinx.coroutines.withContext
 internal data class CameraReport(val phase: String, val recordingId: String?, val projectId: String?, val sizeBytes: Long? = null, val sha256: String? = null, val paused: Boolean? = null, val cameraFront: Boolean? = null, val cameraCanSwitch: Boolean = false)
 internal data class CameraAck(val id: String, val result: String, val revision: Long)
 internal data class CameraPollRequest(val sequence: Long, val report: CameraReport, val acknowledgements: List<CameraAck>)
-internal data class CameraPollResponse(val command: CameraCommand?, val remainingMs: Long)
 
 /** A single owner serializes journal decisions and real recorder actions. */
 internal class RemoteCameraController private constructor(private val journal: RemoteCameraJournal, private val session: LiveSession) {

@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import de.kontrakurs.kontraprompter.video.SavedRecording
-import de.kontrakurs.kontraprompter.camera.CameraCommand
+import de.kontrakurs.kontraprompter.camera.parseCameraPollResponse
 import de.kontrakurs.kontraprompter.camera.CameraPollRequest
 import de.kontrakurs.kontraprompter.camera.CameraPollResponse
 import de.kontrakurs.kontraprompter.camera.CameraLateReportConflictException
@@ -316,16 +316,10 @@ class StudioClient {
                 while (true) { val count = input.read(block); if (count < 0) break; check(result.length + count <= 16_384); result.append(block, 0, count) }
                 result.toString()
             }
-            val commands = JSONObject(text).getJSONArray("commands")
             check(cookie.get() == session) { "Studio-Sitzung hat sich geändert." }
-            check(commands.length() <= 1)
-            if (commands.length() == 0) return CameraPollResponse(null, 0)
-            val item = commands.getJSONObject(0)
-            val project = if (item.isNull("projectId")) null else item.getString("projectId")
-            val from = if (!item.has("cameraFrom") || item.isNull("cameraFrom")) null else item.getBoolean("cameraFrom")
-            val command = CameraCommand(item.getString("id"), item.getString("type"), item.getString("recordingId"), project, from)
-            val remaining = item.getLong("remainingMs"); check(remaining in 0..10_000)
-            return CameraPollResponse(command, remaining)
+            val parsed = parseCameraPollResponse(text)
+            check(cookie.get() == session) { "Studio-Sitzung hat sich geändert." }
+            return parsed
         } finally { connection.disconnect() }
     }
 
