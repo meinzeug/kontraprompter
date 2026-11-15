@@ -84,6 +84,17 @@ Fake-Engine beweist daher nicht die tatsächliche Android-JNA-Fehlersemantik.
 Modellinitialisierung und Speichermangel können darüber hinaus den Prozess
 beeinträchtigen; deren Isolierung und Belastungstests bleiben offen.
 
+Der isolierte [CI-Run 43675525092](https://github.com/meinzeug/kontraprompter/actions/runs/43675525092)
+zum Quellcommit `3b94ab9` baut die Fixture mit integerbasiertem JNA-Aufruf und
+prüft Modell, synthetisches PCM, beide APK-Manifeste und native ABIs. Alle
+sechs Fake-Native-Hosttests bestanden. Das kurzlebige
+[Artefakt 14146042913](https://github.com/meinzeug/kontraprompter/actions/runs/43675525092/artifacts/14146042913)
+enthält die App-APK (40.926.499 Bytes, SHA-256
+`8b9cdcdaea3070adcd31f61c112b7929094842a9076300e86e4bf2163d2a9d39`)
+und Test-APK (47.748.405 Bytes, SHA-256
+`d692f6d1f62e2ab39c995d87f342d5de2c34764bf279c4cf7fab4801a24b9c60`).
+Dieser neuere JNA-Kandidat wurde auf keinem Gerät installiert oder ausgeführt.
+
 Ein späterer Bau vom Hauptverzeichnis des Speech-WIP aus wäre beispielsweise
 `./gradlew -p experiments/vosk-android-fixture :app:assembleDebug :app:assembleDebugAndroidTest`.
 Ein solcher Build lädt gegebenenfalls Abhängigkeiten und muss bei knappen
