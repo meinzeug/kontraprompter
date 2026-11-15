@@ -4,8 +4,10 @@
 Es folgt standardmäßig der Hell-/Dunkel-Einstellung des Systems und verwendet
 ab Android 12 (API 31) die Material-3-Systemfarben. Auf älteren Geräten oder
 bei deaktivierten dynamischen Farben gelten geprüfte eigene Hell-/Dunkel-
-Paletten. Die vorhandene Material-3-Version und alle Buildwerkzeuge bleiben
-unverändert; es werden keine Expressive-APIs vorausgesetzt.
+Paletten. Es verwendet `MaterialExpressiveTheme` und `MotionScheme.expressive()`
+aus Material 3 1.5.0-rc01. Diese Version ist ein Release Candidate; die dafür
+nötigen Änderungen an Compose-BOM und Buildwerkzeugen sind gesondert im
+Dokument `material3-expressive-deps-wip.md` festgehalten.
 
 Typografie, Formen und `LocalKontraSpacing` bieten ein gemeinsames Fundament
 für die spätere Seitenmigration. Drei Compose-Vorschauen zeigen Hell, Dunkel
