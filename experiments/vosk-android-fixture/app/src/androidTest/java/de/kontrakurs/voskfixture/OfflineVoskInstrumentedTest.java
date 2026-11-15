@@ -119,6 +119,7 @@ public class OfflineVoskInstrumentedTest {
         // Known machine-generated fixture text; not a human-speech accuracy metric.
         assertEquals("hallo zusammen heute sprechen wir über medien und videos", normalized);
       }
+      SyntheticSpeechPipeline.run(model, test);
     }
   }
 }

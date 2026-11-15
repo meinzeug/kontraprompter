@@ -84,6 +84,22 @@ Fake-Engine beweist daher nicht die tatsächliche Android-JNA-Fehlersemantik.
 Modellinitialisierung und Speichermangel können darüber hinaus den Prozess
 beeinträchtigen; deren Isolierung und Belastungstests bleiben offen.
 
+`SyntheticSpeechPipeline` bereitet einen weiteren isolierten Android-
+Instrumentierungstest vor: künstliches, hashgeprüftes PCM wird in einen echten
+AAC-Encoder eingereiht und danach durch den echten Tee, den begrenzten
+integerbasierten Vosk-Decoder, den Wortcursor und den lokalen Positionsfence
+geführt. Der Test vergleicht die PCM-Hashes vor/nach Tee, prüft AAC-Ausgabe,
+den bekannten synthetischen Satz und die lokale Endposition. Die testseitigen
+Kopien von Tee/Fence stammen unverändert aus Recorder-WIP `4748a80`, der Cursor
+aus Speech-WIP `ef891d5`; `check-pipeline-sources.py` prüft ihre SHA-256-Werte.
+Sie sind nicht mit der KontraPrompter-App verbunden. Es wird weder ein
+`AudioRecord` geöffnet noch ein Mikrofon simuliert: Android bietet hier ohne
+besondere Systemrechte keinen nachgewiesenen Weg, `AudioRecord` künstliches
+PCM einzuspeisen. Echte Recorder-Timestamps, paralleles Mikrofon-/Kamera-/
+Codecverhalten, AAC-Dekodierung, Echtzeit, Drop-/Seek-/Netzwerkrennen und
+Produktionsfreigabe sind damit nicht bewiesen. Der Test verschickt weder Audio
+noch Transkripte und funktioniert nur mit separat bereitgestelltem Modellasset.
+
 Der isolierte [CI-Run 43675525092](https://github.com/meinzeug/kontraprompter/actions/runs/43675525092)
 zum Quellcommit `3b94ab9` baut die Fixture mit integerbasiertem JNA-Aufruf und
 prüft Modell, synthetisches PCM, beide APK-Manifeste und native ABIs. Alle

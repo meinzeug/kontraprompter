@@ -29,7 +29,9 @@ jobs:
           python3 experiments/vosk-android-fixture/check-model-asset.py "$asset_dir/vosk-model-small-de-0.15.zip"
           python3 experiments/vosk-android-fixture/check-synthetic-asset.py "$asset_dir/synthetic-de-48khz-s16le.pcm"
       - name: Build separate app and test APK with model
-        run: ./gradlew -p experiments/vosk-android-fixture :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=2
+        run: |
+          python3 experiments/vosk-android-fixture/check-pipeline-sources.py
+          ./gradlew -p experiments/vosk-android-fixture :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=2
       - name: Verify APK permissions, ABIs, model bytes and runner
         run: |
           python3 experiments/vosk-android-fixture/check-artifacts.py
