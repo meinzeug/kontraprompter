@@ -2,9 +2,7 @@ package de.kontrakurs.kontraprompter.camera
 
 import org.json.JSONObject
 import java.util.UUID
-import java.io.IOException
 
-internal class CameraProtocolException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
 internal data class CameraPollResponse(val command: CameraCommand?, val remainingMs: Long)
 

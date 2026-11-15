@@ -90,9 +90,9 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
                 _conflicts.value = controller.conflictDetails()
                 while (isActive) {
                     try {
-                        val currentTicket = ticket ?: client.startCameraDeviceSession(identity).also { ticket = it }
+                        val currentTicket = ticket ?: guardCameraTransport { client.startCameraDeviceSession(identity) }.also { ticket = it }
                         previewTicket = currentTicket
-                        controller.poll { client.pollCameraDevice(currentTicket, it) }
+                        controller.poll { guardCameraTransport { client.pollCameraDevice(currentTicket, it) } }
                         if (controller.hasQuarantinedReports()) _quarantined.value = true
                         _conflicts.value = controller.conflictDetails()
                         _status.value = if (controller.hasQuarantinedReports()) "Websteuerung verbunden · Kamerakonflikt prüfen; neue Starts gesperrt" else "Websteuerung verbunden"
@@ -111,6 +111,13 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
                         preview.disable("Webvorschau aus · Kameraprotokoll nicht verfügbar")
                         _status.value = "Kamerasteuerung nicht kompatibel oder ungültig · Aufnahme läuft gegebenenfalls lokal weiter"
                         delay(30_000)
+                    } catch (_: CameraUnexpectedTransportException) {
+                        previewTicket = null
+                        preview.disable("Webvorschau aus · Fernsteuerung angehalten")
+                        _status.value = "Fernsteuerung angehalten · Aufnahme läuft gegebenenfalls lokal weiter; bitte am Gerät prüfen"
+                        // An unexpected auth/HTTP/parser failure must not close the recorder owner
+                        // or automatically retry an action whose outcome is not established.
+                        while (isActive) delay(30_000)
                     } catch (_: CameraReconciliationPendingException) {
                         _status.value = "Lokale Aufnahme wird erneut geprüft · Original bleibt erhalten"
                         delay(5000)

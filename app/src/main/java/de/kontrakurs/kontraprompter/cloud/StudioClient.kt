@@ -20,6 +20,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import de.kontrakurs.kontraprompter.video.SavedRecording
 import de.kontrakurs.kontraprompter.camera.decodeCameraPollResponse
+import de.kontrakurs.kontraprompter.camera.throwIfCameraPollUnavailable
 import de.kontrakurs.kontraprompter.camera.CameraProtocolException
 import de.kontrakurs.kontraprompter.camera.CameraPollRequest
 import de.kontrakurs.kontraprompter.camera.CameraPollResponse
@@ -306,7 +307,7 @@ class StudioClient {
             val code = connection.responseCode
             if (code == 403 && ticket != null) throw CameraDeviceTicketException("Kameraticket abgelaufen. Geräteanmeldung wird erneuert.")
             if (code == 401 || code == 403) { cookie.invalidate(session); throw IllegalStateException("Sitzung abgelaufen. Bitte erneut anmelden.") }
-            if (code == 400) throw CameraProtocolException("Der Server kann die Kamerameldung nicht verarbeiten. Bitte Versionen prüfen.")
+            throwIfCameraPollUnavailable(code)
             if (code == 429 || code in 500..599) throw IOException("Kamerafernsteuerung ist vorübergehend nicht erreichbar (HTTP $code).")
             if (code == 409 && ticket != null && isLateReportConflict(connection, sessionId, request)) {
                 check(cookie.get() == session) { "Studio-Sitzung hat sich geändert. Bitte erneut verbinden." }
@@ -386,6 +387,7 @@ class StudioClient {
             val status = connection.responseCode
             if (status == 401 || status == 403) { cookie.invalidate(session); throw IllegalStateException("Sitzung abgelaufen. Bitte erneut anmelden.") }
             if (status == 409) throw CameraProtocolConflictException("Kameragerät konnte nicht zugeordnet werden (HTTP 409).")
+            throwIfCameraPollUnavailable(status)
             if (status == 429 || status in 500..599) throw IOException("Kameraanmeldung ist vorübergehend nicht erreichbar (HTTP $status).")
             check(status == 200 || status == 201) { "Kameraanmeldung fehlgeschlagen (HTTP $status)." }
             val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
