@@ -28,6 +28,8 @@ class DiscoveryConnectionTest {
 
     private fun set(target: Any, name: String, value: Any?) {
         target.javaClass.getDeclaredField(name).apply { isAccessible = true }.set(target, value)
+        if (target is LanSession && name == "socketLock")
+            LanSession::class.java.getDeclaredField("deliveryLock").apply { isAccessible = true }.set(target, Any())
     }
 
     @Test fun `resolved endpoint is applied before loading clears and cannot apply twice`() {
@@ -200,6 +202,49 @@ class DiscoveryConnectionTest {
         } finally { scope.cancel(); discovery.close() }
     }
 
+    @Test fun `selection loss closes pending socket while old callback blocks installation`() {
+        val lan = allocate(LanSession::class.java)
+        val item = allocate(FoundDevice::class.java)
+        val discovery = DiscoveryServices<FoundDevice>()
+        discovery.found("camera", item); val selection = discovery.select(item)!!
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val state = MutableStateFlow(LanState(role = "client"))
+        set(lan, "scope", scope); set(lan, "_state", state); set(lan, "discovered", discovery)
+        set(lan, "closed", AtomicBoolean(false)); set(lan, "connected", AtomicBoolean(false))
+        set(lan, "readyDelivered", AtomicBoolean(false)); set(lan, "socketLock", Any()); set(lan, "deviceName", "test")
+        val delivery = checkNotNull(LanSession::class.java.getDeclaredField("deliveryLock").apply { isAccessible = true }.get(lan))
+        val locked = CountDownLatch(1); val release = CountDownLatch(1); val handshake = CountDownLatch(1)
+        val lostDone = CountDownLatch(1); val closedOnPeer = CountDownLatch(1)
+        val token = "00000000000000000000000000000000"
+        try {
+            Thread { synchronized(delivery) { locked.countDown(); check(release.await(5, TimeUnit.SECONDS)) } }
+                .apply { isDaemon = true; start() }
+            assertTrue(locked.await(5, TimeUnit.SECONDS))
+            ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { server ->
+                server.soTimeout = 5_000
+                val host = Thread {
+                    server.accept().use { socket ->
+                        socket.soTimeout = 5_000
+                        AuthenticatedChannel.host(socket, token, "test-host")
+                        handshake.countDown()
+                        if (socket.getInputStream().read() == -1) closedOnPeer.countDown()
+                    }
+                }.apply { isDaemon = true; start() }
+                lan.connectDiscovered(DiscoveredEndpoint("127.0.0.1", server.localPort, selection), token)
+                assertTrue(handshake.await(5, TimeUnit.SECONDS))
+                Thread { try { discovery.lost("camera") } finally { lostDone.countDown() } }
+                    .apply { isDaemon = true; start() }
+                assertTrue("selection loss blocked behind application callback", lostDone.await(2, TimeUnit.SECONDS))
+                assertTrue("revoked socket remained open", closedOnPeer.await(2, TimeUnit.SECONDS))
+                assertFalse(state.value.authenticated)
+                release.countDown(); host.join(5_000)
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                while (scope.coroutineContext[Job]!!.children.any() && System.nanoTime() < deadline) Thread.yield()
+                assertFalse("revoked channel was installed", state.value.authenticated)
+            }
+        } finally { release.countDown(); scope.cancel(); discovery.close() }
+    }
+
     @Test fun `installed discovered connection survives later service loss`() {
         val lan = allocate(LanSession::class.java)
         val item = allocate(FoundDevice::class.java)
@@ -210,7 +255,7 @@ class DiscoveryConnectionTest {
         val state = MutableStateFlow(LanState(role = "client"))
         set(lan, "scope", scope); set(lan, "_state", state); set(lan, "discovered", discovery)
         set(lan, "closed", AtomicBoolean(false)); set(lan, "connected", AtomicBoolean(false))
-        set(lan, "readyDelivered", AtomicBoolean(false)); set(lan, "socketLock", Any()); set(lan, "approvalLock", Any()); set(lan, "deviceName", "test")
+        set(lan, "readyDelivered", AtomicBoolean(false)); set(lan, "socketLock", Any()); set(lan, "deviceName", "test")
         val token = "00000000000000000000000000000000"
         val peerChannel = AtomicReference<AuthenticatedChannel>()
         val peerReady = CountDownLatch(1); val release = CountDownLatch(1)

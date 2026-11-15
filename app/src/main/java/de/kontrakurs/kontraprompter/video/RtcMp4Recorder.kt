@@ -51,7 +51,7 @@ internal class RtcMp4Recorder(
     private val projectId: String?,
     private val origin: RecordingOrigin,
     private val listener: (Event) -> Unit,
-) : VideoSink, Closeable {
+) : VideoSink, Closeable, RecordingControl {
     sealed interface Event {
         data class Preparing(val recordingId: String) : Event
         data class Recording(val recordingId: String, val width: Int, val height: Int) : Event
@@ -134,19 +134,19 @@ internal class RtcMp4Recorder(
         return true
     }
 
-    fun stop(): Boolean {
+    override fun stop(): Boolean {
         if (!started.get() || finished.get()) return false
         requestStop(StopReason.USER)
         return true
     }
 
     /** Stop accepting new camera/audio samples without closing the MP4. */
-    fun pause(): Boolean = synchronized(pauseLock) {
+    override fun pause(): Boolean = synchronized(pauseLock) {
         if (!configured.get() || !firstMedia.get() || stopRequested.get() || finished.get()) return false
         pauseTimeline?.pause(System.nanoTime()) == true
     }
 
-    fun resume(): Boolean = synchronized(pauseLock) {
+    override fun resume(): Boolean = synchronized(pauseLock) {
         if (!configured.get() || stopRequested.get() || finished.get() || pauseTimeline?.isPaused() != true) return false
         val encoder = videoEncoder ?: return false
         // A failed request leaves the recording paused; the encoder may still emit the next periodic keyframe.
@@ -160,7 +160,7 @@ internal class RtcMp4Recorder(
 
     override fun close() { stop() }
 
-    fun abort(message: String) { if (started.get() && !finished.get()) fail(message) }
+    override fun abort(message: String) { if (started.get() && !finished.get()) fail(message) }
 
     override fun onFrame(frame: VideoFrame) {
         if (!started.get() || stopRequested.get() || finished.get()) return
