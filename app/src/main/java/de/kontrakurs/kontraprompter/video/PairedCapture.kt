@@ -127,10 +127,10 @@ internal class PairedCapture(
             val accepted = handled.execute(request, PairedCommand(action, recording, project, expectedFront)) {
                 when (action) {
                     "start" -> session.startPairedRecording(marker, recording, project)
-                    "pause" -> session.pauseRecording(recording)
-                    "resume" -> session.resumeRecording(recording)
-                    "stop" -> session.stopRecording(recording)
-                    "switch_camera" -> session.requestCameraSwitch(expectedCurrentFront = expectedFront)
+                    "pause" -> session.pausePairedRecording(marker, recording)
+                    "resume" -> session.resumePairedRecording(marker, recording)
+                    "stop" -> session.stopPairedRecording(marker, recording)
+                    "switch_camera" -> expectedFront != null && session.requestPairedCameraSwitch(marker, expectedFront)
                     else -> false
                 }
             }

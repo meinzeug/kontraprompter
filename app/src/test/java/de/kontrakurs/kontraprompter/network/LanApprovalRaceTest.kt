@@ -23,7 +23,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import sun.misc.Unsafe
+import de.kontrakurs.kontraprompter.test.jvmAllocate
 
 /** Exercises the actual approval/disconnect methods with a deliberately delayed send. */
 class LanApprovalRaceTest {
@@ -35,8 +35,7 @@ class LanApprovalRaceTest {
         val ctor = AuthenticatedChannel::class.java.declaredConstructors.single { it.parameterCount == 8 }.apply { isAccessible = true }
         val channel = ctor.newInstance(Socket(), DataInputStream(ByteArrayInputStream(byteArrayOf())), DataOutputStream(ByteArrayOutputStream()),
             ByteArray(16), ByteArray(32), ByteArray(32), "host", "test") as AuthenticatedChannel
-        val unsafeField = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }
-        val instance = (unsafeField.get(null) as Unsafe).allocateInstance(LanSession::class.java) as LanSession
+        val instance = jvmAllocate(LanSession::class.java)
         set(instance, "_state", MutableStateFlow(LanState(authenticated = true, remoteApproved = true)))
         set(instance, "closed", AtomicBoolean(false)); set(instance, "connected", AtomicBoolean(true))
         set(instance, "socketLock", Any()); set(instance, "deliveryLock", Any()); set(instance, "channel", channel)
@@ -50,8 +49,7 @@ class LanApprovalRaceTest {
         val ctor = AuthenticatedChannel::class.java.declaredConstructors.single { it.parameterCount == 8 }.apply { isAccessible = true }
         val channel = ctor.newInstance(Socket(), DataInputStream(ByteArrayInputStream(byteArrayOf())), DataOutputStream(ByteArrayOutputStream()),
             ByteArray(16), ByteArray(32), ByteArray(32), "host", "test") as AuthenticatedChannel
-        val unsafeField = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }
-        val instance = (unsafeField.get(null) as Unsafe).allocateInstance(LanSession::class.java) as LanSession
+        val instance = jvmAllocate(LanSession::class.java)
         val state = MutableStateFlow(LanState(authenticated = true, remoteApproved = true))
         val finished = CountDownLatch(1)
         val delivered = AtomicInteger()
@@ -101,8 +99,7 @@ class LanApprovalRaceTest {
         val key = ByteArray(16); val host = ByteArray(32); val client = ByteArray(32)
         val local = ctor.newInstance(socket, DataInputStream(localInput), DataOutputStream(blockedOutput), key, host, client, "host", "test") as AuthenticatedChannel
         val peer = ctor.newInstance(Socket(), DataInputStream(remoteInput), DataOutputStream(remoteOutput), key, host, client, "client", "test") as AuthenticatedChannel
-        val unsafeField = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }
-        val instance = (unsafeField.get(null) as Unsafe).allocateInstance(LanSession::class.java) as LanSession
+        val instance = jvmAllocate(LanSession::class.java)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val state = MutableStateFlow(LanState())
         try {
@@ -138,8 +135,7 @@ class LanApprovalRaceTest {
         val ctor = AuthenticatedChannel::class.java.declaredConstructors.single { it.parameterCount == 8 }.apply { isAccessible = true }
         val channel = ctor.newInstance(Socket(), DataInputStream(ByteArrayInputStream(byteArrayOf())), DataOutputStream(ByteArrayOutputStream()),
             ByteArray(16), ByteArray(32), ByteArray(32), "host", "test") as AuthenticatedChannel
-        val unsafeField = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }
-        val instance = (unsafeField.get(null) as Unsafe).allocateInstance(LanSession::class.java) as LanSession
+        val instance = jvmAllocate(LanSession::class.java)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val state = MutableStateFlow(LanState(authenticated = true, remoteApproved = true))
         val calls = AtomicInteger()
@@ -178,8 +174,7 @@ class LanApprovalRaceTest {
         val ctor = AuthenticatedChannel::class.java.declaredConstructors.single { it.parameterCount == 8 }.apply { isAccessible = true }
         val channel = ctor.newInstance(socket, DataInputStream(ByteArrayInputStream(byteArrayOf())), DataOutputStream(out),
             ByteArray(16), ByteArray(32), ByteArray(32), "host", "test") as AuthenticatedChannel
-        val unsafeField = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }
-        val instance = (unsafeField.get(null) as Unsafe).allocateInstance(LanSession::class.java) as LanSession
+        val instance = jvmAllocate(LanSession::class.java)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val state = MutableStateFlow(LanState(authenticated = true, remoteApproved = true))
         try {

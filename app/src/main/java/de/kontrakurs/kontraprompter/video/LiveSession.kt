@@ -52,7 +52,7 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
     private var stopWhenStarted = false
     private var pendingCameraFailure: String? = null
     private var remoteExclusive = false
-    private var recorder: RtcMp4Recorder? = null
+    private var recorder: RecordingControl? = null
     val lan = LanSession(context)
     private val _video = MutableStateFlow<RtcVideo?>(null)
     val video: StateFlow<RtcVideo?> = _video
@@ -182,13 +182,23 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
     }
 
     /** Returns admission immediately; completion is reported only after the camera callback. */
-    fun requestCameraSwitch(remoteOwner: Boolean = false, expectedCurrentFront: Boolean? = null, complete: (CameraSwitchResult) -> Unit = {}): Boolean = synchronized(guard) {
+    fun requestCameraSwitch(remoteOwner: Boolean = false, expectedCurrentFront: Boolean? = null, complete: (CameraSwitchResult) -> Unit = {}): Boolean =
+        requestCameraSwitchAdmitted(remoteOwner, expectedCurrentFront, null, complete)
+
+    internal fun requestPairedCameraSwitch(marker: Any, expectedCurrentFront: Boolean): Boolean =
+        requestCameraSwitchAdmitted(false, expectedCurrentFront, marker) {}
+
+    private fun requestCameraSwitchAdmitted(remoteOwner: Boolean, expectedCurrentFront: Boolean?, marker: Any?, complete: (CameraSwitchResult) -> Unit): Boolean = synchronized(guard) {
         val selection = _cameraSelection.value
         val current = _video.value
-        if (!cameraSwitchAllowed(host, closed, disconnected, remoteExclusive, remoteOwner, _recording.value.isActive(), selection.switching, selection.canSwitch, selection.front, expectedCurrentFront) || current == null) return false
         val currentFront = selection.front ?: return false
         val targetFront = !currentFront
-        _cameraSelection.value = selection.copy(switching = true, error = null)
+        val admit = {
+            if (!cameraSwitchAllowed(host, closed, disconnected, remoteExclusive, remoteOwner, _recording.value.isActive(), selection.switching, selection.canSwitch, selection.front, expectedCurrentFront) || current == null) false
+            else { _cameraSelection.value = selection.copy(switching = true, error = null); true }
+        }
+        if ((if (marker == null) admit() else lan.admitOnApprovedConnection(marker, admit)) != true) return false
+        checkNotNull(current)
         val completed = AtomicBoolean(false)
         val queued = current.switchCamera(targetFront) switchCallback@ { front, error ->
             if (!completed.compareAndSet(false, true)) return@switchCallback
@@ -230,34 +240,46 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
         }
     } ?: CameraSwitchResult(false, null, "Kamerawechsel nicht bestätigt; Status prüfen.")
 
-    fun pauseRecording(recordingId: String? = null): Boolean = pauseRecordingOwned(recordingId, remote = false)
+    fun pauseRecording(recordingId: String? = null): Boolean = pauseRecordingOwned(recordingId, remote = false, marker = null)
 
     /** Dashboard owner may control only its matching recording. */
-    fun pauseRemoteRecording(recordingId: String): Boolean = pauseRecordingOwned(recordingId, remote = true)
+    fun pauseRemoteRecording(recordingId: String): Boolean = pauseRecordingOwned(recordingId, remote = true, marker = null)
 
-    private fun pauseRecordingOwned(recordingId: String?, remote: Boolean): Boolean = synchronized(guard) {
+    internal fun pausePairedRecording(marker: Any, recordingId: String): Boolean = pauseRecordingOwned(recordingId, remote = false, marker = marker)
+
+    private fun pauseRecordingOwned(recordingId: String?, remote: Boolean, marker: Any?): Boolean = synchronized(guard) {
         val current = _recording.value as? LocalRecording.Recording ?: return false
         if (!recordingControlAllowed(remoteExclusive, remote, current.id, recordingId)) return false
-        if (recorder?.pause() != true) return false
+        val capture = recorder ?: return false
+        if (marker != null && (closed || disconnected || lan.admitOnApprovedConnection(marker) { true } != true)) return false
+        if (!capture.pause()) return false
         _recording.value = LocalRecording.Paused(current.id)
         true
     }
 
-    fun resumeRecording(recordingId: String? = null): Boolean = resumeRecordingOwned(recordingId, remote = false)
+    fun resumeRecording(recordingId: String? = null): Boolean = resumeRecordingOwned(recordingId, remote = false, marker = null)
 
-    fun resumeRemoteRecording(recordingId: String): Boolean = resumeRecordingOwned(recordingId, remote = true)
+    fun resumeRemoteRecording(recordingId: String): Boolean = resumeRecordingOwned(recordingId, remote = true, marker = null)
 
-    private fun resumeRecordingOwned(recordingId: String?, remote: Boolean): Boolean = synchronized(guard) {
+    internal fun resumePairedRecording(marker: Any, recordingId: String): Boolean = resumeRecordingOwned(recordingId, remote = false, marker = marker)
+
+    private fun resumeRecordingOwned(recordingId: String?, remote: Boolean, marker: Any?): Boolean = synchronized(guard) {
         val current = _recording.value as? LocalRecording.Paused ?: return false
         if (!recordingControlAllowed(remoteExclusive, remote, current.id, recordingId)) return false
-        if (recorder?.resume() != true) return false
+        val capture = recorder ?: return false
+        if (marker != null && (closed || disconnected || lan.admitOnApprovedConnection(marker) { true } != true)) return false
+        if (!capture.resume()) return false
         _recording.value = LocalRecording.Recording(current.id)
         true
     }
 
     fun stopRecording(): Boolean = stopRecording(null)
 
-    fun stopRecording(recordingId: String?): Boolean = synchronized(guard) {
+    fun stopRecording(recordingId: String?): Boolean = stopRecordingAdmitted(recordingId, null)
+
+    internal fun stopPairedRecording(marker: Any, recordingId: String): Boolean = stopRecordingAdmitted(recordingId, marker)
+
+    private fun stopRecordingAdmitted(recordingId: String?, marker: Any?): Boolean = synchronized(guard) {
         val activeId = when (val state = _recording.value) {
             is LocalRecording.Preparing -> state.id
             is LocalRecording.Recording -> state.id
@@ -267,7 +289,9 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
         }
         if (recordingId != null && activeId != recordingId) return false
         if (!_recording.value.isActive() || _recording.value is LocalRecording.Finalizing || _recording.value is LocalRecording.Failed) return false
-        stopWhenStarted = true
+        val admit = { stopWhenStarted = true; true }
+        if (marker != null && (closed || disconnected)) return false
+        if ((if (marker == null) admit() else lan.admitOnApprovedConnection(marker, admit)) != true) return false
         recorder?.stop()
         true
     }

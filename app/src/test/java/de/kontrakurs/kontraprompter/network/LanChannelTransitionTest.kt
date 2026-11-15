@@ -18,7 +18,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import sun.misc.Unsafe
+import de.kontrakurs.kontraprompter.test.jvmAllocate
 
 /** Exercises the real receive callback and install/disconnect transitions with synthetic sockets. */
 class LanChannelTransitionTest {
@@ -36,8 +36,7 @@ class LanChannelTransitionTest {
         val peer = ctor.newInstance(Socket(), DataInputStream(ByteArrayInputStream(byteArrayOf())), DataOutputStream(peerOutput), key, host, client, "client", "old") as AuthenticatedChannel
         val newSocket = Socket()
         val next = ctor.newInstance(newSocket, DataInputStream(ByteArrayInputStream(byteArrayOf())), DataOutputStream(ByteArrayOutputStream()), key, host, client, "host", "new") as AuthenticatedChannel
-        val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
-        val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession
+        val lan = jvmAllocate(LanSession::class.java)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val state = MutableStateFlow(LanState(authenticated = true, localApproved = true, remoteApproved = true, ready = true))
         val entered = CountDownLatch(1); val release = CountDownLatch(1); val messageDone = CountDownLatch(1)

@@ -17,7 +17,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import sun.misc.Unsafe
+import de.kontrakurs.kontraprompter.test.jvmAllocate
 
 /** Exercises actual LiveSession recording admission without camera, codec or device data. */
 class PairedRecordingAdmissionTest {
@@ -26,10 +26,9 @@ class PairedRecordingAdmissionTest {
     }
 
     @Test fun `recording start is not admitted after its channel disconnects`() {
-        val unsafe = Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as Unsafe
-        val lan = unsafe.allocateInstance(LanSession::class.java) as LanSession
-        val session = unsafe.allocateInstance(LiveSession::class.java) as LiveSession
-        val video = unsafe.allocateInstance(RtcVideo::class.java) as RtcVideo
+        val lan = jvmAllocate(LanSession::class.java)
+        val session = jvmAllocate(LiveSession::class.java)
+        val video = jvmAllocate(RtcVideo::class.java)
         val socket = Socket()
         val ctor = AuthenticatedChannel::class.java.declaredConstructors.single { it.parameterCount == 8 }.apply { isAccessible = true }
         val oldChannel = ctor.newInstance(socket, DataInputStream(ByteArrayInputStream(byteArrayOf())), DataOutputStream(ByteArrayOutputStream()),
