@@ -220,10 +220,10 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
                     }
                     val token = switchToken
                     current.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
-                        override fun onCameraSwitchDone(isFrontCamera: Boolean) { token?.let { experimentalReadiness?.finishSwitch(it) }; complete(isFrontCamera, null) }
-                        override fun onCameraSwitchError(errorDescription: String) { token?.let { experimentalReadiness?.finishSwitch(it) }; complete(null, errorDescription.take(200)) }
+                        override fun onCameraSwitchDone(isFrontCamera: Boolean) { token?.let { experimentalReadiness?.finishSwitch(it, isFrontCamera == front) }; complete(isFrontCamera, null) }
+                        override fun onCameraSwitchError(errorDescription: String) { token?.let { experimentalReadiness?.finishSwitch(it, false) }; complete(null, errorDescription.take(200)) }
                     }, target)
-                } catch (_: Exception) { switchToken?.let { experimentalReadiness?.finishSwitch(it) }; complete(null, "Kamerawechsel fehlgeschlagen.") }
+                } catch (_: Exception) { switchToken?.let { experimentalReadiness?.finishSwitch(it, false) }; complete(null, "Kamerawechsel fehlgeschlagen.") }
             }
         }.isSuccess
     }
