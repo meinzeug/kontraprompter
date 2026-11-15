@@ -9,12 +9,15 @@ plugins {
 android {
     namespace = "de.kontrakurs.kontraprompter"
     compileSdk = 36
+    useLibrary("android.test.runner")
+    useLibrary("android.test.base")
     defaultConfig {
-        applicationId = "de.kontrakurs.kontraprompter"
+        applicationId = "de.kontrakurs.kontraprompter.journalv4fixture"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "android.test.InstrumentationTestRunner"
     }
     buildFeatures { compose = true }
     packaging { jniLibs { useLegacyPackaging = true } }

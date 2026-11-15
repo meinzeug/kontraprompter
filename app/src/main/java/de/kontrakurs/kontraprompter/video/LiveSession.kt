@@ -44,7 +44,7 @@ internal fun canAcquireWebOwner(recording: LocalRecording, alreadyOwned: Boolean
 internal fun releaseBlockedRecording(state: LocalRecording, id: String): LocalRecording =
     if (state is LocalRecording.Failed && state.blocked && state.id == id) state.copy(blocked = false) else state
 
-class LiveSession(context: Context, val host: Boolean, private val preferFrontCamera: Boolean = true) : AutoCloseable {
+class LiveSession(context: Context, val host: Boolean, private val preferFrontCamera: Boolean = true, private val fixtureNoNetwork: Boolean = false) : AutoCloseable {
     private val app = context.applicationContext
     private val guard = Any()
     private var closed = false
@@ -98,7 +98,7 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
             }
             release?.close()
         }
-        if (host) lan.startHost() else lan.startDiscovery()
+        if (!fixtureNoNetwork) { if (host) lan.startHost() else lan.startDiscovery() }
     }
 
     fun canStartRemoteRecording(): Boolean = synchronized(guard) {
