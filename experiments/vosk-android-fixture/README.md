@@ -71,6 +71,28 @@ vergleicht zusätzlich die Paketnamen `de.kontrakurs.voskfixture` und
 `androidx.test.runner.AndroidJUnitRunner`. KontraPrompter selbst ist ein anderes
 Paket und wird von diesem Build nicht verändert.
 
+Der CI-Run [43673921419](https://github.com/meinzeug/kontraprompter/actions/runs/43673921419)
+zum Commit `4da020e` hat diese Prüfungen bestanden und das kurzlebige
+[Artefakt 14145024674](https://github.com/meinzeug/kontraprompter/actions/runs/43673921419/artifacts/14145024674)
+erzeugt. Die Fixture-App hat 40.926.499 Bytes und SHA-256
+`b79e96bfa02a349c8bdfa28fb908dd6dacc2fac8730ee9bd5286451685a32a7e`;
+die Test-APK **mit Modell** hat 47.446.756 Bytes und SHA-256
+`71cdee7def8e2aedac2251d1e691d772528ddc7c7faed88db0adfd597723026e`.
+Die exakten Modellbytes wurden vor dem Build und im Test-APK verglichen. Kein
+Instrumentierungstest wurde ausgeführt und keine App auf einem Telefon
+installiert; der bestehende KontraPrompter blieb unverändert.
+
+Falls die beiden separaten Fixture-APKs später auf einem geeigneten Testgerät
+installiert werden, lautet der gezielte Aufruf (Geräteseriennummer einsetzen):
+
+```sh
+adb -s SERIAL shell am instrument -w -r -e class de.kontrakurs.voskfixture.OfflineVoskInstrumentedTest de.kontrakurs.voskfixture.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Dieser Aufruf setzt die gesonderte Installation voraus und wurde noch nicht
+ausgeführt. Das Modell wird dabei in ein neu angelegtes privates Cacheverzeichnis
+der Fixture-App entpackt; der Test entfernt es nicht eigenmächtig.
+
 Der isolierte CI-Run 43673659245 zum Commit `e76fa04` war erfolgreich. Die
 Fixture-App hat 40.926.499 Bytes, SHA-256
 `fb6e0f0a2efca4d92a41f1873f2a3e91cee35f90d8f1bab0a6612088b7e1ef28`;
