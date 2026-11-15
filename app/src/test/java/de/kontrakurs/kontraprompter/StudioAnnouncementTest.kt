@@ -16,11 +16,11 @@ class StudioAnnouncementTest {
     }
 
     @Test fun staticMessageDoesNotAnnounceByDefault() {
-        assertNull(liveRegion(studioAnnouncementModifier()))
-        assertNull(liveRegion(studioAnnouncementModifier(false)))
+        assertNull(liveRegion(Modifier.studioAnnouncementModifier()))
+        assertNull(liveRegion(Modifier.studioAnnouncementModifier(false)))
     }
 
     @Test fun explicitlyDynamicMessageUsesPoliteAnnouncement() {
-        assertEquals(LiveRegionMode.Polite, liveRegion(studioAnnouncementModifier(true)))
+        assertEquals(LiveRegionMode.Polite, liveRegion(Modifier.studioAnnouncementModifier(true)))
     }
 }
