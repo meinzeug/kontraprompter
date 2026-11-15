@@ -1,0 +1,36 @@
+name: Disabled Studio device client validation
+
+on:
+  push:
+    branches: [wip/studio-device-client-main-ci-20261115]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install SDK
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;35.0.0"'
+      - name: Verify hard gate and run app tests
+        run: |
+          set -euo pipefail
+          grep -F 'private const val DEVICE_AUTH_ENABLED = false' app/src/main/java/de/kontrakurs/kontraprompter/cloud/StudioClient.kt
+          ./gradlew --no-daemon --max-workers=1 --stacktrace -Dorg.gradle.jvmargs="-Xmx2048m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8" :app:testDebugUnitTest :app:assembleDebug
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: disabled-device-client-test-reports-${{ github.sha }}
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn
+          retention-days: 3
