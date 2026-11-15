@@ -9,6 +9,7 @@ import de.kontrakurs.kontraprompter.video.LocalRecording
 import de.kontrakurs.kontraprompter.video.RtcMp4Recorder
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import java.io.File
 import java.net.URL
@@ -82,7 +83,21 @@ class CameraLocalE2eTest : InstrumentationTestCase() {
             assertEquals("error", failed.getString("phase")); assertEquals(recording, failed.getString("recordingId"))
             assertEquals("error", journal.snapshot().captures.single().phase)
         } finally {
-            controller?.close(); session?.close()
+            // No recorder exists in this fixture; avoid waiting on a synthetic active state
+            // when a preceding assertion or transport fails.
+            session?.let { live ->
+                @Suppress("UNCHECKED_CAST")
+                val state = LiveSession::class.java.getDeclaredField("_recording").apply { isAccessible = true }.get(live) as MutableStateFlow<LocalRecording>
+                val currentId = when (val current = state.value) {
+                    is LocalRecording.Preparing -> current.id
+                    is LocalRecording.Recording -> current.id
+                    is LocalRecording.Paused -> current.id
+                    is LocalRecording.Finalizing -> current.id
+                    else -> null
+                }
+                if (currentId != null) state.value = LocalRecording.Failed("synthetic fixture cleanup", false, currentId)
+            }
+            controller?.let { withTimeout(5000) { it.close() } }; session?.close()
             check(files.deleteRecursively())
         }
     }
