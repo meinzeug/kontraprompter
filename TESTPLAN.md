@@ -146,3 +146,23 @@ die tatsächliche Journal-/Controller-Telemetrie über den echten StudioClient
 an die lokale Testinstanz und liest den Serverzustand zurück. Sie startet weder
 Kamera noch Codec und beweist deshalb keine tatsächliche Aufnahme. Ein
 bestandener Build ist kein Geräte- oder End-to-End-Ergebnis.
+
+Am 15. November 2026 bestand `CameraLocalE2eTest` auf Samsung SM-A526B und
+Xiaomi 2409BRN2CY (Fixture `92fbe9f`, CI `43678913185`, lokaler Server-WIP
+`d981d8b`). Der Test erzeugte ein eigenes Projekt und eine eigene
+Android-Keystore-Identität, trug eine synthetische START-Zulassung direkt im
+echten Journal als `enqueued` ein und gab synthetische `Recording`-/`Failed`-
+Ereignisse an den echten LiveSession-Ereignishandler. Der echte Controller und
+StudioClient meldeten das Journal über HTTPS mit eigener Test-CA und temporärem
+ADB-Reverse an die lokale Next-Route. Der Server zeigte die zugehörige Aufnahme,
+das Projekt, `enqueued` und anschließend `error`. Beide separaten Testpakete,
+Testdaten und die jeweilige eigene Reverse-Regel wurden entfernt. Auf Xiaomi
+wurden ausschließlich Installationsdialoge mit den exakten Fixture-Paketnamen
+bestätigt. Danach blieben die regulären Apps im Vordergrund; Xiaomi meldete die
+Verbindung zu Samsung und die Videomaker-Anmeldung.
+
+Der Test führte den START nicht über einen echten Recorder aus und erzeugte
+keine Videodatei; die `enqueued`-Zulassung und die Recorderereignisse waren
+synthetisch. Er belegt weder Aufnahme-/Codec-/Uploadqualität noch Direkt-WLAN,
+Produktionsfreigabe oder sicheren Rollback. Das Ergebnis gilt für den
+Testbranch mit lokalem Testziel und nicht für eine aktivierte Produktivfunktion.
