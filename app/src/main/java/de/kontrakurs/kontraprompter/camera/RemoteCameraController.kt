@@ -16,7 +16,6 @@ import kotlinx.coroutines.withContext
 internal data class CameraReport(val phase: String, val recordingId: String?, val projectId: String?, val sizeBytes: Long? = null, val sha256: String? = null, val paused: Boolean? = null, val cameraFront: Boolean? = null, val cameraCanSwitch: Boolean = false)
 internal data class CameraAck(val id: String, val result: String, val revision: Long)
 internal data class CameraPollRequest(val sequence: Long, val report: CameraReport, val acknowledgements: List<CameraAck>)
-internal data class CameraPollResponse(val command: CameraCommand?, val remainingMs: Long)
 
 /** A single owner serializes journal decisions and real recorder actions. */
 internal class RemoteCameraController private constructor(private val journal: RemoteCameraJournal, private val session: LiveSession) {
@@ -113,15 +112,20 @@ internal class RemoteCameraController private constructor(private val journal: R
                 throw error
             }
             when (outcome.action) {
-                "start" -> {
-                    if (!session.startRecording(command.recordingId, command.projectId)) {
-                        withContext(Dispatchers.IO) { journal.capture(command.recordingId, "error") }
-                    }
-                }
                 "stop" -> session.stopRecording(command.recordingId)
-                "pause" -> session.pauseRemoteRecording(command.recordingId)
-                "resume" -> session.resumeRemoteRecording(command.recordingId)
-                "switch" -> session.switchRemoteCamera(command.cameraFrom!!)
+                "start", "pause", "resume", "switch" -> {
+                    // A false return, exception, timeout, or process death is not proof
+                    // that an actuator had no effect. Never repeat that command.
+                    val admitted = try {
+                        when (outcome.action) {
+                            "start" -> session.startRecording(command.recordingId, command.projectId)
+                            "pause" -> session.pauseRemoteRecording(command.recordingId, checkNotNull(command.projectId))
+                            "resume" -> session.resumeRemoteRecording(command.recordingId, checkNotNull(command.projectId))
+                            else -> session.switchRemoteCamera(command.cameraFrom!!).success
+                        }
+                    } catch (_: Exception) { false }
+                    withContext(Dispatchers.IO) { journal.finishAdmission(command, admitted) }
+                }
             }
             outcome
         }
