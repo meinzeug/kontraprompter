@@ -382,3 +382,41 @@ Schriftgröße, Start und Pause erneut an das Samsung gesendet und vom Gerät
 bestätigt. Tempo und Schriftgröße wurden auf die ursprünglichen Werte
 zurückgesetzt. Dies prüft die vorhandene Prompter-Fernsteuerung; direkte
 Kamerabefehle aus dem Webdashboard sind damit nicht nachgewiesen.
+
+## Release mit geschütztem Uploadjournal
+
+Der Android-Stand `1b004d0` meldet eine vom Server bewusst gelöschte
+Upload-ID ausdrücklich und behandelt verspätete Lösch- und Erfolgsantworten
+sitzungsgebunden. Historische zufällige Upload-IDs bleiben lesbar. Der
+vollständige CI-Lauf bestand jeweils 222 Debug- und Release-Unit-Tests.
+Eine getrennte Android-Test-App prüfte auf beiden Geräten jeweils fünf Fälle
+mit echtem `AtomicFile` und Android-JSON, darunter alte IDs, den Löschgrund,
+einen simulierten Schreibfehler und einen veränderten Journalauftrag. Die
+Testpakete wurden anschließend entfernt. Die Journal-Synchronisierung gilt
+für kooperierende Zugriffe im selben App-Prozess; die bestehende Grenze für
+generische Fehler bei Sitzungswechsel ist im Testplan beschrieben.
+
+Die nicht-debuggbare Release-APK wurde mit dem bisherigen, gerätekompatiblen
+Android-Debug-Signaturschlüssel signiert und auf beiden Telefonen als Update
+installiert. Die ursprünglichen Appdaten blieben erhalten. Ihre SHA-256-Summe
+ist `13df4c5db86da4755c522f599bf55b0adf617c0a30c70853fed52f16c3d5e855`.
+Nach dem Update war das WLAN zwischen den Geräten zunächst erneut nicht direkt
+erreichbar; nach Aus- und Einschalten des Xiaomi-WLANs gelang die frische
+Kopplung mit Livebild. Der Grund des zeitweisen Netzwerkfehlers ist weiterhin
+ungeklärt; dauerhafte automatische Wiederverbindung ist nicht implementiert.
+
+Mit dem Samsung als Prompter wurden Aufnahme, Pause, Fortsetzen und Stopp auf
+dem Xiaomi ausgelöst und vom Kameragerät bestätigt. Die lokal gespeicherte
+Testaufnahme wurde automatisch nach Videomaker hochgeladen. Die Serverdatei
+ist 17,21 Sekunden und 4.207.811 Bytes groß und enthält H.264 mit 480 × 640
+Pixeln sowie AAC-Ton mit 48 kHz. Ihre SHA-256-Summe lautet
+`efd3af630732d25fa2c1d554c834371b9df4d21ad93a6c7f480b13f7a227bfb0`.
+Ein unabhängiger Originalexport und eine Sprachverständlichkeitsprüfung
+wurden für diese Aufnahme nicht durchgeführt.
+
+Die APK wurde mit unabhängigem Backup der vorherigen Datei auf Videomaker
+veröffentlicht. Der vollständige authentifizierte öffentliche HTTPS-Download
+war 30.455.505 Bytes groß und stimmte bytegleich mit den auf beiden Geräten
+installierten APK-Dateien überein. Die Signierung und Installation wurden
+geprüft; die echte ITFIT-Fernbedienung sowie eine neue Kameraaufnahme über das
+Webdashboard wurden dabei nicht getestet.
