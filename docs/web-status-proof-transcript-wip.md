@@ -1,0 +1,5 @@
+# Isoliertes Webstatus-Transkript
+
+Dieses Format ist ein Testbaustein ohne Aufrufstelle und ohne Webroute. Es kann die Felder eines `PairedStatusObservation` und synthetische Sitzungs-/Pair-Referenzen in eine kanonische Bytefolge überführen. Ein serverseitiger Node-Test und der JVM-Test prüfen denselben SHA-256- und P-256-Signaturvektor mit einem ausschließlich synthetischen öffentlichen Testschlüssel. Der private Testschlüssel ist nicht Teil des Repositories.
+
+Das Format authentisiert weder Kamera, Prompter, Sitzung noch Pair-Epoche. Es prüft keine Lebensdauer, keinen Widerruf und keinen Replay. `PairedStatusObservation.revision` ist eine lokale Snapshotfolge, keine persistente Zustandsrevision. Der Baustein signiert nichts und wird nicht automatisch gestartet. Vor einem Einsatz müssen die tatsächliche Kanal-/Pairbindung und der Aufnahme-Snapshot gemeinsam abgesichert und die echte nicht exportierbare Geräteidentität serverseitig zugeordnet sein. Bis zu deren unabhängiger Prüfung bleibt der Status bei Zweifel unbekannt; bestehende Aufnahmen und die Produktionsapp werden nicht verändert.
