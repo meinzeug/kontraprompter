@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.clickable
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -22,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -91,13 +89,12 @@ private fun HelpSection(title: String, content: @Composable () -> Unit) {
     val expandedLabel = stringResource(if (expanded) R.string.help_expanded else R.string.help_collapsed)
     Column {
         ListItem(
-            headlineContent = { Text(title, style = MaterialTheme.typography.titleMedium) },
+            onClick = { expanded = !expanded },
             trailingContent = { Text(if (expanded) "−" else "+", style = MaterialTheme.typography.titleLarge) },
             colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
             modifier = Modifier.fillMaxWidth().heightIn(min = spacing.touchTarget)
-                .clickable(role = Role.Button) { expanded = !expanded }
                 .semantics { stateDescription = expandedLabel },
-        )
+        ) { Text(title, style = MaterialTheme.typography.titleMedium) }
         if (expanded) Column(
             Modifier.fillMaxWidth().padding(horizontal = spacing.medium, vertical = spacing.small),
             verticalArrangement = Arrangement.spacedBy(spacing.small),
