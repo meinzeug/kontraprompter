@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,10 +55,14 @@ fun KontraTheme(content: @Composable () -> Unit) {
         bodyMedium = default.bodyMedium.copy(lineHeight = 21.sp),
         labelLarge = default.labelLarge.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.1.sp),
     )
-    MaterialTheme(colorScheme = DarkColors, typography = type, shapes = Shapes(
-        extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(12.dp),
-        medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(24.dp), extraLarge = RoundedCornerShape(28.dp)
-    ), content = content)
+    // Existing pages contain fixed light text: keep their exact dark palette
+    // until each page has been migrated and checked in light and dynamic color.
+    CompositionLocalProvider(LocalKontraSpacing provides KontraSpacing()) {
+        MaterialExpressiveTheme(colorScheme = DarkColors, motionScheme = MotionScheme.expressive(), typography = type, shapes = Shapes(
+            extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(12.dp),
+            medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(24.dp), extraLarge = RoundedCornerShape(28.dp)
+        ), content = content)
+    }
 }
 
 @Composable
