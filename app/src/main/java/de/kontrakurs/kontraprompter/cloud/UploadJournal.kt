@@ -49,6 +49,13 @@ internal object UploadJournal {
         write(context, entry)
         return entry
     }
+    /** Compare and persist under the same in-process monitor as all journal access. */
+    @Synchronized fun replaceIfUnchanged(context: Context, recording: SavedRecording, expected: UploadEntry, replacement: UploadEntry): Boolean {
+        require(expected.recordingId == replacement.recordingId && expected.projectId == replacement.projectId && expected.uploadId == replacement.uploadId)
+        if (get(context, recording, expected.projectId) != expected) return false
+        write(context, replacement)
+        return true
+    }
     @Synchronized fun write(context: Context, entry: UploadEntry) {
         val atomic = AtomicFile(file(context, entry.recordingId, entry.projectId))
         val payload = JSONObject().put("version", 1).put("recordingId", uuid(entry.recordingId)).put("projectId", uuid(entry.projectId))

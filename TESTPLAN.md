@@ -98,3 +98,10 @@ Sitzungswechseln derselben Clientinstanz serialisiert. Ein langsamer
 Dateisystem-Fsync kann Login/Logout während dieser kurzen kritischen Sektion
 verzögern. Android-AtomicFile-Bestandstests und reale Geräteprüfung fehlen bis
 zu gesondertem Nachweis; keine Produktivfreigabe allein durch JVM-Tests.
+
+Generische Konflikt- und Authentifizierungsfehler sind bislang nicht vollständig
+an die ursprüngliche Studio-Sitzung gebunden. Die spezielle Bindung für
+Lösch- und Erfolgsbelege behebt diesen älteren Randfall nicht. Das atomare
+Vergleichen und Aktualisieren des Uploadjournals serialisiert Zugriffe über
+`UploadJournal` im selben App-Prozess; fremde Prozesse oder externe Änderungen
+sind damit nicht geschützt. Ein abweichender Auftrag wird nicht überschrieben.

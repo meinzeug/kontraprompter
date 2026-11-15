@@ -7,7 +7,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 
 internal const val RECORDING_DELETED = "recording_deleted"
-internal const val RECORDING_DELETED_NOT_SAVED = "Der Server meldet die Upload-ID als gelöscht. Das Original bleibt lokal. Für dieses Skript ist eine neue Aufnahme nötig. Der Hinweis ist nicht dauerhaft gespeichert; nach Neustart ist ein erneuter Versuch möglich."
+internal const val RECORDING_DELETED_NOT_SAVED = "Der Server meldet die Upload-ID als gelöscht; dieselbe ID wird nicht wiederhergestellt. Das Original bleibt lokal. Für dieses Skript ist eine neue Aufnahme nötig. Hinweis nicht dauerhaft gespeichert; nach Neustart ist ein erneuter Versuch möglich."
 internal const val RECORDING_DELETED_MESSAGE = "Der Server meldet: Die für diesen Uploadauftrag verwendete Server-Aufnahme-ID wurde gelöscht. Das Original bleibt lokal. Für dieses Skript ist eine neue Aufnahme mit neuer Aufnahme-ID nötig."
 
 // The deployed tombstone response has exactly code and error fields. Require
@@ -17,7 +17,7 @@ private val jsonString = "\"(?:[^\"\\\\\u0000-\u001f]|\\\\(?:[\"\\\\/bfnrt]|u[0-
 private val deletedPayload = Regex("$jsonSpace\\{$jsonSpace(?:\"code\"$jsonSpace:$jsonSpace\"recording_deleted\"$jsonSpace,$jsonSpace\"error\"$jsonSpace:$jsonSpace$jsonString|\"error\"$jsonSpace:$jsonSpace$jsonString$jsonSpace,$jsonSpace\"code\"$jsonSpace:$jsonSpace\"recording_deleted\")$jsonSpace\\}$jsonSpace")
 
 /** Untrusted error bodies are optional, bounded and must contain a literal string code. */
-internal fun uploadConflictCode(input: InputStream?): String? = runCatching {
+internal fun uploadConflictCode(input: InputStream?, parseCode: (String) -> String = { JSONObject(it).optString("code", "") }): String? = runCatching {
     val stream = input ?: return@runCatching null
     val bytes = stream.use { source ->
         val output = ByteArrayOutputStream(); val block = ByteArray(1024)
@@ -26,7 +26,7 @@ internal fun uploadConflictCode(input: InputStream?): String? = runCatching {
     }
     // Preserve the former lenient UTF-8 parsing for existing 409 codes.
     val text = bytes.toString(Charsets.UTF_8); check(text.length <= 4096)
-    val code = JSONObject(text).optString("code", "")
+    val code = parseCode(text)
     if (code == RECORDING_DELETED) {
         val decoder = Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT)
         val strictText = decoder.decode(ByteBuffer.wrap(bytes)).toString()

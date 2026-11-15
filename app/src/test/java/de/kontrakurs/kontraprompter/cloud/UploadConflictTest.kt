@@ -5,9 +5,21 @@ import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.File
+import java.net.URLClassLoader
 
 class UploadConflictTest {
-    private fun parse(text: String) = uploadConflictCode(ByteArrayInputStream(text.toByteArray(Charsets.UTF_8)))
+    // Android's boot classloader contains a mock JSONObject. Exercise real JSON
+    // parsing separately, while instrumented tests cover Android's implementation.
+    private val jsonClass by lazy {
+        val jar = File(requireNotNull(System.getProperty("kontraprompter.test.jsonJar")))
+        URLClassLoader(arrayOf(jar.toURI().toURL()), ClassLoader.getPlatformClassLoader()).loadClass("org.json.JSONObject")
+    }
+    private fun parseInput(input: InputStream?) = uploadConflictCode(input) { text ->
+        val obj = jsonClass.getConstructor(String::class.java).newInstance(text)
+        jsonClass.getMethod("optString", String::class.java, String::class.java).invoke(obj, "code", "") as String
+    }
+    private fun parse(text: String) = parseInput(ByteArrayInputStream(text.toByteArray(Charsets.UTF_8)))
     @Test fun `only the explicit bounded server tombstone response gets the deletion message`() {
         val code = parse("""{"code":"recording_deleted","error":"Diese Aufnahme wurde gelöscht. Für eine neue Aufnahme ist eine neue Aufnahme-ID erforderlich."}""")
         assertEquals(RECORDING_DELETED, code)
@@ -22,10 +34,10 @@ class UploadConflictTest {
         for (text in listOf("", "{", "[]", """{"code":"recording_deleted"}""", """{'code':'recording_deleted','error':'x'}""", """{"code":"recording_deleted","error":"x"} garbage""", """{"code":"recording_deleted","error":"x","extra":true}""", """{"code":null,"error":"x"}""", """{"code":"recording_deleted","error":"${"a".repeat(4096)}"}""")) {
             assertEquals("conflict", uploadConflictKind(parse(text), false))
         }
-        assertNull(uploadConflictCode(null))
-        assertNull(uploadConflictCode(object : InputStream() { override fun read(): Int = throw IOException("broken") }))
+        assertNull(parseInput(null))
+        assertNull(parseInput(object : InputStream() { override fun read(): Int = throw IOException("broken") }))
         val invalidUtf8 = byteArrayOf(0xc3.toByte(), 0x28)
-        assertNull(uploadConflictCode(ByteArrayInputStream(invalidUtf8)))
+        assertNull(parseInput(ByteArrayInputStream(invalidUtf8)))
     }
     @Test fun `existing camera conflict meanings are unchanged`() {
         assertEquals("manifest_pending", uploadConflictKind(parse("""{"code":"camera_manifest_pending"}"""), true))
@@ -35,7 +47,7 @@ class UploadConflictTest {
         assertEquals("conflict", uploadConflictKind(parse("""{"code":"camera_manifest_pending"}"""), false))
         assertEquals("conflict", uploadConflictKind(parse("""{"error":"old server"}"""), true))
         val oldLenient = """{"code":"camera_manifest_pending","error":"""".toByteArray() + byteArrayOf(0xc3.toByte(), 0x28) + """"}""".toByteArray()
-        assertEquals("manifest_pending", uploadConflictKind(uploadConflictCode(ByteArrayInputStream(oldLenient)), true))
+        assertEquals("manifest_pending", uploadConflictKind(parseInput(ByteArrayInputStream(oldLenient)), true))
     }
     @Test fun `reason is optional backward compatible and scoped to the exact recording and project`() {
         val entry = UploadEntry("recording", "project-a", "upload", 1, "hash", "conflict", null, RECORDING_DELETED)
@@ -70,7 +82,7 @@ class UploadConflictTest {
                 return super.read(bytes, offset, length)
             }
         }
-        val code = uploadConflictCode(source)
+        val code = parseInput(source)
         assertEquals(RECORDING_DELETED, code)
         val error = runCatching { checkDeletedResponseSession(code, cookie.get() == "old") }.exceptionOrNull()
         assertTrue(error is UploadException && error.kind == "auth")

@@ -54,9 +54,7 @@ internal class CloudUploadCoordinator(context: Context, private val client: Stud
             }, { gate.workerStarted(ticket) }, { gate.workerFinished(ticket) }, requiredSession)
             withContext(Dispatchers.IO) {
                 client.withManualUploadSession(receiptSession) {
-                    val current = UploadJournal.get(app, recording, startedEntry.projectId)
-                    check(current != null && current.uploadId == startedEntry.uploadId && current.phase == "uploading") { "Uploadauftrag hat sich geändert." }
-                    UploadJournal.write(app, startedEntry.copy(phase = "confirmed"))
+                    check(UploadJournal.replaceIfUnchanged(app, recording, startedEntry, startedEntry.copy(phase = "confirmed"))) { "Uploadauftrag hat sich geändert." }
                     confirmedCommitted.set(true)
                     CloudUploadState.Confirmed(recording.id, startedEntry.projectId, requiredSession != null).also { _state.value = it }
                 }
@@ -64,7 +62,7 @@ internal class CloudUploadCoordinator(context: Context, private val client: Stud
         } catch (error: CancellationException) {
             gate.stopProgress(ticket)
             _state.value = CloudUploadState.Failed(recording.id, projectId, "uncertain", "Upload abgebrochen oder unterbrochen; die lokale Aufnahme bleibt erhalten.")
-            if (!confirmedCommitted.get()) entry?.let { withContext(NonCancellable + Dispatchers.IO) { runCatching { UploadJournal.write(app, it.copy(phase = "uncertain")) } } }
+            if (!confirmedCommitted.get()) entry?.let { withContext(NonCancellable + Dispatchers.IO) { runCatching { UploadJournal.replaceIfUnchanged(app, recording, it, it.copy(phase = "uncertain")) } } }
             throw error
         } catch (error: Exception) {
             gate.stopProgress(ticket)
@@ -76,19 +74,22 @@ internal class CloudUploadCoordinator(context: Context, private val client: Stud
                 val result = if (bound == null) null else withContext(Dispatchers.IO) {
                     client.withManualUploadSession(bound) {
                         val saved = runCatching {
-                            val current = UploadJournal.get(app, recording, currentEntry.projectId)
-                            check(current != null && current.uploadId == currentEntry.uploadId && current.phase == "uploading") { "Uploadauftrag hat sich geändert." }
-                            UploadJournal.write(app, currentEntry.copy(phase = "conflict", conflictReason = RECORDING_DELETED))
-                        }.isSuccess
-                        CloudUploadState.Failed(recording.id, projectId, kind,
-                            deletedMessageAfterWrite(saved)).also { _state.value = it }
+                            UploadJournal.replaceIfUnchanged(app, recording, currentEntry, currentEntry.copy(phase = "conflict", conflictReason = RECORDING_DELETED))
+                        }
+                        if (saved.getOrNull() == false) {
+                            CloudUploadState.Failed(recording.id, projectId, "uncertain", "Uploadauftrag hat sich geändert; Serverstatus prüfen. Die Aufnahme bleibt lokal.").also { _state.value = it }
+                        } else {
+                            CloudUploadState.Failed(recording.id, projectId, kind,
+                                deletedMessageAfterWrite(saved.isSuccess)).also { _state.value = it }
+                        }
                     }
                 }
                 result ?: CloudUploadState.Failed(recording.id, projectId, "auth", "Studio-Sitzung geändert; Serverantwort prüfen. Die Aufnahme bleibt lokal.").also { _state.value = it }
             } else {
                 val phase = failedUploadPhase(kind)
-                currentEntry?.let { withContext(Dispatchers.IO) { runCatching { UploadJournal.write(app, it.copy(phase = phase, conflictReason = uploadConflictReason(kind, phase))) } } }
-                CloudUploadState.Failed(recording.id, projectId, kind, error.message?.take(220) ?: "Upload nicht bestätigt; die lokale Aufnahme bleibt erhalten.").also { _state.value = it }
+                val notSaved = currentEntry?.let { withContext(Dispatchers.IO) { runCatching { UploadJournal.replaceIfUnchanged(app, recording, it, it.copy(phase = phase, conflictReason = uploadConflictReason(kind, phase))) }.getOrNull() != true } } == true
+                if (notSaved) CloudUploadState.Failed(recording.id, projectId, "uncertain", "Uploadstatus konnte nicht sicher gespeichert werden; Serverstatus prüfen. Die Aufnahme bleibt lokal.").also { _state.value = it }
+                else CloudUploadState.Failed(recording.id, projectId, kind, error.message?.take(220) ?: "Upload nicht bestätigt; die lokale Aufnahme bleibt erhalten.").also { _state.value = it }
             }
         } finally { gate.operationFinished(ticket) }
     }

@@ -22,12 +22,12 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 
-// Android's mockable framework contains nonfunctional org.json stubs. Prepend
-// the declared real test implementation only for local JVM unit tests.
+// The JVM tests load the real test JSON implementation in an isolated classloader;
+// Android's framework org.json stub otherwise takes precedence over dependencies.
 val jsonUnitTestRuntime by configurations.creating
 
 tasks.withType<Test>().configureEach {
-    classpath = files(jsonUnitTestRuntime) + classpath
+    doFirst { systemProperty("kontraprompter.test.jsonJar", jsonUnitTestRuntime.singleFile.absolutePath) }
 }
 
 dependencies {
