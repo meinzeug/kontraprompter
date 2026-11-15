@@ -651,9 +651,9 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
     val controlsHeight = with(screenDensity) { (if (controls) controlsHeightPx else 0).toDp() }
     Box(Modifier.fillMaxSize().background(Color.Black).clickable { controls = !controls }) {
         if (video != null) LivePreview(video, videoH, videoV, videoRotation, videoFill, videoOpacity, Modifier.fillMaxSize())
-        Box(Modifier.fillMaxSize().padding(top = statusHeight, bottom = controlsHeight).clipToBounds().graphicsLayer { scaleX = transform.scaleX; scaleY = transform.scaleY; rotationZ = transform.rotation.toFloat() }, contentAlignment = Alignment.TopCenter) {
+        BoxWithConstraints(Modifier.fillMaxSize().padding(top = statusHeight, bottom = controlsHeight).clipToBounds().graphicsLayer { scaleX = transform.scaleX; scaleY = transform.scaleY; rotationZ = transform.rotation.toFloat() }, contentAlignment = Alignment.TopCenter) {
             Column(Modifier.fillMaxSize().verticalScroll(scroll), horizontalAlignment = Alignment.CenterHorizontally) {
-                Spacer(Modifier.height(180.dp))
+                Spacer(Modifier.height(minOf(180.dp, maxHeight / 2)))
                 Text(text.ifBlank { "Füge im Editor deinen Text ein." }, modifier = Modifier.fillMaxWidth(width).background(Color.Black.copy(alpha = opacity)).padding(8.dp), color = Color.White, fontSize = fontSize.sp, lineHeight = (fontSize * lineSpacing).sp, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal)
                 Spacer(Modifier.height(400.dp))
             }
