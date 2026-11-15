@@ -12,7 +12,12 @@ object LiveChunkCrashFixture {
     @JvmStatic fun main(args: Array<String>) {
         val mode = args.single()
         val server = requireNotNull(System.getenv("LIVE_FIXTURE_ORIGIN"))
-        check(server == "http://127.0.0.1:3391")
+        fun loopback(value: String): Boolean = runCatching {
+            val uri = URI(value)
+            uri.scheme == "http" && uri.host == "127.0.0.1" && uri.port in 1..65535 &&
+                uri.userInfo == null && uri.rawPath.isNullOrEmpty() && uri.rawQuery == null && uri.rawFragment == null
+        }.getOrDefault(false)
+        check(loopback(server)) { "Only the harness-owned loopback server is allowed" }
         val cookie = requireNotNull(System.getenv("LIVE_FIXTURE_COOKIE"))
         val binding = LiveChunkBinding(requireNotNull(System.getenv("LIVE_FIXTURE_RECORDING")), requireNotNull(System.getenv("LIVE_FIXTURE_PROJECT")), "a".repeat(64))
         val media = File(requireNotNull(System.getenv("LIVE_FIXTURE_MP4")))
@@ -30,6 +35,7 @@ object LiveChunkCrashFixture {
         when (mode) {
             "interrupt" -> {
                 val proxy = requireNotNull(System.getenv("LIVE_FIXTURE_PROXY"))
+                check(loopback(proxy))
                 check(runCatching { LiveChunkEngine(adapter(proxy)) { true }.transfer(binding, media) }.isFailure) { "proxy did not interrupt upload" }
                 println("network interruption detected; local original retained")
             }
