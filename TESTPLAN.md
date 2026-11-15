@@ -114,3 +114,12 @@ Version-1-Journale mit zufälliger Upload-ID, erneutes Öffnen des dauerhaft
 gespeicherten Löschgrunds, abweichende Zielprojekte, beschädigte/fehlende
 optionale Felder, einen simulierten AtomicFile-Schreibfehler sowie den echten
 Android-JSON-Parser. Ein Build allein belegt keine Geräteausführung.
+
+Die Fixture auf Basis `1b004d0` wurde mit CI-Lauf `43685474278` gebaut
+und auf Samsung SM-A526B sowie Xiaomi 2409BRN2CY mit je **5/5 Tests**
+ausgeführt. Sie prüft synthetische Journale inklusive früher zufälliger IDs,
+projektbezogenem Löschgrund, defektem JSON, simuliertem Schreibfehler,
+Android-JSON und Verwerfen eines geänderten Journalzustands. Es handelt sich
+nicht um einen produktiven Upload, einen echten Medienaufnahme- oder einen
+Mehrprozess-Racetest. Beide temporären Testpakete wurden danach entfernt;
+die reguläre Videoverbindung und Studioanmeldung waren wieder sichtbar.
