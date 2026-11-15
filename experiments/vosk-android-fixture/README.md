@@ -38,6 +38,13 @@ privates Cacheverzeichnis der Fixture-App. Das ausgepackte Modell benötigt
 rund 95,6 MB; dieses Testverzeichnis bleibt zunächst erhalten. Es ist keine
 Speicherbereinigung oder Deinstallation beauftragt.
 
+Die Klasse `Recognizer` des geprüften AAR deklariert den nativen PCM-Rückgabewert
+als `boolean`. Die [native Vosk-C-API](https://github.com/alphacep/vosk-api/blob/master/src/vosk_api.cc)
+liefert bei einer Ausnahme dagegen `-1`. Wie dieser Wert durch das genaue
+JNA-Binding auf Android ankommt, ist noch nicht auf dem Gerät geprüft; ein
+verlässlicher Fehlerpfad und ein versionsgebundener negativer Fehlertest sind
+vor einer Appintegration erforderlich. Der Stille-Smoke-Test beweist sie nicht.
+
 Ein späterer Bau vom Hauptverzeichnis des Speech-WIP aus wäre beispielsweise
 `./gradlew -p experiments/vosk-android-fixture :app:assembleDebug :app:assembleDebugAndroidTest`.
 Ein solcher Build lädt gegebenenfalls Abhängigkeiten und muss bei knappen
