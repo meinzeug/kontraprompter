@@ -8,6 +8,9 @@ Query-ID oder alte Revision löst die Sperre nicht. Überholt ein anderer Status
 eine korrelierte Antwort, wird diese bis zu einer Gesamtgrenze von drei Abfragen
 erneut angefordert. Danach bleibt die Sperre bei unklarem Status bestehen.
 ACKs ohne echtes JSON-Boolean werden ignoriert.
+Bleibt nach einem gültigen ACK die korrelierte Antwort aus, fordert der Timeout
+sie einmal erneut innerhalb derselben Gesamtgrenze an. Ohne ACK erfolgt keine
+korrelierte Wiederholung, da eine Statusabfrage den Start überholen könnte.
 
 Bleibt das ACK aus, bleibt der Start auch nach acht Sekunden gesperrt. Ein
 ungekorrelierter Status nach dem Timeout beweist nicht, dass der asynchron
@@ -19,8 +22,8 @@ Status auf unbekannt und die bestehende Wiederherstellungsbestätigung bleibt n�
 `PairedCapturePolicyTest` und `DrawerNavigationTest` prüfen die Regeln. Zusätzlich
 kompiliert `fixtures/paired-disconnect/run.py --json-jar /pfad/zu/json.jar` die
 echte `PairedCapture`-Implementierung mit synthetischem Transport und Recorder;
-die Fixture prüft ACK vor Status, fehlerhafte ACKs, den echten Timeout, falsche
-Query-ID, überholte Revisionen und begrenzte Wiederholung. Sie benötigt die angegebenen Kotlin-/Coroutines-Artefakte im lokalen
+die Fixture prüft ACK vor Status, fehlerhafte ACKs, den echten Timeout vor und
+nach ACK, falsche Query-ID, überholte Revisionen und begrenzte Wiederholung. Sie benötigt die angegebenen Kotlin-/Coroutines-Artefakte im lokalen
 Gradle-Cache und führt keine Geräte- oder Netzwerkoperationen aus.
 
 Dies ist kein vollständiges geräteübergreifendes Sperrprotokoll: Eine Kamera

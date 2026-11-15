@@ -108,7 +108,13 @@ internal class PairedCapture(
                     _state.value = _state.value.copy(pending = keepPending, message = if (keepPending)
                         START_STATUS_TIMEOUT_MESSAGE
                     else "Keine Bestätigung. Bitte Kamerastatus prüfen; der Befehl wird nicht automatisch wiederholt.")
-                    lan.send("capture_query", "")
+                    if (keepPending && statusQueryAttempts > 0) {
+                        // Only an ACK permits a correlated retry. A query sent before
+                        // the ACK could overtake an asynchronously queued start.
+                        if (statusQueryAttempts < MAX_STATUS_QUERY_ATTEMPTS) requestPendingStatus(requestId)
+                    } else {
+                        lan.send("capture_query", "")
+                    }
                 }
             }
         }
