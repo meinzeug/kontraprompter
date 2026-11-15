@@ -1,0 +1,7 @@
+# Isoliertes v2-Gerätetranskript
+
+Diese Vorbereitung ergänzt reine Kotlin-Transkripte für Owner-/Workspace-gebundenes Enrollment und Login, jeweils mit eigenem v2-Domainpräfix. Das Enrollment bindet zusätzlich den Hash der bestätigenden Session. Der bestehende v1-Code und die App-Aufrufe bleiben unverändert; es wird keine Anmeldung aktiviert und keine App-Identität benutzt. Das vollständige Gegenstück liegt im isolierten Videomaker-WIP `wip/studio-device-http-fixture-20261115`.
+
+`run-cross-test.py` kompiliert ausschließlich die Transkripte, ihre Unit-Tests und einen synthetischen JVM-Signierer nach `/dev/shm`. Der Signierer erzeugt einen zufälligen Softwareschlüssel und testet Signaturen gegen den getrennten Node-v2-Fixturekern. Es werden weder Android-Keystore noch Geräte oder Server angesprochen. Der isolierte Lauf ergab 5/5 JUnit-Tests und 1/1 tatsächlichen Kotlin-/Node-Signaturtest; der Klassenpfad wurde anschließend entfernt.
+
+Für einen echten Produkteinsatz fehlen insbesondere geprüfte Ableitung und bestätigte Anzeige von Account-/Workspace-Bindung, App-UID-Keystore-Anbindung und Lebenszyklus, sichere HTTPS-Routen und Widerrufs-/Uploadintegration, durchgängige Session- und Restore-Tests sowie gesonderter unabhängiger Review. Ein vom Server gelieferter Hash ist für sich genommen kein Beweis für eine vom Nutzer verstandene Kontobindung.
