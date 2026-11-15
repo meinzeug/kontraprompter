@@ -54,13 +54,15 @@ class DirectPeerStopTest {
         val tracker = DirectPeerStopTracker()
         val old = Any(); val new = Any()
         tracker.update(old, DirectPeerStop.State.PENDING)
-        tracker.update(new, DirectPeerStop.State.IDLE)
+        tracker.beginSession()
         assertEquals(DirectPeerStop.State.PENDING, tracker.state.value)
         tracker.update(new, DirectPeerStop.State.PENDING)
         tracker.update(new, DirectPeerStop.State.CLOSED)
         assertEquals(DirectPeerStop.State.PENDING, tracker.state.value)
         tracker.update(old, DirectPeerStop.State.CLOSED)
         assertEquals(DirectPeerStop.State.CLOSED, tracker.state.value)
+        tracker.beginSession()
+        assertEquals(DirectPeerStop.State.IDLE, tracker.state.value)
     }
 
     @Test fun `failed or overflowing obligations remain uncertain`() {
@@ -68,6 +70,8 @@ class DirectPeerStopTest {
         val old = Any(); val new = Any()
         tracker.update(old, DirectPeerStop.State.PENDING)
         tracker.update(old, DirectPeerStop.State.FAILED)
+        tracker.beginSession()
+        assertEquals(DirectPeerStop.State.FAILED, tracker.state.value)
         tracker.update(new, DirectPeerStop.State.PENDING)
         tracker.update(new, DirectPeerStop.State.CLOSED)
         assertEquals(DirectPeerStop.State.FAILED, tracker.state.value)

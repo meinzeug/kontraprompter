@@ -183,6 +183,7 @@ private fun KontraApp(activity: MainActivity) {
     val recording by (session?.recording ?: emptyRecording).collectAsState()
     val emptyCapture = remember { kotlinx.coroutines.flow.MutableStateFlow(PairedCaptureState()) }
     val pairedCapture by (session?.pairedCapture?.state ?: emptyCapture).collectAsState()
+    val directPeerStopStatus by ProcessDirectPeerStops.state.collectAsState()
     var selectedVolumeRemote by remember { mutableStateOf(preferences.getString("volume_remote_descriptor", null)) }
     var inputRefresh by remember { mutableIntStateOf(0) }
     DisposableEffect(activity, page, session, lanState.ready, selectedVolumeRemote, selected.studioProjectId) {
@@ -545,6 +546,7 @@ private fun KontraApp(activity: MainActivity) {
     AppBackground {
         when (page) {
             "roles" -> AppPage("Dein Studio", "KONTRAPROMPTER", "Wähle, wie du dieses Gerät beim Dreh einsetzen möchtest.") {
+                if (directPeerStopStatus == DirectPeerStop.State.PENDING || directPeerStopStatus == DirectPeerStop.State.FAILED) DirectPeerStopNotice(directPeerStopStatus)
                 var cameraSettingsOpen by rememberSaveable { mutableStateOf(false) }
                 StudioRoleChoice("Teleprompter", "Skripte lesen und die Aufnahme steuern", camera = false, primary = true) { page = "scripts" }
                 StudioRoleChoice("Kamera", "Video und Ton auf diesem Gerät aufnehmen", camera = true, primary = false) {

@@ -74,6 +74,7 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
                     val lease = if (host) RtcVideo.tryAcquireCamera() else null
                     if (host && lease == null) { lan.report("Kamera noch beschäftigt", "Die vorherige Aufnahme wird noch abgeschlossen. Bitte erneut verbinden."); null }
                     else try { RtcVideo(app, host, lan, lease, preferFrontCamera).also { created ->
+                        ProcessDirectPeerStops.beginSession()
                         created.onCameraFailure = ::cameraFailed
                         created.onCameraSelection = { front, canSwitch ->
                             synchronized(guard) { if (_video.value === created && !closed) _cameraSelection.value = CameraSelection(front = front, canSwitch = canSwitch) }

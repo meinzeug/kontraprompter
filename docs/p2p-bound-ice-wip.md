@@ -33,7 +33,7 @@ echte Gerätetests nötig. Während aktiver Aufnahme darf die Fehlerbehandlung w
 Recorder noch lokales Original beenden. Keine Tests dürfen Credentials oder
 Adresswerte in Logs ausgeben; native WebRTC-Diagnosen müssen gesondert geprüft werden.
 
-Bei erkannter Trennung invalidiert der P2P-Pfad die Callbackgeneration und
+Bei erkannter Trennung oder explizitem Schließen invalidiert der P2P-Pfad die Callbackgeneration und
 reiht ein `PeerConnection.close()` auf dem Videoexecutor ein. Er ruft dabei weder
 `dispose()` noch einen Recorder- oder Kamerastopp auf. Hängt der Executor oder
 der native Aufruf, ist das Ende der Medienübertragung nicht bestätigt; ein
@@ -41,8 +41,9 @@ Interfaceverlust ohne passenden Callback ist ebenfalls noch nicht aktiv
 überwacht. Die Oberfläche zeigt ausstehend, nicht bestätigt oder lediglich den
 zurückgekehrten Aufruf; sie behauptet keinen garantierten Medienabbruch. Offene
 und fehlgeschlagene Close-Verpflichtungen werden prozessweit aggregiert und von
-einem neuen Session-/Pipeline-Owner nicht zurückgesetzt. Der Teleprompter zeigt
-ausstehende oder fehlgeschlagene Beendigungen ebenfalls an. Der Prozessspeicher
+einem neuen Session-/Pipeline-Owner nicht zurückgesetzt. Ein geklärter
+Erfolgsstatus wird bei neuer Sitzung zurückgesetzt. Startseite und Teleprompter
+zeigen ausstehende oder fehlgeschlagene Beendigungen ebenfalls an. Der Prozessspeicher
 ist keine persistente Crash-Recovery und kein Nachweis der nativen Medienruhe.
 Die Unabhängigkeit des nativen Peer-Close vom aktiven Recorder muss auf echter
 Hardware nachgewiesen werden.

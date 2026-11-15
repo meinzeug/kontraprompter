@@ -30,6 +30,11 @@ internal class DirectPeerStopTracker {
     private val _state = MutableStateFlow(DirectPeerStop.State.IDLE)
     val state: StateFlow<DirectPeerStop.State> = _state
 
+    /** A new session may clear an old success, never an outstanding uncertainty. */
+    @Synchronized fun beginSession() {
+        if (!uncertain && pending.isEmpty()) _state.value = DirectPeerStop.State.IDLE
+    }
+
     @Synchronized fun update(owner: Any, status: DirectPeerStop.State) {
         when (status) {
             DirectPeerStop.State.IDLE -> return
@@ -53,5 +58,6 @@ internal class DirectPeerStopTracker {
 internal object ProcessDirectPeerStops {
     private val tracker = DirectPeerStopTracker()
     val state: StateFlow<DirectPeerStop.State> = tracker.state
+    fun beginSession() = tracker.beginSession()
     fun update(owner: Any, status: DirectPeerStop.State) = tracker.update(owner, status)
 }

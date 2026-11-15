@@ -104,7 +104,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
                 if (decision == RouteDecision.Unknown) { lan.report("Videoverbindung nicht verfügbar", "Netzwerkschnittstelle konnte nicht sicher zugeordnet werden."); return@executePrimary }
                 val direct = (decision as? RouteDecision.Direct)?.path
                 directPath = direct
-                if (direct != null && (!primaryGeneration.isCurrent(generation) || !lan.isApprovedConnection(addresses.marker))) { directPeerStop.request(); return@executePrimary }
+                if (direct != null && (closed.get() || !primaryGeneration.isCurrent(generation) || !lan.isApprovedConnection(addresses.marker))) { directPeerStop.request(); return@executePrimary }
                 val builder = PeerConnectionFactory.builder()
                 if (direct != null) builder.setOptions(PeerConnectionFactory.Options().apply {
                     disableNetworkMonitor = true
@@ -115,7 +115,7 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
                     .setVideoDecoderFactory(DefaultVideoDecoderFactory(egl.eglBaseContext)).createPeerConnectionFactory()
                 val config = PeerConnection.RTCConfiguration(emptyList()).apply { sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN }
                 peer = factory!!.createPeerConnection(config, observer(generation)) ?: error("PeerConnection nicht verfügbar")
-                if (direct != null && (!primaryGeneration.isCurrent(generation) || !lan.isApprovedConnection(addresses.marker))) { directPeerStop.request(); return@executePrimary }
+                if (direct != null && (closed.get() || !primaryGeneration.isCurrent(generation) || !lan.isApprovedConnection(addresses.marker))) { directPeerStop.request(); return@executePrimary }
                 if (host) {
                     val enumerator: CameraEnumerator = if (Camera2Enumerator.isSupported(context)) Camera2Enumerator(context) else Camera1Enumerator(false)
                     val name = chooseCamera(enumerator.deviceNames.toList(), preferFrontCamera, enumerator::isFrontFacing, enumerator::isBackFacing) ?: error("Keine Kamera verfügbar")
@@ -353,6 +353,9 @@ class RtcVideo(private val context: Context, private val host: Boolean, private 
     private fun execute(block: () -> Unit) { if (!closed.get()) runCatching { executor.execute { if (!closed.get()) block() } } }
     override fun close() {
         synchronized(sinks) { if (!closed.compareAndSet(false, true)) return }
+        // Explicit UI close does not trigger LanSession.onDisconnect. Invalidate
+        // first, and register the same peer-only stop before scheduling cleanup.
+        invalidatePrimaryPeer()
         executor.execute {
             browserPreviewId = null
             if (runCatching { browserPreview?.close() }.isFailure) browserPreviewSafety.markCleanupUnknown()
