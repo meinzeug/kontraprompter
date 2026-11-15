@@ -44,6 +44,22 @@ grep -Fq 'KpCameraDisconnect.dispatch' "$test_dir/callback-bytecode.txt"
 grep -Fq 'KpCameraClose.notifyIfActive' "$test_dir/callback-bytecode.txt"
 javap -c -p -cp "$test_dir/classes:$test_dir/webrtc.jar" org.webrtc.KpExperimentalCamera2Capturer > "$test_dir/capturer-bytecode.txt"
 grep -Fq 'KpCameraCleanup.isBlocked' "$test_dir/capturer-bytecode.txt"
+# This fixed WebRTC AAR must filter frame callbacks by currentSession under the
+# same stateLock in which onDone installs the new session before switch completion.
+javap -c -p -cp "$test_dir/webrtc.jar" 'org.webrtc.CameraCapturer$1' > "$test_dir/on-done-bytecode.txt"
+javap -c -p -cp "$test_dir/webrtc.jar" 'org.webrtc.CameraCapturer$2' > "$test_dir/frame-owner-bytecode.txt"
+python3 - "$test_dir/on-done-bytecode.txt" "$test_dir/frame-owner-bytecode.txt" <<'PY'
+import pathlib,sys
+done=pathlib.Path(sys.argv[1]).read_text().split('public void onDone(',1)[1].split('public void onFailure(',1)[0]
+frame=pathlib.Path(sys.argv[2]).read_text().split('public void onFrameCaptured(',1)[1].split('Exception table:',1)[0]
+def ordered(text,*terms):
+    positions=[text.find(term) for term in terms]
+    if any(p < 0 for p in positions) or positions != sorted(positions):
+        raise SystemExit('WebRTC session-owner bytecode changed; experimental preview must stay disabled')
+ordered(done, 'stateLock', 'monitorenter', 'currentSession', 'onCameraSwitchDone', 'monitorexit')
+ordered(frame, 'stateLock', 'monitorenter', 'currentSession', 'if_acmpeq', 'return', 'capturerObserver', 'CapturerObserver.onFrameCaptured:')
+print('Pinned WebRTC session-owner frame fence checked')
+PY
 javac -J-Xmx128m --release 17 -cp "$test_dir/classes:$test_dir/webrtc.jar:$junit:$hamcrest" -d "$test_dir/tests" "$here/KpFixedFpsSelectorTest.java" "$here/KpCameraLifecycleTest.java" "$here/KpCameraOpenFence.java" "$here/KpCameraOpenFenceTest.java"
 java -Xmx96m -cp "$test_dir/tests:$test_dir/classes:$test_dir/webrtc.jar:$junit:$hamcrest" org.junit.runner.JUnitCore org.webrtc.KpFixedFpsSelectorTest org.webrtc.KpCameraLifecycleTest org.webrtc.KpCameraOpenFenceTest
 python3 - "$test_dir/webrtc.jar" "$test_dir/classes" <<'PY'
