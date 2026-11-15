@@ -138,11 +138,11 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
             pendingCameraFailure = null
             _recording.value = LocalRecording.Preparing(id)
         }
-        val submitted = current.withLocalTrack { track, egl ->
-            if (track == null) {
+        val submitted = current.withRawFrameSource { frames, egl ->
+            if (frames == null) {
                 recordingEvent(RtcMp4Recorder.Event.Failed(id, "Kamera ist noch nicht bereit", null))
             } else {
-                val capture = RtcMp4Recorder(app, track, egl, id, projectId, origin, ::recordingEvent)
+                val capture = RtcMp4Recorder(app, frames, egl, id, projectId, origin, ::recordingEvent)
                 val started = synchronized(guard) {
                     recorder = capture
                     val ok = capture.start()
