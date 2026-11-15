@@ -31,7 +31,7 @@ internal const val CAMERA_REMOTE_UI_ENABLED = false
 
 internal class CameraRemoteRuntime(context: Context, private val session: LiveSession) {
     private val app = context.applicationContext
-    private val client = de.kontrakurs.kontraprompter.cloud.ExperimentalStudioSessions.client(de.kontrakurs.kontraprompter.cloud.SessionOwner.CAMERA_REMOTE)
+    private val client = StudioClient()
     private val _status = MutableStateFlow("Aus")
     val status: StateFlow<String> = _status
     private val _active = MutableStateFlow(false)

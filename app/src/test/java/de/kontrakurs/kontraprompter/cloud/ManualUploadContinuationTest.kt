@@ -27,9 +27,9 @@ class ManualUploadContinuationTest {
     }
     @Test fun `session binding is stable only for the same bearer and does not store it`() {
         val client = StudioClient()
-        val first = StudioClient.ManualUploadSession(SessionCookie.Snapshot("kontrakurs_session=first-secret"))
-        val again = StudioClient.ManualUploadSession(SessionCookie.Snapshot("kontrakurs_session=first-secret"))
-        val other = StudioClient.ManualUploadSession(SessionCookie.Snapshot("kontrakurs_session=other-secret"))
+        val first = StudioClient.ManualUploadSession("kontrakurs_session=first-secret")
+        val again = StudioClient.ManualUploadSession("kontrakurs_session=first-secret")
+        val other = StudioClient.ManualUploadSession("kontrakurs_session=other-secret")
         val binding = client.manualUploadSessionBinding(first)
         assertEquals(64, binding.length)
         assertEquals(binding, client.manualUploadSessionBinding(again))
