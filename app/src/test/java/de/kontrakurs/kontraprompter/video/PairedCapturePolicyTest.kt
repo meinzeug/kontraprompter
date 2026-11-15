@@ -74,7 +74,7 @@ class PairedCapturePolicyTest {
 
     @Test fun `start acknowledgement keeps disconnect pending until fresh correlated status`() {
         assertTrue(cameraAckNeedsStatus("start", true))
-        assertFalse(cameraAckNeedsStatus("start", false))
+        assertTrue(cameraAckNeedsStatus("start", false))
         assertFalse(cameraStatusAnswersPending("start", "new", null))
         assertFalse(cameraStatusAnswersPending("start", "new", "old"))
         assertTrue(cameraStatusAnswersPending("start", "new", "new"))
@@ -87,5 +87,13 @@ class PairedCapturePolicyTest {
         assertFalse(retainPendingAfterTimeout("pause"))
         assertFalse(retainPendingAfterTimeout("switch_camera"))
         assertFalse(retainPendingAfterTimeout(null))
+    }
+
+    @Test fun `confirmed start clears only its own unresolved-status messages`() {
+        assertNull(messageAfterConfirmedStartStatus(START_STATUS_TIMEOUT_MESSAGE))
+        assertNull(messageAfterConfirmedStartStatus(START_STATUS_STALE_MESSAGE))
+        assertNull(messageAfterConfirmedStartStatus(START_STATUS_SEND_FAILED_MESSAGE))
+        assertEquals("Kamera meldet Fehler", messageAfterConfirmedStartStatus("Kamera meldet Fehler"))
+        assertEquals("Befehl wurde von der Kamera nicht angenommen.", messageAfterConfirmedStartStatus("Befehl wurde von der Kamera nicht angenommen."))
     }
 }

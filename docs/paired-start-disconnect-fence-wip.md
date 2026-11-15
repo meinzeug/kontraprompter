@@ -1,10 +1,13 @@
 # Fernstart und Sitzungsende: isolierter WIP
 
-Ein positives Start-ACK bestätigt die Annahme, keinen abgeschlossenen Kamerastatus.
-Der ausstehende Befehl bleibt daher gesperrt, bis eine nach dem ACK angeforderte,
+Ein Start-ACK bestätigt allein keinen abgeschlossenen Kamerastatus, auch eine
+Ablehnung schließt eine lokal gestartete Aufnahme nicht aus. Der ausstehende
+Befehl bleibt daher nach positivem wie negativem ACK gesperrt, bis eine danach angeforderte,
 requestgebundene Statusantwort mit neuer Revision verarbeitet wurde. Eine falsche
-Query-ID oder alte Revision löst die Sperre nicht. Ein negatives ACK beendet den
-ausstehenden Auftrag wie bisher.
+Query-ID oder alte Revision löst die Sperre nicht. Überholt ein anderer Status
+eine korrelierte Antwort, wird diese bis zu einer Gesamtgrenze von drei Abfragen
+erneut angefordert. Danach bleibt die Sperre bei unklarem Status bestehen.
+ACKs ohne echtes JSON-Boolean werden ignoriert.
 
 Bleibt das ACK aus, bleibt der Start auch nach acht Sekunden gesperrt. Ein
 ungekorrelierter Status nach dem Timeout beweist nicht, dass der asynchron
@@ -16,8 +19,8 @@ Status auf unbekannt und die bestehende Wiederherstellungsbestätigung bleibt n�
 `PairedCapturePolicyTest` und `DrawerNavigationTest` prüfen die Regeln. Zusätzlich
 kompiliert `fixtures/paired-disconnect/run.py --json-jar /pfad/zu/json.jar` die
 echte `PairedCapture`-Implementierung mit synthetischem Transport und Recorder;
-die Fixture prüft ACK vor Status, den echten Timeout, falsche Query-ID und alte
-Revision. Sie benötigt die angegebenen Kotlin-/Coroutines-Artefakte im lokalen
+die Fixture prüft ACK vor Status, fehlerhafte ACKs, den echten Timeout, falsche
+Query-ID, überholte Revisionen und begrenzte Wiederholung. Sie benötigt die angegebenen Kotlin-/Coroutines-Artefakte im lokalen
 Gradle-Cache und führt keine Geräte- oder Netzwerkoperationen aus.
 
 Dies ist kein vollständiges geräteübergreifendes Sperrprotokoll: Eine Kamera
