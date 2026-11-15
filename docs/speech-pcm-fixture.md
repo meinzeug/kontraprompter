@@ -83,3 +83,12 @@ Dies ist ein Offline-Test auf dem Entwicklungsrechner mit bereits
 abgeschlossenem Audiomaterial. Er belegt weder die Echtzeitlatenz noch eine
 Integration in Android, den Aufnahmeprozess, die sichere Übertragung der
 Position oder eine funktionierende automatische Sprachfolge.
+
+In einer weiteren rein lokalen Auswertung wurde das Erkennungsergebnis
+anschließend mit dem zum Aufnahmeprojekt aktuell gespeicherten Skript
+verglichen. Von 69 erkannten Wörtern stimmten 45 in Reihenfolge exakt mit dem
+Skript überein; die längste exakte Folge hatte neun Wörter. Auch dabei wurde das
+Transkript weder ausgegeben noch gespeichert. Da weder die Skriptfassung zum
+Aufnahmezeitpunkt noch der tatsächlich gesprochene Wortlaut unabhängig
+verifiziert wurden, ist dies kein Genauigkeitsmaß und kein Beleg für eine
+zuverlässige Positionssteuerung.
