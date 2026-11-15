@@ -1,5 +1,7 @@
 <resources>
     <string name="direct_peer_stop_pending">Videopfad wird beendet. Die Beendigung ist noch nicht bestätigt; bitte Kamerastatus prüfen.</string>
+    <string name="direct_peer_stop_pending_short">Videopfad: Beendigung ausstehend</string>
+    <string name="direct_peer_stop_failed_short">Videopfad: Ende nicht bestätigt</string>
     <string name="direct_peer_stop_called">Der Beendigungsaufruf für den Videopfad ist zurückgekehrt. Bitte Kamerastatus prüfen.</string>
     <string name="direct_peer_stop_no_peer">Kein Videopfad zum Beenden vorhanden. Bitte Kamerastatus prüfen.</string>
     <string name="direct_peer_stop_failed">Ende des Videopfads nicht bestätigt. Bitte Kamerastatus prüfen.</string>
