@@ -112,3 +112,11 @@ beide regulären Apps im Vordergrund; Xiaomi meldete die Verbindung zu Samsung
 und die Videomaker-Anmeldung. Die Tests ersetzen keinen tatsächlichen
 Prozess-Kill zwischen Persistenz und Recorderaktion, keinen Codec-/Aufnahme- und
 keinen End-to-End- oder Rollback-Test. Die Produktivfunktion bleibt deaktiviert.
+
+Ein weiterer Testentwurf startet ausschließlich im `.journalfixture`-Paket
+einen nicht exportierten Service im eigenen Nebenprozess. Dieser persistiert
+`admitting` im zufälligen Testverzeichnis. Die Instrumentierung beendet genau
+diesen eigenen PID, wartet auf den Verbindungsabbruch und prüft nach erneutem
+Öffnen `uncertain` ohne Aktionswiederholung. Er ist erst nach erfolgreichem
+Build und Geräteausführung belegt; es wird weder ein Codec gestartet noch die
+reguläre Kamera-App beendet.
