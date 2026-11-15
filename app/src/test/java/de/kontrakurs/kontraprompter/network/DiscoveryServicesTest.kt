@@ -5,6 +5,7 @@ import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.net.Socket
 
 class DiscoveryServicesTest {
     @Test fun `service name is session specific and safe for a DNS label`() {
@@ -96,5 +97,31 @@ class DiscoveryServicesTest {
         if (services.current(oldResolve)) visiblePort = cache.getValue(old.name)
         assertEquals(39531, visiblePort)
         assertTrue(services.current(freshResolve))
+    }
+
+    @Test fun `selection change closes its pending socket and forbids late install`() {
+        val services = DiscoveryServices<Any>()
+        val first = Any(); val second = Any()
+        services.found("first", first); services.found("second", second)
+        val old = services.select(first)!!
+        val closed = AtomicBoolean(false)
+        val socket = object : Socket() { override fun close() { closed.set(true) } }
+        assertTrue(services.attach(old, socket))
+        val next = services.select(second)!!
+        assertTrue(closed.get())
+        assertNull(services.ifCurrent(old) { "late handshake installed" })
+        assertEquals("new", services.ifCurrent(next) { "new" })
+    }
+
+    @Test fun `installed socket detaches and survives later discovery loss`() {
+        val services = DiscoveryServices<Any>()
+        val camera = Any(); services.found("camera", camera)
+        val selection = services.select(camera)!!
+        val closed = AtomicBoolean(false)
+        val socket = object : Socket() { override fun close() { closed.set(true) } }
+        assertTrue(services.attach(selection, socket))
+        assertEquals(true, services.ifCurrent(selection) { services.detach(selection, socket); true })
+        services.lost("camera")
+        assertFalse(closed.get())
     }
 }

@@ -1,5 +1,7 @@
 package de.kontrakurs.kontraprompter.network
 
+import java.net.Socket
+
 /** Names change with each camera session; the suffix is random and is not a pairing secret. */
 internal fun discoveryServiceName(model: String, nonce: ByteArray): String {
     require(nonce.size == 8)
@@ -9,31 +11,77 @@ internal fun discoveryServiceName(model: String, nonce: ByteArray): String {
     return "KontraPrompter-$safeModel-$suffix"
 }
 
-/** One latest selected discovery instance; handles are invalidated on replacement, loss or close. */
+/** One selected discovery instance, optionally owning a socket until authenticated installation. */
 internal class DiscoveryServices<T : Any> {
-    internal class Selection<T : Any> internal constructor(internal val item: T)
+    internal class Selection<T : Any> internal constructor(internal val item: T) {
+        // Accessed only while holding the enclosing DiscoveryServices monitor.
+        internal var socket: Socket? = null
+    }
     private val services = LinkedHashMap<String, T>()
     private var selected: Selection<T>? = null
     private var open = true
 
-    @Synchronized fun found(name: String, item: T): List<T> {
-        if (!open) return emptyList()
-        val old = services.put(name, item)
-        if (old != null && selected?.item === old) selected = null
-        return services.values.toList()
+    private fun detachSelected(): Socket? {
+        val old = selected
+        selected = null
+        return old?.socket.also { old?.socket = null }
     }
-    @Synchronized fun lost(name: String): List<T> {
-        if (!open) return emptyList()
-        val old = services.remove(name)
-        if (old != null && selected?.item === old) selected = null
-        return services.values.toList()
+    private fun close(socket: Socket?) { socket?.let { runCatching { it.close() } } }
+
+    fun found(name: String, item: T): List<T> {
+        var cancel: Socket? = null
+        val snapshot = synchronized(this) {
+            if (!open) return@synchronized emptyList()
+            val old = services.put(name, item)
+            if (old != null && selected?.item === old) cancel = detachSelected()
+            services.values.toList()
+        }
+        close(cancel)
+        return snapshot
     }
-    @Synchronized fun select(item: T): Selection<T>? {
-        if (!open || services.values.none { it === item }) return null
-        return Selection(item).also { selected = it }
+    fun lost(name: String): List<T> {
+        var cancel: Socket? = null
+        val snapshot = synchronized(this) {
+            if (!open) return@synchronized emptyList()
+            val old = services.remove(name)
+            if (old != null && selected?.item === old) cancel = detachSelected()
+            services.values.toList()
+        }
+        close(cancel)
+        return snapshot
+    }
+    fun select(item: T): Selection<T>? {
+        var cancel: Socket? = null
+        val selection = synchronized(this) {
+            if (!open || services.values.none { it === item }) return@synchronized null
+            cancel = detachSelected()
+            Selection(item).also { selected = it }
+        }
+        close(cancel)
+        return selection
     }
     @Synchronized fun current(selection: Selection<T>): Boolean =
         open && selected === selection && services.values.any { it === selection.item }
-    @Synchronized fun clearSelection() { selected = null }
-    @Synchronized fun close() { open = false; selected = null; services.clear() }
+    @Synchronized fun hasSelection(): Boolean = open && selected != null
+
+    /** Keep work under this monitor in-memory or strictly nonblocking. */
+    @Synchronized fun <R> ifCurrent(selection: Selection<T>, action: () -> R): R? =
+        if (current(selection)) action() else null
+
+    @Synchronized fun attach(selection: Selection<T>, socket: Socket): Boolean {
+        if (!current(selection) || selection.socket != null) return false
+        selection.socket = socket
+        return true
+    }
+    @Synchronized fun detach(selection: Selection<T>, socket: Socket) {
+        if (selection.socket === socket) selection.socket = null
+    }
+    fun clearSelection() {
+        val cancel = synchronized(this) { detachSelected() }
+        close(cancel)
+    }
+    fun close() {
+        val cancel = synchronized(this) { open = false; services.clear(); detachSelected() }
+        close(cancel)
+    }
 }
