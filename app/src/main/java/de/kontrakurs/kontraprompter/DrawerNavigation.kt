@@ -38,3 +38,6 @@ internal fun drawerReturnOrigin(target: DrawerDestination, current: String, help
     }
     return candidate.takeIf { it in setOf("roles", "scripts", "editor", "studio", "recordings", "calibration") } ?: "roles"
 }
+
+/** A back during either the visible or opening state belongs to the drawer. */
+internal fun drawerInterceptsBack(currentOpen: Boolean, targetOpen: Boolean): Boolean = currentOpen || targetOpen
