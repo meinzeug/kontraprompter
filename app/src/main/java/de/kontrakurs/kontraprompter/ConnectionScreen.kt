@@ -311,7 +311,6 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
                     Text("Adresse: ${state.addresses.joinToString().ifBlank { "Keine IPv4-Adresse gefunden" }}\nPort: ${state.port}", color = SoftText, style = MaterialTheme.typography.bodySmall)
                     Text("Beide Geräte müssen sich im lokalen Netz direkt erreichen können. Der Code gilt höchstens fünf Minuten und nur für eine Verbindung.", color = SoftText, style = MaterialTheme.typography.bodySmall)
                 }
-                WifiDirectHelp()
             } else if (state.authenticated && (!state.localApproved || !state.remoteApproved)) {
                 CameraConnectionCard {
                     Text("Kopplung bestätigen", style = MaterialTheme.typography.titleMedium)
@@ -320,6 +319,7 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
                     else Text("Auf diesem Gerät bestätigt", color = Color(0xffa3dfbb), style = MaterialTheme.typography.labelLarge)
                 }
             }
+            if (!state.authenticated) WifiDirectHelp()
             val previewHeightModifier = if (video == null) Modifier.heightIn(min = previewHeight) else Modifier.height(previewHeight)
             Box(Modifier.fillMaxWidth().then(previewHeightModifier).clip(RoundedCornerShape(24.dp))
                 .background(Color(0xff08090b)), contentAlignment = Alignment.Center) {
