@@ -15,7 +15,7 @@ class DrawerNavigationTest {
     @Test fun onlyApprovedNonSessionActionsAreDrawerDestinations() {
         val targets = DrawerDestination.entries.map { it.route }
         assertEquals(targets.size, targets.toSet().size)
-        assertEquals(setOf("roles", "scripts", "studio", "recordings", "help"), targets.toSet())
+        assertEquals(setOf("roles", "scripts", "studio", "recordings", "settings", "help"), targets.toSet())
         assertFalse(targets.contains("connection"))
         assertFalse(targets.contains("upload"))
     }
@@ -42,8 +42,9 @@ class DrawerNavigationTest {
         assertTrue(mayStartCamera(sessionPresent = false))
     }
     @Test fun editorAndConfigurationMarkScriptsAsCurrent() {
-        for (page in listOf("scripts", "editor", "settings", "calibration")) assertTrue(DrawerDestination.SCRIPTS.isCurrent(page))
+        for (page in listOf("scripts", "editor", "calibration")) assertTrue(DrawerDestination.SCRIPTS.isCurrent(page))
         assertFalse(DrawerDestination.SCRIPTS.isCurrent("roles"))
         assertTrue(DrawerDestination.START.isCurrent("roles"))
+        assertTrue(DrawerDestination.SETTINGS.isCurrent("settings"))
     }
 }

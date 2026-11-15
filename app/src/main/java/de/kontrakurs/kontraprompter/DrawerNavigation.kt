@@ -6,7 +6,8 @@ internal enum class DrawerDestination(val route: String, val label: String) {
     SCRIPTS("scripts", "Skripte"),
     STUDIO("studio", "Videomaker"),
     RECORDINGS("recordings", "Aufnahmen"),
-    HELP("help", "Hilfe & Aufbau"),
+    SETTINGS("settings", "Einstellungen"),
+    HELP("help", "Info & Hilfe"),
 }
 
 /** Upload/camera flows must not be unmounted by a new drawer navigation path. */
@@ -14,7 +15,7 @@ internal fun canShowDrawer(page: String, cameraHost: Boolean, uploadRunning: Boo
     !cameraHost && !uploadRunning && page in setOf("roles", "scripts", "editor", "studio", "recordings", "settings", "calibration", "help")
 
 internal fun DrawerDestination.isCurrent(page: String): Boolean =
-    route == page || (this == DrawerDestination.SCRIPTS && page in setOf("editor", "settings", "calibration"))
+    route == page || (this == DrawerDestination.SCRIPTS && page in setOf("editor", "calibration"))
 
 /** A live client only disconnects when it has a non-pending terminal status. */
 internal fun mayDisconnectRemote(ready: Boolean, pending: Boolean, phase: String): Boolean =

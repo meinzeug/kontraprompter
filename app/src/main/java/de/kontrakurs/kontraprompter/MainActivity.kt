@@ -18,6 +18,8 @@ import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
@@ -41,6 +43,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import de.kontrakurs.kontraprompter.cloud.CloudUploadState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -137,6 +141,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         setContent {
             KontraTheme {
                 KontraApp(this)
@@ -155,6 +163,7 @@ private fun KontraApp(activity: MainActivity) {
     val selected = scripts.find { it.id == selectedId } ?: scripts.first()
     var page by rememberSaveable { mutableStateOf("roles") }
     var helpReturn by rememberSaveable { mutableStateOf("roles") }
+    var settingsReturn by rememberSaveable { mutableStateOf("editor") }
     var session by remember { mutableStateOf<LiveSession?>(null) }
     LaunchedEffect(page) { if (page == "roles") cameraPreferFront = preferences.getBoolean("camera_prefer_front", true) }
     val cloud: CloudUploadViewModel = viewModel()
@@ -345,7 +354,8 @@ private fun KontraApp(activity: MainActivity) {
             "studio", "editor" -> page = "scripts"
             "recordings" -> page = "roles"
             "upload" -> page = "recordings"
-            "settings", "calibration", "prompter" -> page = "editor"
+            "settings" -> page = settingsReturn
+            "calibration", "prompter" -> page = "editor"
             else -> page = "roles"
         }
     }
@@ -498,12 +508,14 @@ private fun KontraApp(activity: MainActivity) {
         fun selectDestination(destination: DrawerDestination) {
             if (drawerAllowedNow()) {
                 if (destination == DrawerDestination.HELP && page != "help") helpReturn = page
+                if (destination == DrawerDestination.SETTINGS && page != "settings") settingsReturn = page
                 page = destination.route
             }
             drawerOpenJob?.cancel()
             drawerScope.launch { drawerState.close() }
         }
         CompositionLocalProvider(
+            LocalShellVisible provides drawerAllowed,
             LocalDrawerOpen provides if (drawerAllowed && !expandedWindow) ({
                 if (drawerAllowedNow()) {
                     drawerOpenJob?.cancel()
@@ -526,23 +538,28 @@ private fun KontraApp(activity: MainActivity) {
         ) {
     AppBackground {
         when (page) {
-            "roles" -> AppPage("Bereit für deinen Auftritt.", "KONTRAPROMPTER", "Verbinde Kamera und Text – und behalte alles im Blick.") {
-                Spacer(Modifier.height(8.dp))
-                Text("Dieses Gerät verwenden als", style = MaterialTheme.typography.titleMedium, color = SoftText)
-                RoleTile("Teleprompter", "Skripte lesen und fernsteuern", camera = false) { page = "scripts" }
-                Toggle("Frontkamera verwenden (aus: Rückkamera)", cameraPreferFront) { cameraPreferFront = it; preferences.edit().putBoolean("camera_prefer_front", it).apply() }
-                Text("Die Auswahl gilt für die nächste Kamerasitzung. Fehlt die gewählte Kamera, wird die andere verwendet. Bei aktiver Aufnahme bleibt sie unverändert.", color = SoftText, style = MaterialTheme.typography.bodySmall)
-                RoleTile("Kamera", "Livebild für den Teleprompter", camera = true) {
+            "roles" -> AppPage("Dein Studio", "KONTRAPROMPTER", "Wähle, wie du dieses Gerät beim Dreh einsetzen möchtest.") {
+                var cameraSettingsOpen by rememberSaveable { mutableStateOf(false) }
+                StudioRoleChoice("Teleprompter", "Skripte lesen und die Aufnahme steuern", camera = false, primary = true) { page = "scripts" }
+                StudioRoleChoice("Kamera", "Video und Ton auf diesem Gerät aufnehmen", camera = true, primary = false) {
                     if (!mayStartCamera(session != null)) android.widget.Toast.makeText(activity, "Bitte die bestehende Verbindung zuerst bewusst trennen.", android.widget.Toast.LENGTH_LONG).show()
                     else if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startHost()
                     else cameraPermission.launch(Manifest.permission.CAMERA)
                 }
-                Action("Aufnahmen") { page = "recordings" }
-                Action("Hilfe & Aufbau") { helpReturn = "roles"; page = "help" }
+                TextButton(onClick = { cameraSettingsOpen = !cameraSettingsOpen }, modifier = Modifier.heightIn(min = 48.dp).semantics { stateDescription = if (cameraSettingsOpen) "Aufgeklappt" else "Zugeklappt" }) {
+                    Text(if (cameraSettingsOpen) "Kameraeinstellungen schließen" else "Kamera einrichten")
+                }
+                if (cameraSettingsOpen) {
+                    Toggle("Frontkamera verwenden (aus: Rückkamera)", cameraPreferFront) { cameraPreferFront = it; preferences.edit().putBoolean("camera_prefer_front", it).apply() }
+                    Text("Die Auswahl gilt für die nächste Kamerasitzung. Fehlt die gewählte Kamera, wird die andere verwendet. Bei aktiver Aufnahme bleibt sie unverändert.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { page = "recordings" }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Aufnahmen") }
+                    TextButton(onClick = { helpReturn = "roles"; page = "help" }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Hilfe & Aufbau") }
+                }
                 if (cameraPermissionError) Text("Für die Kamera-Vorschau ist die Kameraerlaubnis erforderlich.", color = Color(0xffff7777))
                 if (cameraBusyError) Text("Die vorherige Aufnahme oder Kamera wird noch abgeschlossen. Bitte erneut versuchen.", color = Color(0xffffcd8a))
-                Spacer(Modifier.height(4.dp))
-                Text("Live-Vorschau zwischen zwei Geräten. Aufnahmen mit Ton bleiben zunächst auf dem Kameragerät.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+                Text("Aufnahmen bleiben zunächst auf dem Kameragerät.", color = SoftText, style = MaterialTheme.typography.bodySmall)
             }
             "help" -> HelpScreen(onBack = { page = helpReturn })
             "connection" -> session?.let { active ->
@@ -600,11 +617,11 @@ private fun KontraApp(activity: MainActivity) {
                 OutlinedTextField(value = selected.text, onValueChange = { update(selected.copy(text = it)) }, label = { Text("Skripttext") }, modifier = Modifier.fillMaxWidth().height(260.dp))
                 MainAction("Teleprompter öffnen") { page = "prompter" }
                 Action("TXT oder Markdown importieren") { importer.launch(arrayOf("text/*", "application/octet-stream")) }
-                Action("Einstellungen") { page = "settings" }
+                Action("Einstellungen") { settingsReturn = "editor"; page = "settings" }
                 Action("Spiegelung kalibrieren") { page = "calibration" }
                 Action("Hilfe & Aufbau") { helpReturn = "editor"; page = "help" }
             }
-            "settings" -> Page("Einstellungen", "TELEPROMPTER", onBack = { page = "editor" }) {
+            "settings" -> Page("Einstellungen", "TELEPROMPTER", onBack = { page = settingsReturn }) {
                 Text("Text und Tempo", style = MaterialTheme.typography.titleLarge)
                 SettingSlider("Schriftgröße", fontSize, 20f..100f, "${fontSize.toInt()} sp") { fontSize = it }
                 SettingSlider("Scrolltempo", speed, 5f..160f, "${speed.toInt()} dp/s") { speed = it }
@@ -649,7 +666,7 @@ private fun KontraApp(activity: MainActivity) {
                 Action("Text drehen: $textRotation°") { textRotation = (textRotation + 90) % 360 }
                 Action("Countdown: $countdown Sekunden") { countdown = when (countdown) { 3 -> 5; 5 -> 10; else -> 3 } }
                 Text("Fit zeigt das ganze Bild mit möglichen Balken. Fill füllt die Fläche und kann das Bild beschneiden.", color = Color.LightGray)
-                Action("Zurück zum Editor") { page = "editor" }
+                Action("Zurück") { page = settingsReturn }
             }
             "calibration" -> Page("Spiegelung kalibrieren", "AM SPIEGELGLAS", onBack = { page = "editor" }) {
                 Text("Prüfe die Lesbarkeit im tatsächlichen Aufbau. Glas und Geräteausrichtung können unterschiedliche Einstellungen erfordern.")
@@ -838,13 +855,13 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
         val showNotice = notice?.needsAttention() == true
         if (showCameraStatus || remote != null || showNotice) {
             if (canPlacePrompterStatusSideBySide(landscapeControls, remote?.status)) {
-                Row(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
+                Row(Modifier.align(Alignment.TopStart).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
                     if (showCameraStatus) Box(Modifier.weight(1f)) { CameraStatus() }
                     if (remote != null) Box(Modifier.weight(1f)) { RemoteBanner(remote) }
                     if (showNotice && notice != null) Box(Modifier.weight(1f)) { PrompterGenerationNotice(notice, compact = true) }
                 }
             } else {
-                Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.align(Alignment.TopStart).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (showCameraStatus) CameraStatus()
                     if (remote != null) RemoteBanner(remote)
                     if (showNotice && notice != null) PrompterGenerationNotice(notice, compact = true)
@@ -853,7 +870,7 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
         }
         if (focusLine) Box(Modifier.align(Alignment.CenterStart).width(22.dp).height(3.dp).background(Red))
         if (remaining > 0) Text("$remaining", Modifier.align(Alignment.Center), color = Red, fontSize = 100.sp, fontWeight = FontWeight.Black)
-        if (controls) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xf022252c)).padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (controls) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)).padding(12.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xf022252c)).padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (lanState.role == "client" && lanState.ready && keyboardDescriptor != null) KeyboardRemoteReady(activity, keyboardDescriptor, keyboardConnected)
             val showCaptureControls = lanState.role == "client" && lanState.ready
             if (landscapeControls && showCaptureControls) {
