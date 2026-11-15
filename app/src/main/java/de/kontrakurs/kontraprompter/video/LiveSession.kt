@@ -49,6 +49,9 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
     private val guard = Any()
     private var closed = false
     private var disconnected = false
+    private var statusRecordingId: String? = null
+    private var statusProjectId: String? = null
+    private var statusRevision = 0L
     private var stopWhenStarted = false
     private var pendingCameraFailure: String? = null
     private var remoteExclusive = false
@@ -99,6 +102,25 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
         if (host) lan.startHost() else lan.startDiscovery()
     }
 
+    /** A snapshot only; it does not grant authority to act on the observed take. */
+    internal fun pairedStatusSnapshot(marker: Any): PairedStatusObservation? = synchronized(guard) {
+        if (!host || closed || disconnected) return@synchronized null
+        lan.admitOnApprovedConnection(marker) {
+            val (phase, id) = when (val r = _recording.value) {
+                LocalRecording.Idle -> "idle" to null
+                is LocalRecording.Preparing -> "preparing" to r.id
+                is LocalRecording.Recording -> "recording" to r.id
+                is LocalRecording.Paused -> "paused" to r.id
+                is LocalRecording.Finalizing -> "finalizing" to r.id
+                is LocalRecording.Ready -> "ready" to r.id
+                is LocalRecording.Partial -> "partial" to r.id
+                is LocalRecording.Failed -> "failed" to r.id
+            }
+            val known = id != null && id == statusRecordingId
+            PairedStatusObservation(++statusRevision, phase, id, known, if (known) statusProjectId else null, _cameraSelection.value.front)
+        }
+    }
+
     fun canStartRemoteRecording(): Boolean = synchronized(guard) {
         host && !closed && !disconnected && !_cameraSelection.value.switching && _cameraSelection.value.error == null && _video.value != null && !_recording.value.isActive() &&
             ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -147,6 +169,8 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
                     current = candidate
                     stopWhenStarted = false
                     pendingCameraFailure = null
+                    statusRecordingId = id
+                    statusProjectId = projectId
                     _recording.value = LocalRecording.Preparing(id)
                     true
                 }
