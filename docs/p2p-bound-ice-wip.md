@@ -1,8 +1,9 @@
 # Experiment: P2P-Kandidaten an den Signalisierungskanal binden
 
 Selektiver Port auf Android-main `f718646`: Netzwerk-/Videokern entspricht dem
-Gerätekandidaten `9781bc2`; seine allgemeine UI-Neugestaltung und separaten
-Fernstartänderungen wurden nicht übernommen. Die knappe Wi-Fi-Direct-Hilfe und
+Gerätekandidaten `9781bc2`; seine allgemeine UI-Neugestaltung wurde nicht
+übernommen. Die getrennten Fernstart-/Disconnect-Schranken des Gerätekandidaten
+sind ohne Drawer portiert. Die knappe Wi-Fi-Direct-Hilfe und
 Peer-Stop-Hinweise wurden an die bisherigen Seiten angepasst. Dieser andere
 App-Quellstand braucht eigene CI- und Geräteprüfung.
 

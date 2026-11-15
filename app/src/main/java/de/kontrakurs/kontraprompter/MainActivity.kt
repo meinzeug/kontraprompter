@@ -307,9 +307,41 @@ private fun KontraApp(activity: MainActivity) {
     }
     var cameraPermissionError by remember { mutableStateOf(false) }
     var cameraBusyError by remember { mutableStateOf(false) }
-    BackHandler(enabled = page != "roles") {
+    var recoverySession by remember { mutableStateOf<RecoverySnapshot<LiveSession, LanState, PairedCaptureState>?>(null) }
+    fun recoveryStillCurrent(target: RecoverySnapshot<LiveSession, LanState, PairedCaptureState>, active: LiveSession?): Boolean =
+        active != null && target.matches(active, active.lan.connectionAttemptGeneration(), active.lan.state.value, active.pairedCapture.state.value)
+    fun disconnectFromUi(recoveryTarget: RecoverySnapshot<LiveSession, LanState, PairedCaptureState>? = null) {
+        val active = session
+        if (active == null) { page = "roles"; return }
+        if (recoveryTarget != null && !recoveryStillCurrent(recoveryTarget, active)) {
+            android.widget.Toast.makeText(activity, "Verbindungsstatus hat sich geändert. Bitte erneut prüfen.", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+        if (!active.host) {
+            val observedLan = active.lan.state.value
+            val ready = observedLan.ready
+            val paired = active.pairedCapture.state.value
+            if (!mayDisconnectRemote(ready, paired.pending, paired.phase)) {
+                if (!ready && recoveryTarget == null) recoverySession = RecoverySnapshot(active, active.lan.connectionAttemptGeneration(), observedLan, paired)
+                else if (ready || recoveryTarget == null) android.widget.Toast.makeText(activity, "Kameraaufnahme läuft oder ihr Status ist unklar. Bitte zuerst auf der Kamera prüfen.", android.widget.Toast.LENGTH_LONG).show()
+                if (ready || recoveryTarget == null) return
+            }
+        }
+        if (!active.closeIfIdle()) {
+            android.widget.Toast.makeText(activity, "Bitte die Aufnahme zuerst ausdrücklich stoppen und speichern lassen.", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+        session = null
+        page = "roles"
+    }
+    LaunchedEffect(recoverySession, session, lanState, pairedCapture) {
+        val target = recoverySession
+        if (target != null && !recoveryStillCurrent(target, session)) recoverySession = null
+    }
+    BackHandler(enabled = page != "roles" || session != null) {
         when (page) {
-            "connection" -> if (recording.isActive() && recording !is de.kontrakurs.kontraprompter.video.LocalRecording.Failed) session?.stopRecording() else { session?.close(); session = null; page = "roles" }
+            "roles" -> android.widget.Toast.makeText(activity, "Bitte die bestehende Verbindung vor dem Verlassen bewusst trennen.", android.widget.Toast.LENGTH_LONG).show()
+            "connection" -> disconnectFromUi()
             "help" -> page = helpReturn
             "scripts" -> page = "roles"
             "studio", "editor" -> page = "scripts"
@@ -320,8 +352,12 @@ private fun KontraApp(activity: MainActivity) {
         }
     }
     fun startHost() {
+        if (!mayStartCamera(session != null)) {
+            android.widget.Toast.makeText(activity, "Bitte die bestehende Verbindung zuerst bewusst trennen.", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
         if (!RtcVideo.cameraAvailable()) { cameraBusyError = true; return }
-        cameraBusyError = false; session?.close(); session = LiveSession(activity, true, cameraPreferFront); page = "connection"
+        cameraBusyError = false; session = LiveSession(activity, true, cameraPreferFront); page = "connection"
     }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) { cameraPermissionError = false; startHost() } else cameraPermissionError = true
@@ -456,7 +492,8 @@ private fun KontraApp(activity: MainActivity) {
                 Toggle("Frontkamera verwenden (aus: Rückkamera)", cameraPreferFront) { cameraPreferFront = it; preferences.edit().putBoolean("camera_prefer_front", it).apply() }
                 Text("Die Auswahl gilt für die nächste Kamerasitzung. Fehlt die gewählte Kamera, wird die andere verwendet. Bei aktiver Aufnahme bleibt sie unverändert.", color = SoftText, style = MaterialTheme.typography.bodySmall)
                 RoleTile("Kamera", "Livebild für den Teleprompter", camera = true) {
-                    if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startHost()
+                    if (!mayStartCamera(session != null)) android.widget.Toast.makeText(activity, "Bitte die bestehende Verbindung zuerst bewusst trennen.", android.widget.Toast.LENGTH_LONG).show()
+                    else if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startHost()
                     else cameraPermission.launch(Manifest.permission.CAMERA)
                 }
                 Action("Aufnahmen") { page = "recordings" }
@@ -468,7 +505,7 @@ private fun KontraApp(activity: MainActivity) {
             }
             "help" -> HelpScreen(onBack = { page = helpReturn })
             "connection" -> session?.let { active ->
-                ConnectionScreen(active, cloud, onClose = { active.close(); session = null; page = "roles" }, onScripts = { page = "scripts" })
+                ConnectionScreen(active, cloud, onClose = { disconnectFromUi() }, onScripts = { page = "scripts" })
             } ?: Page("Nicht verbunden", "VERBINDUNG", onBack = { page = "roles" }) { Action("Zur Rollenwahl") { page = "roles" } }
             "scripts" -> Page("Deine Skripte", "TELEPROMPTER", onBack = { page = "roles" }) {
                 MainAction("Skripte aus Videomaker öffnen") { page = "studio" }
@@ -585,6 +622,15 @@ private fun KontraApp(activity: MainActivity) {
             "prompter" -> key(selected.id) { Prompter(selected.text, selected.generationNotice, fontSize, speed, width, lineSpacing, textH, textV, textRotation, backgroundOpacity, focusLine, bold, countdown, savedPosition, { savedPosition = it }, { page = "editor" }, video, videoH, videoV, videoRotation, videoFill, videoOpacity * videoBrightness, lanState, pairedCapture, recordingScrollSync, selected.studioProjectId != null, activity, selectedVolumeRemote, inputRefresh, { session?.pairedCapture?.toggle(selected.studioProjectId) }, { session?.pairedCapture?.request("stop") }, { session?.pairedCapture?.request("switch_camera") }, remoteActions) { playbackStatus = it } }
         }
     }
+    }
+    recoverySession?.let { target ->
+        AlertDialog(
+            onDismissRequest = { recoverySession = null },
+            title = { Text("Kamerastatus unbekannt") },
+            text = { Text("Die Verbindung ist unterbrochen. Eine Aufnahme kann auf dem Kameragerät weiterlaufen. Prüfe dort den Zustand und stoppe die Aufnahme bei Bedarf, bevor du diese Sitzung verlässt.") },
+            confirmButton = { TextButton(onClick = { recoverySession = null; disconnectFromUi(target) }) { Text("Geprüft – Sitzung verlassen") } },
+            dismissButton = { TextButton(onClick = { recoverySession = null }) { Text("Zurück") } },
+        )
     }
 }
 

@@ -371,6 +371,9 @@ class LanSession(context: Context) : AutoCloseable {
         scope.launch { try { current.send(type, payload) } catch (_: Exception) { disconnect("Verbindung verloren", current) } }
         true
     }
+    /** Incremented when a client starts or invalidates a connection attempt. */
+    internal fun connectionAttemptGeneration(): Long = synchronized(socketLock) { connectGeneration }
+
     /** An opaque identity for this exact approved connection, invalidated on disconnect or close. */
     internal fun approvedConnectionMarker(): Any? = synchronized(socketLock) {
         if (!closed.get() && connected.get() && _state.value.ready) channel else null
