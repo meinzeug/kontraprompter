@@ -33,7 +33,13 @@ import de.kontrakurs.kontraprompter.requireProjectString
 
 /** HTTPS-only, in-memory session. No password or session cookie is persisted. */
 class StudioClient {
-    companion object { private const val BASE = "https://videomaker.dorfspy.de" }
+    companion object {
+        private const val BASE = "https://videomaker.dorfspy.de"
+        // Hard gate: no app/device login route is enabled by this WIP.
+        private const val DEVICE_AUTH_ENABLED = false
+    }
+    internal fun experimentalDeviceLoginTransport(): DeviceLoginTransport? =
+        if (DEVICE_AUTH_ENABLED) StudioDeviceLoginTransport { path -> open(path, "POST") } else null
     private val cookie = SessionCookie()
 
     /** Reports only whether this app process currently holds a studio session. */

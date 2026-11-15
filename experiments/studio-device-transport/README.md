@@ -1,0 +1,9 @@
+# Deaktivierter StudioClient-Gerätetransport
+
+Dieser WIP basiert auf Android-main `2016094`. Der echte `StudioClient` bietet eine interne `experimentalDeviceLoginTransport()`-Schnittstelle an, die durch ein festes `DEVICE_AUTH_ENABLED=false` immer `null` zurückgibt. Die bestehende Passwort-/Cookie-, Projekt- und Uploadfunktion bleibt unverändert; keine UI oder automatische Anmeldung ruft den neuen Transport auf.
+
+`StudioDeviceLoginTransport` verwendet bei späterer ausdrücklich überprüfter Aktivierung den bestehenden festen Studio-HTTPS-Verbindungsöffner mit ausgeschalteten Redirects und prüft Schema, Antwortgröße, Ticketform und Ablaufgrenzen. Er allein erzeugt keine Identität, Anmeldung, Projektberechtigung oder dauerhaftes Token. Die zugehörigen echten `/api/studio-devices/login/...`-Next-Routen existieren derzeit nicht; es gibt keine vorgespiegelte erfolgreiche Anmeldung.
+
+Der kleine Hostlauf kompilierte die tatsächliche Transportklasse mit einem JVM-Ersatz für Androids `JSONObject`/Base64. Drei Unitfälle prüfen u. a. Redirects, fehlerhafte/überlange Antworten, fremde Felder und Ablauf-/Ticketform; ein Kotlin-/Node-Loopbacktest prüft Challenge und signierten Login über einen Testadapter. Die Testverbindung übersetzt die zukünftigen API-Pfade auf `/fixture`; sie übt weder `StudioClient.open` noch Android, TLS oder echte Next-Routen aus. Ergebnisse: 3/3 JUnit, 1/1 Loopback.
+
+Vor Aktivierung fehlen echter atomarer Enrollment-/Session-/Owner-/Workspace-Serveradapter, sichere reale Routen, App-UID-Keystore und dauerhafte widerrufbare Bindung, ein gemeinsamer Sessioneigentümer und ein transaktionaler Widerrufs-/Projektfence bis Uploadcommit. Auch Logout-/Retry-/Response-Races, Android-Gesamtbuild, echte TLS-/Geräte- und Uploadtests sowie unabhängiger Review sind offen. Kein Main-/Produktivflag ändern.
