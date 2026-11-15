@@ -249,3 +249,35 @@ Android für den aktiven Kameraclient eine automatische Zielspanne von 5 bis
 30 fps, etwa 70,0 ms Belichtungszeit und 70,46 ms Bilddauer bei ISO 6300.
 Die Messung grenzt den Engpass vor der Encoderausgabe ein; ein Vergleich bei
 besserer Beleuchtung und eine Prüfung einer festen Bildrate stehen aus.
+
+## Kamerasuche und veröffentlichte Release-APK
+
+Der korrigierte Suchpfad akzeptiert auch den von Samsung gelieferten
+Diensttyp mit führendem Punkt. Jede Kamerasitzung erhält einen neuen
+Dienstnamen; ein verspätetes Suchergebnis wird an den zugehörigen Versuch und
+Socket gebunden. Ein regulärer Vollduplex-Socket ersetzte den zuvor getesteten
+Adapter, bei dem die Signalisierung verzögert war. Der vollständige CI-Lauf
+bestand mit 193 Tests.
+
+Auf Xiaomi und Samsung wurden drei neue Kamerasitzungen nacheinander über die
+Suche gefunden, jeweils Adresse und Port mit der Kameraseite verglichen und
+nach gegenseitiger Bestätigung als Videoverbindung hergestellt. Stichproben
+der angezeigten Signalisierungs-Roundtripzeit lagen bei 47 bis 51 ms. Bei
+einer anschließenden Aufnahme wurden Start, Pause, Fortsetzen und Stopp vom
+Samsung aus geprüft. Die Serverdatei war 3.271.772 Bytes groß, 13,65 Sekunden
+lang und enthielt H.264-Video mit 480 × 640 Pixeln sowie AAC-Ton mit 48 kHz.
+Ihre SHA-256-Summe war
+`ef699330e98fa20833d0252fe8f307ef7c2f3d0517a733ed123df5c3d949ce72`.
+Das Xiaomi meldete den erfolgreichen Upload; das lokale Original blieb
+vorhanden. Für diese Aufnahme wurde kein erneuter Originalvergleich durchgeführt.
+
+Die auf beiden Geräten getestete Release-APK wurde auf Videomaker
+veröffentlicht. Der vollständige authentifizierte HTTPS-Download war 30.435.025
+Bytes groß und hatte dieselbe SHA-256-Summe
+`c35fb4fe7977e726280d4a7cf5cbb0db8c0d4d640209f0a3f2d9004baeb64bdb`.
+Die Bestandsprüfung fand alle 21 Projekte und 28 Aufnahmen; keines der
+ursprünglich erfassten Projekte hatte sich geändert. Der anonyme Download und
+der Download nach Abmeldung waren gesperrt. Die Weboberfläche kann bis zum
+separaten Web-Update weiterhin „Debug“ als Dateinamen anzeigen; die APK selbst
+ist ein nicht debuggbarer Release-Build. Das ist kein Nachweis für eine bereits
+implementierte automatische dauerhafte Wiederverbindung.
