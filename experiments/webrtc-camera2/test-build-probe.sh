@@ -25,6 +25,10 @@ with zipfile.ZipFile(sys.argv[1]) as aar:
     with open(sys.argv[2], 'wb') as f: f.write(aar.read('classes.jar'))
 PY
 python3 "$here/generate_probe.py" "$test_dir/generated"
+app_sources="$here/../../app/src/main/java/org/webrtc"
+cmp "$test_dir/generated/org/webrtc/KpExperimentalCamera2Session.java" "$app_sources/KpExperimentalCamera2Session.java"
+cmp "$test_dir/generated/org/webrtc/KpExperimentalCamera2Capturer.java" "$app_sources/KpExperimentalCamera2Capturer.java"
+cmp "$here/KpFixedFpsSelector.java" "$app_sources/KpFixedFpsSelector.java"
 sdkjar="$sdk/platforms/android-36/android.jar"
 javac -J-Xmx256m --release 17 -cp "$test_dir/webrtc.jar:$sdkjar:$annotation" -d "$test_dir/classes" \
   "$test_dir/generated/org/webrtc/KpExperimentalCamera2Session.java" \
