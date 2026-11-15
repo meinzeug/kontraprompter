@@ -1,6 +1,7 @@
 package de.kontrakurs.kontraprompter.video
 
 import de.kontrakurs.kontraprompter.network.LanSession
+import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -32,6 +33,7 @@ internal class PairedCapture(
     private var pendingId: String? = null
     private var pendingAction: String? = null
     private var timeout: Job? = null
+    private val statusProbe = PairedStatusProbe()
     private val handled = PairedCommandLedger()
     private val _state = MutableStateFlow(PairedCaptureState())
     val state: StateFlow<PairedCaptureState> = _state
@@ -54,6 +56,7 @@ internal class PairedCapture(
     }
 
     fun disconnected() = synchronized(lock) {
+        statusProbe.reset()
         pendingId = null; pendingAction = null; timeout?.cancel(); timeout = null; lastRevision = -1L
         _state.value = PairedCaptureState(message = PAIRED_DISCONNECTED_MESSAGE)
     }
@@ -108,9 +111,60 @@ internal class PairedCapture(
         true
     }
 
+    /** Explicit, opt-in observation only. Not connected to the web dashboard. */
+    fun requestReadOnlyStatus(): Boolean {
+        if (host) return false
+        val marker = lan.approvedConnectionMarker() ?: return false
+        val request = UUID.randomUUID().toString()
+        val started = lan.admitOnApprovedConnection(marker) { statusProbe.begin(marker, request, SystemClock.elapsedRealtime()) } == true
+        if (!started) return false
+        if (!lan.sendOnApprovedConnection(marker, "camera_status_probe_v1", JSONObject().put("request", request).toString())) {
+            statusProbe.cancel(marker, request)
+            return false
+        }
+        return true
+    }
+
+    /** The result can become stale immediately and must never authorize a command. */
+    fun readOnlyStatus(): PairedStatusObservation? {
+        val marker = lan.approvedConnectionMarker() ?: return null
+        return lan.admitOnApprovedConnection(marker) { statusProbe.result(marker, SystemClock.elapsedRealtime()) }
+    }
+
     fun message(marker: Any, type: String, payload: String): Boolean {
-        if (type !in setOf("capture_query", "capture_command", "capture_status", "capture_ack")) return false
+        if (type !in setOf("capture_query", "capture_command", "capture_status", "capture_ack", "camera_status_probe_v1", "camera_status_reply_v1")) return false
         if (!lan.isApprovedConnection(marker)) return true
+        if (type == "camera_status_probe_v1") {
+            if (!host || payload.length > 256) return true
+            val request = runCatching { canonicalUuid(JSONObject(payload).optString("request")) }.getOrNull() ?: return true
+            val snapshot = session.pairedStatusSnapshot(marker) ?: return true
+            val reply = JSONObject().put("request", request).put("revision", snapshot.revision).put("phase", snapshot.phase)
+                .put("projectKnown", snapshot.projectKnown)
+                .put("cameraFacing", when (snapshot.cameraFront) { true -> "front"; false -> "back"; null -> "unknown" })
+            snapshot.recordingId?.let { reply.put("recording", it) }
+            snapshot.projectId?.let { reply.put("project", it) }
+            lan.sendOnApprovedConnection(marker, "camera_status_reply_v1", reply.toString())
+            return true
+        }
+        if (type == "camera_status_reply_v1") {
+            if (host || payload.length > 1024) return true
+            val data = runCatching { JSONObject(payload) }.getOrNull() ?: return true
+            val request = canonicalUuid(data.optString("request")) ?: return true
+            val rev = data.opt("revision") as? Number ?: return true
+            val revision = rev.toLong()
+            if (revision < 1 || rev.toDouble() != revision.toDouble()) return true
+            val phase = data.optString("phase")
+            if (phase !in setOf("idle", "preparing", "recording", "paused", "finalizing", "ready", "partial", "failed")) return true
+            val recording = if (data.has("recording")) canonicalUuid(data.optString("recording")) ?: return true else null
+            if ((phase in setOf("preparing", "recording", "paused", "finalizing", "ready", "partial") && recording == null) || (phase == "idle" && recording != null)) return true
+            val known = data.opt("projectKnown") as? Boolean ?: return true
+            val project = if (data.has("project")) canonicalUuid(data.optString("project")) ?: return true else null
+            if ((!known && project != null) || (known && recording == null)) return true
+            val front = when (data.optString("cameraFacing")) { "front" -> true; "back" -> false; "unknown" -> null; else -> return true }
+            val value = PairedStatusObservation(revision, phase, recording, known, project, front)
+            lan.admitOnApprovedConnection(marker) { statusProbe.receive(marker, request, SystemClock.elapsedRealtime(), value) }
+            return true
+        }
         if (host && type == "capture_query") {
             val queryId = runCatching { canonicalUuid(JSONObject(payload).optString("request")) }.getOrNull()
             sendStatus(queryId); return true
