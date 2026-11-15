@@ -21,6 +21,54 @@ Skript auf beiden Geräten, verschlüsselte Sitzungstransporte bzw. sichere
 Positionsbindung, Geräte-/Recorder-Tests, Unterbrechungs- und Datenschutz-
 Verhalten. Der bestehende manuelle Prompter bleibt unverändert.
 
+## Möglicher Integrationspfad
+
+Der WIP ist gegenüber aktuellem Android-main eigenständig: `PcmTee` und
+`SpokenScriptCursor` sind dort nicht vorhanden. Für eine spätere Integration
+müssen Recorderänderungen deshalb auf den aktuellen Hauptstand übertragen und
+gemeinsam geprüft werden. Das vorhandene WIP veröffentlicht PCM erst nach
+Einreihung beim AAC-Encoder aus demselben `AudioRecord`, als 48-kHz-Mono-PCM16;
+es öffnet kein zweites Mikrofon. Der Tee nimmt ohne Abonnenten keine Kopie vor,
+nutzt höchstens zwei Abonnenten mit je maximal 16 Blöcken und blockiert den
+Recorder bei überlastetem Verbraucher nicht. Bei den derzeitigen 2048-Byte-
+Reads entsprechen acht volle Blöcke ungefähr 171 ms Audio; reale Laufzeiten
+und Speicherlast müssen auf Android gemessen werden. Ein Sampleabstand oder
+Queue-Verlust muss die Folge anhalten und eine neue Erkennungsepoche beginnen,
+statt eine lückenlose Erkennung vorzutäuschen.
+
+Ein separater Analyseworker kann eine ausdrücklich eingeschaltete Offline-
+Engine aus dem begrenzten Tee füttern. Ein verwendbarer Android-Build des
+Erkenners und des Modells, dessen Lizenz, ABI, Integritätsprüfung, Speicher-
+und Echtzeitverhalten auf beiden Geräten sind noch zu prüfen. Das erprobte
+kleine deutsche Modell benötigt 46.499.967 Bytes Download und 95.621.761 Bytes
+entpackt; die rund 300 MB RAM sind eine Anbieter-Schätzung, kein Android-
+Messwert. Fehlendes Modell, Speichermangel, Überlast, Formatfehler und Decoder-
+Ausfälle deaktivieren ausschließlich die Sprachfolge und zeigen einen Fehler;
+Aufnahme und manueller Prompter bleiben unabhängig. PCM und Transkripte dürfen
+nicht protokolliert oder ungefragt extern versendet werden.
+
+Die auswertende Seite benötigt dieselbe unveränderliche Skriptfassung wie der
+Prompter, etwa über einen für beide Geräte verifizierten Projekt- und
+Fassungsschlüssel. Lokale Skripte benötigen einen separaten geschützten
+Übertragungsweg. Der derzeitige LAN-Kanal authentifiziert Nachrichten per HMAC,
+verschlüsselt deren Inhalt aber nicht: Skripttext oder Transkripte dürfen dort
+nicht einfach mitgesendet werden. Ein sitzungsgebundener verschlüsselter Kanal
+mit bestätigter Gegenstelle ist Voraussetzung. Positionsnachrichten müssen
+zusätzlich an Kanal, Aufnahme, Skriptfassung, Folgeepoche, Sequenz und manuelle
+Sprungrevision gebunden sein. Pause, Stop, Verbindungswechsel, Skriptwechsel,
+Queue-Lücke und manueller Sprung invalidieren laufende Erkennungsergebnisse;
+die Empfangsseite prüft die Bindung unmittelbar vor einer sichtbaren Bewegung
+erneut. Stille darf ohne finales passendes Ergebnis nicht scrollen. Ein nackter
+Skript-Hash kann Rückschlüsse auf bekannte Texte erlauben und ist kein Ersatz
+für Vertraulichkeit.
+
+`SpeechFollowHarness` und seine Tests unter `app/src/test` demonstrieren nur
+diese Zustandsgrenzen mit dem echten isolierten Tee und künstlichen Texten.
+Der Testempfänger und seine objektgebundene Kanalidentität sind Platzhalter,
+kein Android-/TLS-Transport. Insbesondere werden die atomare Kopplung an die
+echte Netzwerk- und Benutzeraktion, laufzeitbegrenzte Ergebnisse, die
+Spracherkennung selbst und der Recorder auf dem Gerät noch nicht nachgewiesen.
+
 ## Reproduzierbarer Offline-Erkenner-Probe
 
 `bash scripts/test-vosk-offline-fixture.sh` verwendet ausschließlich einen
