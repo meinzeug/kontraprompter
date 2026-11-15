@@ -126,7 +126,7 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
         },
         onBack = onClose, backLabel = "Trennen", showCamera = false
     ) {
-        StatusPanel(state.status, detail = state.rttMs?.let { "Signalisierungs-RTT: $it ms · keine Bildlatenz" }, error = state.error, active = state.ready)
+        CameraConnectionStatus(state.status, detail = state.rttMs?.let { "Signalisierungs-RTT: $it ms · keine Bildlatenz" }, error = state.error)
         if (video != null && session.host) {
             Text("Kameravorschau", style = MaterialTheme.typography.titleMedium)
             Box(Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(22.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
@@ -143,12 +143,12 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
             }
             Text("Beide Geräte müssen dasselbe lokale Netz erreichen.", color = SoftText, style = MaterialTheme.typography.bodySmall)
         } else if (!session.host && !state.authenticated) {
-            AppPanel {
+            CameraConnectionCard {
                 Text("Kameragerät", style = MaterialTheme.typography.titleLarge)
                 Text("Wähle die Kamera aus der Suche. Adresse und Port werden übernommen. Gib anschließend den Sitzungscode vom Kameragerät ein.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 // Keep the search row in place when a device appears, so focused fields do not jump.
                 Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (state.devices.isEmpty()) Text("Suche läuft … Adresse und Port kannst du auch unten eingeben.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                    if (state.devices.isEmpty()) Text("Noch keine Kamera gefunden. Adresse und Port kannst du auch unten eingeben.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                     state.devices.forEach { device ->
                         FilledTonalButton(onClick = {
                             address = ""; port = ""; resolvedEndpoint = null; discoveryError = null
@@ -187,7 +187,7 @@ internal fun ConnectionScreen(session: LiveSession, cloud: CloudUploadViewModel,
         if (state.authenticated && session.host && state.localApproved && state.remoteApproved) {
             Text("Verbunden mit ${state.remoteName}", color = SoftText, style = MaterialTheme.typography.bodyMedium)
         } else if (state.authenticated) {
-            AppPanel {
+            CameraConnectionCard {
                 Text("Gegenstelle", style = MaterialTheme.typography.labelLarge, color = SoftText)
                 Text(state.remoteName, style = MaterialTheme.typography.titleLarge)
                 Text(if (state.remoteApproved) "Die Gegenstelle hat bestätigt." else "Warte auf die Bestätigung der Gegenstelle.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
@@ -255,15 +255,11 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
         } else permissionMessage = "Für eine Aufnahme mit Ton ist die Mikrofonfreigabe erforderlich."
     }
     val connected = state.status == "Videoverbindung hergestellt" && state.error == null
-    val stateColor = when {
-        state.error != null -> MaterialTheme.colorScheme.error
-        connected -> Color(0xff91d6b2)
-        else -> Color(0xffffcd8a)
-    }
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         val previewHeight = (maxHeight * 0.43f).coerceIn(210.dp, 380.dp)
+        val contentWidth = if (maxWidth >= 840.dp) 760.dp else 640.dp
         Column(
-            Modifier.fillMaxHeight().widthIn(max = 640.dp).fillMaxWidth()
+            Modifier.fillMaxHeight().widthIn(max = contentWidth).fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -284,34 +280,46 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
                 else -> "Kamera wird vorbereitet …"
             }, color = SoftText, style = MaterialTheme.typography.bodySmall)
             cameraSelection.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            AppPanel {
-                Text("Aufnahme", style = MaterialTheme.typography.titleMedium)
-                when (val current = recording) {
-                    LocalRecording.Idle -> Text("Video mit Mikrofon auf diesem Gerät aufnehmen.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
-                    is LocalRecording.Preparing -> Text("Aufnahme wird vorbereitet …", color = SoftText)
-                    is LocalRecording.Recording -> Text(if (connected) "Aufnahme läuft · Video und Ton" else "Aufnahme läuft ohne Videoverbindung weiter.", color = Color(0xffffb2b2))
-                    is LocalRecording.Paused -> Text("Aufnahme pausiert · Video und Ton werden nicht aufgezeichnet.", color = Color(0xffffcd8a))
-                    is LocalRecording.Finalizing -> Text("Video wird sicher gespeichert …", color = SoftText)
-                    is LocalRecording.Ready -> Text("Aufnahme lokal gespeichert · ${current.durationUs / 1_000_000} Sek. Unter ‚Aufnahmen‘ kannst du sie exportieren.", color = Color(0xffa3dfbb))
-                    is LocalRecording.Partial -> Text("Aufnahme unvollständig: ${current.message} Ein geprüftes Teilvideo ist unter ‚Aufnahmen‘ exportierbar.", color = Color(0xffffcd8a))
-                    is LocalRecording.Failed -> Text("Aufnahme fehlgeschlagen: ${current.message}", color = MaterialTheme.colorScheme.error)
-                }
-                (recording as? LocalRecording.Ready)?.let { current -> recordingStopDescription(current.reason)?.let { Text(it, color = Color(0xffffcd8a)) } }
-                if (recording is LocalRecording.Preparing || recording is LocalRecording.Recording || recording is LocalRecording.Paused) {
-                    if (recording is LocalRecording.Recording) QuietAction("Aufnahme pausieren") { if (!session.pauseRecording()) permissionMessage = "Pause nicht bestätigt. Bitte Status prüfen." }
-                    if (recording is LocalRecording.Paused) QuietAction("Aufnahme fortsetzen") { if (!session.resumeRecording()) permissionMessage = "Fortsetzen nicht bestätigt. Die Aufnahme bleibt pausiert; du kannst sie stoppen." }
-                    MainAction("Aufnahme stoppen") { session.stopRecording() }
-                } else if (recording !is LocalRecording.Finalizing) {
-                    MainAction("Aufnahme starten", enabled = connected && video != null && (recording as? LocalRecording.Failed)?.blocked != true) {
-                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                            permissionMessage = if (session.startRecording(origin = RecordingOrigin.LAN_UNASSIGNED)) null else "Die Kamera ist noch nicht bereit."
-                        } else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+            CameraRecordingPanel(
+                recording = recording,
+                connected = connected,
+                videoReady = video != null,
+                permissionMessage = permissionMessage,
+                onStart = {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        permissionMessage = if (session.startRecording(origin = RecordingOrigin.LAN_UNASSIGNED)) null else "Die Kamera ist noch nicht bereit."
+                    } else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                },
+                onPause = { if (!session.pauseRecording()) permissionMessage = "Pause nicht bestätigt. Bitte Status prüfen." },
+                onResume = { if (!session.resumeRecording()) permissionMessage = "Fortsetzen nicht bestätigt. Die Aufnahme bleibt pausiert; du kannst sie stoppen." },
+                onStop = { session.stopRecording() },
+            )
+            CameraConnectionStatus(
+                status = state.status,
+                error = state.error,
+                detail = if (state.authenticated && state.remoteName.isNotBlank()) "Anzeigegerät: ${state.remoteName}" else null,
+            )
+            if (!state.authenticated && state.token.isNotEmpty()) {
+                CameraConnectionCard {
+                    Text("Mit Teleprompter verbinden", style = MaterialTheme.typography.titleMedium)
+                    Text("Wähle dieses Gerät auf dem Teleprompter aus und gib dort den Sitzungscode ein. Falls es nicht gefunden wird, übertrage zusätzlich Adresse und Port.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
+                        Text(state.token.chunked(4).joinToString(" ").uppercase(), modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp), color = MaterialTheme.colorScheme.onSecondaryContainer, style = MaterialTheme.typography.headlineSmall, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
                     }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Text("Adresse: ${state.addresses.joinToString().ifBlank { "Keine IPv4-Adresse gefunden" }}\nPort: ${state.port}", color = SoftText, style = MaterialTheme.typography.bodySmall)
+                    Text("Beide Geräte müssen sich im lokalen Netz direkt erreichen können. Der Code gilt höchstens fünf Minuten und nur für eine Verbindung.", color = SoftText, style = MaterialTheme.typography.bodySmall)
                 }
-                permissionMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                Text("Beim Verlassen der App wird die Aufnahme beendet. Abgeschlossene Videos bleiben lokal.", color = SoftText, style = MaterialTheme.typography.bodySmall)
+            } else if (state.authenticated && (!state.localApproved || !state.remoteApproved)) {
+                CameraConnectionCard {
+                    Text("Kopplung bestätigen", style = MaterialTheme.typography.titleMedium)
+                    Text(if (state.remoteApproved) "Das Anzeigegerät hat bestätigt." else "Warte auf die Bestätigung des Anzeigegeräts.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                    if (!state.localApproved) MainAction("Auf diesem Gerät bestätigen") { session.lan.approve() }
+                    else Text("Auf diesem Gerät bestätigt", color = Color(0xffa3dfbb), style = MaterialTheme.typography.labelLarge)
+                }
             }
-            Box(Modifier.fillMaxWidth().height(previewHeight).clip(RoundedCornerShape(24.dp))
+            val previewHeightModifier = if (video == null) Modifier.heightIn(min = previewHeight) else Modifier.height(previewHeight)
+            Box(Modifier.fillMaxWidth().then(previewHeightModifier).clip(RoundedCornerShape(24.dp))
                 .background(Color(0xff08090b)), contentAlignment = Alignment.Center) {
                 if (video != null) {
                     LivePreview(video, modifier = Modifier.fillMaxSize())
@@ -338,36 +346,6 @@ private fun CameraConnectionScreen(session: LiveSession, state: LanState, video:
             }
             CameraCloudPanel(cloud)
             if (CAMERA_REMOTE_UI_ENABLED) CameraRemotePanel(session, connected)
-            Surface(Modifier.fillMaxWidth(), color = Panel.copy(alpha = .96f), shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, Color(0xff343a44))) {
-                Column(Modifier.padding(horizontal = 18.dp, vertical = 15.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.size(8.dp).background(stateColor, RoundedCornerShape(50)))
-                        Column(Modifier.weight(1f)) {
-                            Text("VERBINDUNG", color = SoftText, style = MaterialTheme.typography.labelSmall, letterSpacing = .6.sp)
-                            Text(state.status, style = MaterialTheme.typography.titleSmall)
-                        }
-                    }
-                    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                    if (state.authenticated && state.remoteName.isNotBlank()) Text("Anzeigegerät: ${state.remoteName}", color = SoftText, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            if (!state.authenticated && state.token.isNotEmpty()) {
-                AppPanel {
-                    Text("Mit Teleprompter verbinden", style = MaterialTheme.typography.titleMedium)
-                    Text("Wähle dieses Gerät auf dem Teleprompter aus und gib dort den Sitzungscode ein. Falls es nicht gefunden wird, übertrage zusätzlich Adresse und Port.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
-                    Text(state.token.chunked(4).joinToString(" ").uppercase(), style = MaterialTheme.typography.headlineSmall, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Text("Adresse: ${state.addresses.joinToString().ifBlank { "Keine IPv4-Adresse gefunden" }}\nPort: ${state.port}", color = SoftText, style = MaterialTheme.typography.bodySmall)
-                    Text("Beide Geräte müssen sich im lokalen Netz direkt erreichen können. Der Code gilt höchstens fünf Minuten und nur für eine Verbindung.", color = SoftText, style = MaterialTheme.typography.bodySmall)
-                }
-            } else if (state.authenticated && (!state.localApproved || !state.remoteApproved)) {
-                AppPanel {
-                    Text("Kopplung bestätigen", style = MaterialTheme.typography.titleMedium)
-                    Text(if (state.remoteApproved) "Das Anzeigegerät hat bestätigt." else "Warte auf die Bestätigung des Anzeigegeräts.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
-                    if (!state.localApproved) MainAction("Auf diesem Gerät bestätigen") { session.lan.approve() }
-                    else Text("Auf diesem Gerät bestätigt", color = Color(0xffa3dfbb), style = MaterialTheme.typography.labelLarge)
-                }
-            }
             Text("Die Aufnahme bleibt auf diesem Gerät. Ton wird nicht live übertragen.", color = SoftText, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(12.dp))
         }
