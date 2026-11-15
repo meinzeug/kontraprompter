@@ -46,10 +46,17 @@ internal fun isNewCaptureStatus(revision: Long, previous: Long): Boolean =
 
 /** A start or switch ACK means admission only; a correlated snapshot follows it. */
 internal fun cameraAckNeedsStatus(action: String?, accepted: Boolean): Boolean =
-    action in setOf("start", "switch_camera") && accepted
+    action == "start" || (action == "switch_camera" && accepted)
 
 internal fun cameraStatusAnswersPending(action: String?, pendingId: String?, queryId: String?): Boolean =
     action in setOf("start", "switch_camera") && pendingId != null && pendingId == queryId
 
 /** The queued asynchronous send may still reach the camera after a local timeout. */
 internal fun retainPendingAfterTimeout(action: String?): Boolean = action == "start"
+
+internal const val START_STATUS_TIMEOUT_MESSAGE = "Start oder Kamerastatus nicht bestätigt. Bitte Aufnahme direkt an der Kamera prüfen und bei Bedarf dort stoppen. Bleibt der Status ungeklärt, WLAN-Verbindung unterbrechen; erst danach lässt sich die Sitzung nach Bestätigung verlassen."
+internal const val START_STATUS_STALE_MESSAGE = "Kamerastatus nicht sicher bestätigt. Bitte Aufnahme direkt an der Kamera prüfen und bei Bedarf dort stoppen."
+internal const val START_STATUS_SEND_FAILED_MESSAGE = "Kamerastatus nicht verfügbar. Bitte Aufnahme direkt an der Kamera prüfen."
+
+internal fun messageAfterConfirmedStartStatus(message: String?): String? =
+    message.takeUnless { it in setOf(START_STATUS_TIMEOUT_MESSAGE, START_STATUS_STALE_MESSAGE, START_STATUS_SEND_FAILED_MESSAGE) }

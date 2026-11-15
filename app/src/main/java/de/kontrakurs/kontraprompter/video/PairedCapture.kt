@@ -31,6 +31,7 @@ internal class PairedCapture(
     private var lastRevision = -1L
     private var pendingId: String? = null
     private var pendingAction: String? = null
+    private var statusQueryAttempts = 0
     private var timeout: Job? = null
     private val handled = PairedCommandLedger()
     private val _state = MutableStateFlow(PairedCaptureState())
@@ -54,7 +55,7 @@ internal class PairedCapture(
     }
 
     fun disconnected() = synchronized(lock) {
-        pendingId = null; pendingAction = null; timeout?.cancel(); timeout = null; lastRevision = -1L
+        pendingId = null; pendingAction = null; statusQueryAttempts = 0; timeout?.cancel(); timeout = null; lastRevision = -1L
         _state.value = PairedCaptureState(message = PAIRED_DISCONNECTED_MESSAGE)
     }
 
@@ -88,12 +89,12 @@ internal class PairedCapture(
         val recordingId = if (action == "start" || action == "switch_camera") UUID.randomUUID().toString() else snapshot.recordingId ?: return false
         val project = if (action == "start" && projectId != null) canonicalUuid(projectId) ?: return false else null
         val message = JSONObject().put("request", requestId).put("action", action).put("recording", recordingId).apply { if (project != null) put("project", project); if (action == "switch_camera") put("cameraFront", snapshot.cameraFront) }.toString()
-        pendingId = requestId; pendingAction = action
+        pendingId = requestId; pendingAction = action; statusQueryAttempts = 0
         _state.value = snapshot.copy(pending = true, message = null)
         val sent = if (binding == null) lan.send("capture_command", message)
             else lan.sendOnApprovedConnection(binding.connection, "capture_command", message)
         if (!sent) {
-            pendingId = null; pendingAction = null; _state.value = snapshot.copy(message = "Kameraverbindung nicht verfügbar."); return false
+            pendingId = null; pendingAction = null; statusQueryAttempts = 0; _state.value = snapshot.copy(message = "Kameraverbindung nicht verfügbar."); return false
         }
         timeout = scope.launch {
             delay(8_000)
@@ -103,9 +104,9 @@ internal class PairedCapture(
                     // overtake an unsent start. Keep that start fenced until its ACK
                     // and a later, correlated status arrive, or the session is reset.
                     val keepPending = retainPendingAfterTimeout(pendingAction)
-                    if (!keepPending) { pendingId = null; pendingAction = null }
+                    if (!keepPending) { pendingId = null; pendingAction = null; statusQueryAttempts = 0 }
                     _state.value = _state.value.copy(pending = keepPending, message = if (keepPending)
-                        "Keine Startbestätigung. Bitte Aufnahme direkt an der Kamera prüfen und bei Bedarf dort stoppen. Bleibt der Status ungeklärt, Verbindung unterbrechen und Sitzung bewusst verlassen."
+                        START_STATUS_TIMEOUT_MESSAGE
                     else "Keine Bestätigung. Bitte Kamerastatus prüfen; der Befehl wird nicht automatisch wiederholt.")
                     lan.send("capture_query", "")
                 }
@@ -148,13 +149,15 @@ internal class PairedCapture(
             val request = canonicalUuid(data.optString("request")) ?: return true
             synchronized(lock) {
                 if (isCurrentCaptureAck(pendingId, request)) {
-                    val accepted = data.optBoolean("accepted", false)
+                    // Missing, null or string values are not a negative acknowledgement.
+                    val accepted = data.opt("accepted") as? Boolean ?: return true
                     if (cameraAckNeedsStatus(pendingAction, accepted)) {
                         // Admission is not completion. Ask for a snapshot tied to
                         // this request after receiving its acknowledgement.
-                        lan.send("capture_query", JSONObject().put("request", request).toString())
+                        if (pendingAction == "start" && !accepted) _state.value = _state.value.copy(message = "Befehl wurde von der Kamera nicht angenommen.")
+                        if (statusQueryAttempts == 0) requestPendingStatus(request)
                     } else {
-                        pendingId = null; pendingAction = null; timeout?.cancel(); timeout = null
+                        pendingId = null; pendingAction = null; statusQueryAttempts = 0; timeout?.cancel(); timeout = null
                         _state.value = _state.value.copy(pending = false, message = if (accepted) null else "Befehl wurde von der Kamera nicht angenommen.")
                     }
                 }
@@ -169,22 +172,39 @@ internal class PairedCapture(
             val id = if (rawId.isEmpty()) null else canonicalUuid(rawId) ?: return true
             if (phase in setOf("preparing", "recording", "paused", "finalizing") && id == null) return true
             synchronized(lock) {
+                val query = canonicalUuid(data.optString("query"))
+                val matchesPending = statusQueryAttempts > 0 && cameraStatusAnswersPending(pendingAction, pendingId, query)
                 if (isNewCaptureStatus(rev, lastRevision)) {
                     lastRevision = rev
                     val failure = if (phase == "failed") data.optString("message").take(240).takeIf { it.isNotBlank() } else null
                     val facing = when (data.optString("cameraFacing")) { "front" -> true; "back" -> false; else -> null }
                     val cameraError = data.optString("cameraError").take(200).takeIf { it.isNotBlank() }
                     _state.value = _state.value.copy(phase = phase, recordingId = id, message = pairedMessageAfterStatus(_state.value.message, failure), cameraFront = facing, cameraCanSwitch = data.optBoolean("cameraCanSwitch", false), cameraSwitching = data.optBoolean("cameraSwitching", false), cameraError = cameraError)
-                    val query = canonicalUuid(data.optString("query"))
-                    if (cameraStatusAnswersPending(pendingAction, pendingId, query)) {
-                        pendingId = null; pendingAction = null; timeout?.cancel(); timeout = null
+                    if (matchesPending) {
+                        if (pendingAction == "start") _state.value = _state.value.copy(message = messageAfterConfirmedStartStatus(_state.value.message))
+                        pendingId = null; pendingAction = null; statusQueryAttempts = 0; timeout?.cancel(); timeout = null
                         _state.value = _state.value.copy(pending = false)
                     }
+                } else if (matchesPending) {
+                    // A newer unsolicited status can overtake this query response.
+                    // Do not accept the stale snapshot; retry only a bounded number.
+                    if (statusQueryAttempts < MAX_STATUS_QUERY_ATTEMPTS) requestPendingStatus(checkNotNull(pendingId))
+                    else _state.value = _state.value.copy(message = START_STATUS_STALE_MESSAGE)
                 }
             }
         }
         return true
     }
+
+    // Called only while holding lock; a failed send never clears the pending command.
+    private fun requestPendingStatus(request: String) {
+        statusQueryAttempts++
+        if (!lan.send("capture_query", JSONObject().put("request", request).toString())) {
+            _state.value = _state.value.copy(message = START_STATUS_SEND_FAILED_MESSAGE)
+        }
+    }
+
+    private companion object { const val MAX_STATUS_QUERY_ATTEMPTS = 3 }
 
     private fun sendStatus(queryId: String? = null) {
       val payload = synchronized(statusLock) {
