@@ -85,7 +85,7 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
             created?.start()
             pairedCapture.ready()
         }
-        lan.onMessage = { type, payload -> if (!pairedCapture.message(type, payload)) _video.value?.message(type, payload) }
+        lan.onMessage = { marker, type, payload -> if (!pairedCapture.message(marker, type, payload)) _video.value?.message(type, payload) }
         lan.onDisconnect = {
             pairedCapture.disconnected()
             val release = synchronized(guard) {
@@ -128,17 +128,32 @@ class LiveSession(context: Context, val host: Boolean, private val preferFrontCa
         if (video == null) result(false) else video.stopBrowserPreview(id, result)
     }
 
-    fun startRecording(id: String = UUID.randomUUID().toString(), projectId: String? = null, origin: RecordingOrigin = if (projectId == null) RecordingOrigin.MANUAL else RecordingOrigin.WEB): Boolean {
-        val current: RtcVideo
+    fun startRecording(id: String = UUID.randomUUID().toString(), projectId: String? = null, origin: RecordingOrigin = if (projectId == null) RecordingOrigin.MANUAL else RecordingOrigin.WEB): Boolean =
+        startRecordingAdmitted(id, projectId, origin, null)
+
+    internal fun startPairedRecording(marker: Any, id: String, projectId: String?): Boolean =
+        startRecordingAdmitted(id, projectId, if (projectId == null) RecordingOrigin.LAN_UNASSIGNED else RecordingOrigin.LAN, marker)
+
+    private fun startRecordingAdmitted(id: String, projectId: String?, origin: RecordingOrigin, marker: Any?): Boolean {
+        var current: RtcVideo? = null
         if (runCatching { UUID.fromString(id).toString() != id || (projectId != null && UUID.fromString(projectId).toString() != projectId) || RecordingOrigin.read(origin.wire, projectId) != origin }.getOrDefault(true)) return false
         synchronized(guard) {
-            if (!host || closed || disconnected || _cameraSelection.value.switching || _cameraSelection.value.error != null || !recordingOwnerAllowed(remoteExclusive, origin) || _recording.value.isActive() || (_recording.value as? LocalRecording.Failed)?.blocked == true) return false
-            current = _video.value ?: return false
-            stopWhenStarted = false
-            pendingCameraFailure = null
-            _recording.value = LocalRecording.Preparing(id)
+            // The channel-bound action only checks/changes memory; recorder work
+            // and camera-executor submission stay outside the LAN state lock.
+            val admit = {
+                val candidate = _video.value
+                if (!host || closed || disconnected || _cameraSelection.value.switching || _cameraSelection.value.error != null || !recordingOwnerAllowed(remoteExclusive, origin) || _recording.value.isActive() || (_recording.value as? LocalRecording.Failed)?.blocked == true || candidate == null) false
+                else {
+                    current = candidate
+                    stopWhenStarted = false
+                    pendingCameraFailure = null
+                    _recording.value = LocalRecording.Preparing(id)
+                    true
+                }
+            }
+            if ((if (marker == null) admit() else lan.admitOnApprovedConnection(marker, admit)) != true) return false
         }
-        val submitted = current.withLocalTrack { track, egl ->
+        val submitted = checkNotNull(current).withLocalTrack { track, egl ->
             if (track == null) {
                 recordingEvent(RtcMp4Recorder.Event.Failed(id, "Kamera ist noch nicht bereit", null))
             } else {

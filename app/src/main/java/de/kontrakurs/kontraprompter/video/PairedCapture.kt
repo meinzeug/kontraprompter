@@ -108,9 +108,9 @@ internal class PairedCapture(
         true
     }
 
-    fun message(type: String, payload: String): Boolean {
+    fun message(marker: Any, type: String, payload: String): Boolean {
         if (type !in setOf("capture_query", "capture_command", "capture_status", "capture_ack")) return false
-        if (!lan.state.value.ready) return true
+        if (!lan.isApprovedConnection(marker)) return true
         if (host && type == "capture_query") {
             val queryId = runCatching { canonicalUuid(JSONObject(payload).optString("request")) }.getOrNull()
             sendStatus(queryId); return true
@@ -126,7 +126,7 @@ internal class PairedCapture(
             val expectedFront = if (action == "switch_camera") { data.opt("cameraFront") as? Boolean ?: return true } else null
             val accepted = handled.execute(request, PairedCommand(action, recording, project, expectedFront)) {
                 when (action) {
-                    "start" -> session.startRecording(recording, project, if (project == null) RecordingOrigin.LAN_UNASSIGNED else RecordingOrigin.LAN)
+                    "start" -> session.startPairedRecording(marker, recording, project)
                     "pause" -> session.pauseRecording(recording)
                     "resume" -> session.resumeRecording(recording)
                     "stop" -> session.stopRecording(recording)
