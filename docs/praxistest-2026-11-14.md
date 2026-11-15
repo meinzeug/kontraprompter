@@ -420,3 +420,30 @@ war 30.455.505 Bytes groß und stimmte bytegleich mit den auf beiden Geräten
 installierten APK-Dateien überein. Die Signierung und Installation wurden
 geprüft; die echte ITFIT-Fernbedienung sowie eine neue Kameraaufnahme über das
 Webdashboard wurden dabei nicht getestet.
+
+## Produktivtest nach Schutz gelöschter Uploads
+
+Am 15. November wurde der Serverstand `4dca746` nach isoliertem Test und
+Datenbanksicherung veröffentlicht. Für eine eigene 20-sekündige Testaufnahme
+stimmte der Export vom Xiaomi vorab mit der Serverdatei überein
+(SHA-256 `0ec9b39904ed8b55cd768f4010f9e7fa4fb3f66efe49a611de291e7b5789a2ba`).
+Nach der ausdrücklichen Löschung dieser Testaufnahme auf dem Server meldete die
+App beim erneuten Upload, dass die Server-Aufnahme-ID gelöscht wurde und das
+Original lokal bleibt. Die Serverprüfung zeigte weiterhin keine Aufnahmezeile
+und keine Datei, aber eine Löschsperre. Der Export blieb auf dem Gerät erhalten.
+Vor dem Serverfix hatte derselbe echte Fall noch „Connection reset“ gemeldet.
+Bei sehr großen oder langsamen Uploads kann die Übertragung trotzdem wegen der
+serverseitigen Fristen abbrechen; der gesamte Inhalt wird bei diesem Konflikt
+zunächst übertragen und verworfen.
+
+Nach dem Release waren beide Geräte zunächst im WLAN nicht direkt erreichbar.
+Ein erneuter WLAN-Verbindungsaufbau am Xiaomi stellte die Erreichbarkeit wieder
+her; die Ursache ist weiterhin ungeklärt. Über die erneute direkte Kopplung mit
+Xiaomi als Kamera und Samsung als Prompter wurden Start, Pause, Fortsetzen und
+Stopp erneut bestätigt. Die 17,47 Sekunden lange Testaufnahme wurde automatisch
+zum Server hochgeladen. Ihre 4.154.550 Bytes enthalten H.264-Video mit 480 × 640
+Pixeln und AAC-Ton mit 48 kHz; die Server-SHA-256 lautet
+`4b57ec43b493bf26a243b2b9021101f880790edf32eca021625887dad928e413`.
+Für diesen letzten Test wurden kein unabhängiger Export und keine Prüfung der
+Sprachverständlichkeit durchgeführt. Die Xiaomi-USB-Verbindung war während
+des Tests getrennt; die Bedienung erfolgte dort über WLAN-ADB.
