@@ -1,12 +1,12 @@
 package de.kontrakurs.kontraprompter
 
 /** Only routes with no session or recording side effects belong in this drawer. */
-internal enum class DrawerDestination(val route: String, val label: String, val symbol: String) {
-    START("roles", "Start", "⌂"),
-    SCRIPTS("scripts", "Skripte", "▤"),
-    STUDIO("studio", "Videomaker", "◫"),
-    RECORDINGS("recordings", "Aufnahmen", "▣"),
-    HELP("help", "Hilfe & Aufbau", "?"),
+internal enum class DrawerDestination(val route: String, val label: String) {
+    START("roles", "Start"),
+    SCRIPTS("scripts", "Skripte"),
+    STUDIO("studio", "Videomaker"),
+    RECORDINGS("recordings", "Aufnahmen"),
+    HELP("help", "Hilfe & Aufbau"),
 }
 
 /** Upload/camera flows must not be unmounted by a new drawer navigation path. */
@@ -18,6 +18,6 @@ internal fun DrawerDestination.isCurrent(page: String): Boolean =
 
 /** A live client only disconnects when it has a non-pending terminal status. */
 internal fun mayDisconnectRemote(ready: Boolean, pending: Boolean, phase: String): Boolean =
-    !ready || (!pending && phase in setOf("idle", "ready", "partial"))
+    ready && !pending && phase in setOf("idle", "ready", "partial")
 
 internal fun mayStartCamera(sessionPresent: Boolean): Boolean = !sessionPresent

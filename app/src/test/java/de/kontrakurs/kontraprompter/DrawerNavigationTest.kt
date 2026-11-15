@@ -26,7 +26,7 @@ class DrawerNavigationTest {
             assertTrue(phase, mayDisconnectRemote(ready = true, pending = false, phase = phase))
             assertFalse(phase, mayDisconnectRemote(ready = true, pending = true, phase = phase))
         }
-        assertTrue(mayDisconnectRemote(ready = false, pending = false, phase = "unknown"))
+        assertFalse(mayDisconnectRemote(ready = false, pending = false, phase = "unknown"))
     }
     @Test fun cameraCannotReplaceAnExistingSession() {
         assertFalse(mayStartCamera(sessionPresent = true))
