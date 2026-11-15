@@ -16,15 +16,17 @@ internal class WebCameraStatusProbe {
     private val phases = setOf("idle", "preparing", "recording", "paused", "finalizing", "ready", "partial", "failed")
     private val maximumNs = 10_000_000_000L
     private fun valid(binding: Binding): Boolean = binding.owner.matches(digest) && binding.browserSession.matches(digest) &&
-        binding.deviceSession.matches(digest) && binding.prompterId.matches(uuid) && binding.cameraId.matches(uuid) && binding.epoch.matches(uuid)
+        binding.deviceSession.matches(digest) && binding.prompterId.matches(uuid) && binding.cameraId.matches(uuid) &&
+        binding.prompterId != binding.cameraId && binding.epoch.matches(uuid)
     private fun matches(a: Binding, b: Binding): Boolean = a.owner == b.owner && a.browserSession == b.browserSession &&
         a.deviceSession == b.deviceSession && a.prompterId == b.prompterId && a.cameraId == b.cameraId && a.epoch == b.epoch && a.connection === b.connection
     private fun live(item: Pending, nowNs: Long): Boolean = nowNs >= item.startNs && nowNs - item.startNs < maximumNs
 
     /** The same request may not be replayed or migrated onto a different link. */
     @Synchronized fun begin(binding: Binding, requestId: String, nowNs: Long): Boolean {
+        if (!valid(binding) || !requestId.matches(uuid) || nowNs < 0 || requestId in seen || seen.size >= 128) return false
         pending?.let { if (!live(it, nowNs)) pending = null }
-        if (!valid(binding) || !requestId.matches(uuid) || nowNs < 0 || pending != null || requestId in seen || seen.size >= 128) return false
+        if (pending != null) return false
         seen.add(requestId)
         pending = Pending(binding, requestId, nowNs)
         return true

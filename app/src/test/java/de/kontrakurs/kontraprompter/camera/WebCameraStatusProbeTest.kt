@@ -43,6 +43,7 @@ class WebCameraStatusProbeTest {
     }
     @Test fun `malformed camera status is not accepted`() {
         val gate=WebCameraStatusProbe();val owner=binding();val id=UUID.randomUUID().toString()
+        assertFalse(gate.begin(owner.copy(cameraId=owner.prompterId),id,1))
         assertTrue(gate.begin(owner,id,1));assertNull(gate.accept(owner,id,2,WebCameraStatusProbe.CameraStatus("recording",null,true)))
         assertNull(gate.accept(owner,id,2,WebCameraStatusProbe.CameraStatus("made-up",null,true)))
         assertNotNull(gate.accept(owner,id,3,WebCameraStatusProbe.CameraStatus("idle",null,true)))
