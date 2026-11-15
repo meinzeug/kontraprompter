@@ -106,6 +106,11 @@ internal class CameraRemoteRuntime(context: Context, private val session: LiveSe
                     } catch (_: CameraRegistrationRequiredException) {
                         _status.value = "Kamera muss erneut registriert werden · Aufnahme läuft gegebenenfalls lokal weiter"
                         delay(30_000)
+                    } catch (_: CameraProtocolException) {
+                        previewTicket = null
+                        preview.disable("Webvorschau aus · Kameraprotokoll nicht verfügbar")
+                        _status.value = "Kamerasteuerung nicht kompatibel oder ungültig · Aufnahme läuft gegebenenfalls lokal weiter"
+                        delay(30_000)
                     } catch (_: CameraReconciliationPendingException) {
                         _status.value = "Lokale Aufnahme wird erneut geprüft · Original bleibt erhalten"
                         delay(5000)

@@ -6,7 +6,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CameraWireTest {
-    private fun samples(): JSONArray = JSONObject(checkNotNull(javaClass.getResourceAsStream("/camera-v1-v2-contract.json")).bufferedReader().use { it.readText() }).getJSONArray("commands")
+    private fun samples(): JSONArray = JSONObject(checkNotNull(javaClass.getResourceAsStream("/camera-v1-v3-contract.json")).bufferedReader().use { it.readText() }).getJSONArray("commands")
     private fun body(item: JSONObject) = JSONObject().put("commands", JSONArray().put(item)).toString()
     private fun copy(item: JSONObject) = JSONObject(item.toString())
 
@@ -38,4 +38,11 @@ class CameraWireTest {
         bad.forEach { assertThrows(Exception::class.java) { parseCameraPollResponse(body(it)) } }
         assertThrows(Exception::class.java) { parseCameraPollResponse(JSONObject().put("commands", JSONArray().put(start).put(pause)).toString()) }
     }
+
+    @Test fun `legacy server pause without project yields protocol error rather than command`() {
+        val legacy = copy(samples().getJSONObject(1)).put("projectId", JSONObject.NULL)
+        assertThrows(CameraProtocolException::class.java) { decodeCameraPollResponse(body(legacy)) }
+        assertEquals("record_pause", decodeCameraPollResponse(body(samples().getJSONObject(1))).command?.type)
+    }
+
 }

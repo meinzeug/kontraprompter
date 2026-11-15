@@ -2,8 +2,15 @@ package de.kontrakurs.kontraprompter.camera
 
 import org.json.JSONObject
 import java.util.UUID
+import java.io.IOException
+
+internal class CameraProtocolException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
 internal data class CameraPollResponse(val command: CameraCommand?, val remainingMs: Long)
+
+/** Translate malformed or legacy-v2 responses into the non-destructive retry path. */
+internal fun decodeCameraPollResponse(text: String): CameraPollResponse = try { parseCameraPollResponse(text) }
+    catch (error: Exception) { throw CameraProtocolException("Ungültige Antwort der Kamerafernsteuerung. Bitte Versionen prüfen.", error) }
 
 /** Strictly validates the actual poll response before it reaches the decision journal. */
 internal fun parseCameraPollResponse(text: String): CameraPollResponse {
