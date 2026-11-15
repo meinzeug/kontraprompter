@@ -26,8 +26,8 @@ internal fun StudioSurface(content: @Composable ColumnScope.() -> Unit) {
     }
 }
 
-internal fun studioAnnouncementModifier(announce: Boolean = false): Modifier =
-    if (announce) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier
+internal fun Modifier.studioAnnouncementModifier(announce: Boolean = false): Modifier =
+    if (announce) semantics { liveRegion = LiveRegionMode.Polite } else this
 
 @Composable
 internal fun StudioMessage(text: String, error: Boolean = false, announce: Boolean = false) {
@@ -35,7 +35,7 @@ internal fun StudioMessage(text: String, error: Boolean = false, announce: Boole
         text = text,
         color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.bodyMedium,
-        modifier = studioAnnouncementModifier(announce),
+        modifier = Modifier.studioAnnouncementModifier(announce),
     )
 }
 
