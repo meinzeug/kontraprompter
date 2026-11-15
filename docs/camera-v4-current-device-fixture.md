@@ -19,3 +19,19 @@ check the recording state, fixture APK hashes/package names, certificate and
 pre-existing ADB-reverse rules. Remove only fixture-owned packages and reverse
 rules and verify the regular phone connection afterwards. No device test is
 claimed until an actual run is documented.
+
+On 15 November 2026, CI `43692046702` built the app and test APK from
+`563df32` (CI commit `d973e2d`). The isolated test passed on Samsung SM-A526B
+(13.561 s) and Xiaomi 2409BRN2CY (16.012 s; Wi-Fi ADB). It sent an `enqueued`
+ACK to the local server, deliberately discarded the resulting response and
+verified that the device journal kept the ACK pending until an idempotent
+retry. Recorder `Recording`/`Failed` events were synthetic. The first Xiaomi
+installation attempt was rejected by MIUI; the separate identified fixture
+was subsequently installed after confirming only its own system dialog.
+
+The test packages were removed from both phones and their ADB-reverse lists
+were empty before and after. The local server and own test data were removed;
+the normal apps remained in the foreground with the camera link and Studio
+connection reported afterwards. This does not prove a real recorder admission,
+actual video/audio, Android process kill mid-command, production HTTPS or
+production activation. No user recording or main app data was changed.
