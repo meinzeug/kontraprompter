@@ -19,6 +19,18 @@ class PrompterLayoutPolicyTest {
         assertFalse(useWidePrompterLayout(800f, 360f, 1f, true))
         assertFalse(useWidePrompterLayout(Float.POSITIVE_INFINITY, 360f, 1f, false))
         assertFalse(useWidePrompterLayout(800f, 0f, 1f, false))
+        assertFalse(useWidePrompterLayout(800f, 319f, 1f, false))
+        assertTrue(useWidePrompterLayout(800f, 320f, 1f, false))
         assertFalse(useWidePrompterLayout(800f, 360f, Float.NaN, false))
     }
+
+    @Test fun longOrUnknownStudioStatusKeepsFullWidth() {
+        assertTrue(canPlacePrompterStatusSideBySide(true, null))
+        assertTrue(canPlacePrompterStatusSideBySide(true, "Verbunden"))
+        assertTrue(canPlacePrompterStatusSideBySide(true, "Verbinde …"))
+        assertFalse(canPlacePrompterStatusSideBySide(true, "Verbindung unterbrochen; erneuter Versuch"))
+        assertFalse(canPlacePrompterStatusSideBySide(true, "Ein unbekannter langer Fehlerstatus"))
+        assertFalse(canPlacePrompterStatusSideBySide(false, "Verbunden"))
+    }
+
 }

@@ -738,7 +738,7 @@ private fun Prompter(text: String, notice: GenerationNotice?, fontSize: Float, s
         }
         val showNotice = notice?.needsAttention() == true
         if (showCameraStatus || remote != null || showNotice) {
-            if (landscapeControls) {
+            if (canPlacePrompterStatusSideBySide(landscapeControls, remote?.status)) {
                 Row(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
                     if (showCameraStatus) Box(Modifier.weight(1f)) { CameraStatus() }
                     if (remote != null) Box(Modifier.weight(1f)) { RemoteBanner(remote) }
