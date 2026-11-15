@@ -25,3 +25,13 @@ Die Ausgabe des Generators wird in der Bauprobe mit den eingebauten Dateien verg
 Vor einer Freigabe sind für die jeweils aktive Kamera und Auflösung sowohl der tatsächlich angewandte CaptureResult-Bereich und Sensor-Frame-Duration als auch Rohbild-, Encoder-, Vorschau- und fertige MP4-/Tondaten zu prüfen. Vergleichsmessungen bei schwachem und gutem Licht sowie längere Aufnahmen sind nötig. Die reine Auswahl der AE-Spanne ersetzt keine dieser Prüfungen.
 
 Ein blockierender Rohbild- oder EGL-Callback kann im experimentellen Pfad die synchrone WebRTC-Weitergabe und das Warten beim Ablösen bzw. Schließen unbegrenzt verzögern. Außerdem behandelt der aus WebRTC abgeleitete Camera2-`onConfigured`-Pfad `CameraAccessException`, aber noch nicht zuverlässig alle möglichen Runtime-Ausnahmen. Das sind offene Risiken; die Debug-Sperre und Unit-Tests beseitigen sie nicht. Ohne genau verfügbaren festen Bereich kann WebRTC einen variablen Bereich mit bis zu 30 fps auswählen, obwohl die Recorder-Capability aktuell nur für 20 fps geprüft wird. Diese Fälle müssen vor Freigabe gesondert abgesichert werden.
+
+## Gerätetest am 15. November 2026
+
+Getestet wurde das separat signierte experimentelle Debug-APK mit SHA-256 `8ef7c35869d2211a431ba506b83aa8daf76a7e9c0acae1de023831c6b5618b7a`: Xiaomi als Kamera, Samsung als Teleprompter. In einer dunklen Szene meldete die aktive Kamera den AE-Zielbereich `[20,20]`, eine Belichtungszeit von 50,005 ms und eine Frame-Duration von 50,025 ms.
+
+Die Recorderdiagnose meldete 340 ankommende Bilder bei 19,76 fps, davon acht während der Vorbereitung. Anschließend wurden 332 Bilder für den Recorder angenommen und 332 Videopuffer bei 19,77 fps vom Encoder ausgegeben. Im beobachteten Abschnitt wurde damit kein zusätzlicher Verlust zwischen akzeptierten Recorderbildern und den gezählten Encoderpuffern festgestellt.
+
+Die auf dem Server gespeicherte Aufnahme `e55eaa69-b695-8de8-8d19-d7cde98babd1.mp4` hatte 8.091.857 Byte und SHA-256 `4f68ef5970ad81e40983c0b76a72cdcb831f76c947fe23202f8316b5b8319a96`. Die Datei enthielt H.264 mit 720×1280, 332 Bildern und 16,79 s sowie AAC mit 48 kHz und 16,75 s. Beide Spuren ließen sich mit ffmpeg ohne gemeldeten Dekodierfehler dekodieren.
+
+Ein Bytevergleich mit dem lokalen Original, ein Vergleich bei heller Beleuchtung und ein Test der Sprachverständlichkeit wurden nicht durchgeführt. Die Messung ist daher kein Nachweis für identische Originalbytes, allgemeine Bild- oder Tonqualität oder eine Produktionsfreigabe. Nach dem Test wurde das Xiaomi wieder auf die vorhandene APK mit SHA-256-Beginn `d4cf8d7e` zurückgesetzt; beide Geräte wurden per SHA geprüft. Die erneute Kopplung lief zum Zeitpunkt dieses Protokolls.
