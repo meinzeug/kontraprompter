@@ -31,6 +31,16 @@ class P2pIcePolicyTest {
         assertFalse(p2pCandidateMatches(candidate + "\n", local))
     }
 
+    @Test fun `normal mode requires the actual default non-vpn wifi address and interface`() {
+        assertTrue(isProvenDefaultWifi("wlan0", "wlan0", true, false, true, local, listOf(local)))
+        assertFalse(isProvenDefaultWifi("p2p0", "wlan0", true, false, true, local, listOf(local)))
+        assertFalse(isProvenDefaultWifi("wlan0", "wlan0", true, true, true, local, listOf(local)))
+        assertFalse(isProvenDefaultWifi("wlan0", "wlan0", true, false, false, local, listOf(local)))
+        assertFalse(isProvenDefaultWifi("wlan0", "wlan0", false, false, true, local, listOf(local)))
+        assertFalse(isProvenDefaultWifi("wlan0", "wlan0", true, false, true, local, listOf(peer)))
+        assertFalse(isProvenDefaultWifi(null, null, true, false, true, local, listOf(local)))
+    }
+
     @Test fun `sdp cannot bypass candidate filtering or leak connection addresses`() {
         val fingerprint = List(32) { "AB" }.joinToString(":")
         val safe = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\nc=IN IP4 0.0.0.0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=rtcp:9 IN IP4 0.0.0.0\r\na=fingerprint:sha-256 $fingerprint\r\n"
