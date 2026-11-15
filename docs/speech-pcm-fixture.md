@@ -107,6 +107,27 @@ gemeinsamen Epochen-/Zustellfence und weitere parallele Tests. Die Brücke darf
 erst nach Übertragung auf aktuellen Main, unabhängiger Prüfung und isolierten
 Android-/Recorder-Praxistests als Funktion betrachtet werden.
 
+`SpeechDeliveryFence` unter `app/src/test` ist ein weiterer isolierter
+Empfängermodelltest: Kanalobjekt, Aufnahme, Skriptfassung, Audio-Generation,
+Folgeepoche, Sequenz und sichtbare Wortposition liegen in einem unveränderlichen
+Zustand. Pause, bekannter Audioverlust, Verbindungsende und manueller Sprung
+invalidieren über dieselbe CAS-Zustandsquelle wie die Positionsübernahme. Der
+Test prüft alte Ergebnisse nach Seek/Pause/Aufnahmeneustart, falsche Bindungen,
+Replay, Wortgrenzen und paralleles Seek/Ergebnis. Eine UI muss später aus dem
+aktuellen Zustand rendern und darf keinen separat verzögerten, ungeprüften
+Positionscallback anwenden. Das Testobjekt bindet keinen authentisierten Kanal,
+Decoder, `PcmTee` oder echte UI an.
+
+Die Atomizität ist lokal auf die Empfängerseite beschränkt: Ein Audioblock kann
+auf dem Kameragerät verloren gehen, während eine vorher versandte Position den
+Empfänger erreicht, bevor die Verlustmeldung dort ankommt. Kein lokales CAS
+kann ein unbekanntes fernes Ereignis rückwirkend erkennen. Der reale Vertrag
+benötigt geordnete, sitzungsgebundene Ereignisse, eine konservative Behandlung
+ungeklärter Zustellung und ein klares Produktverhalten für diese Verzögerung.
+Erst wenn die tatsächlichen Producer-/Transport-/UI-Ereignisse mit der
+Zustandsquelle verbunden und geräteübergreifend getestet sind, kann über eine
+Aktivierung entschieden werden.
+
 ## Reproduzierbarer Offline-Erkenner-Probe
 
 `bash scripts/test-vosk-offline-fixture.sh` verwendet ausschließlich einen

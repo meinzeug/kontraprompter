@@ -29,6 +29,7 @@ java -XX:ActiveProcessorCount=1 -Xmx160m -cp "$compiler:$stdlib:$script:$reflect
   -d "$fixture_dir" "$src/video/PcmTee.kt" "$src/speech/SpokenScript.kt" \
   "$tests/video/PcmTeeTest.kt" "$tests/speech/SpokenScriptTest.kt" "$tests/speech/SpeechPcmFixtureTest.kt" \
   "$tests/speech/SpeechFollowHarness.kt" "$tests/speech/SpeechAtomicPositionFixture.kt" "$tests/speech/SpeechFollowHarnessTest.kt" \
+  "$tests/speech/SpeechDeliveryFence.kt" "$tests/speech/SpeechDeliveryFenceTest.kt" \
   "$root/app/src/test/java/de/kontrakurs/voskfixture/PcmRecorderBridge.kt" \
   "$root/app/src/test/java/de/kontrakurs/voskfixture/PcmRecorderBridgeTest.kt"
 java -Xmx64m -cp "$fixture_dir:$stdlib:$junit:$hamcrest" org.junit.runner.JUnitCore \
@@ -36,4 +37,5 @@ java -Xmx64m -cp "$fixture_dir:$stdlib:$junit:$hamcrest" org.junit.runner.JUnitC
   de.kontrakurs.kontraprompter.speech.SpokenScriptTest \
   de.kontrakurs.kontraprompter.speech.SpeechPcmFixtureTest \
   de.kontrakurs.kontraprompter.speech.SpeechFollowHarnessTest \
+  de.kontrakurs.kontraprompter.speech.SpeechDeliveryFenceTest \
   de.kontrakurs.voskfixture.PcmRecorderBridgeTest
