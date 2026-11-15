@@ -13,7 +13,7 @@ class UploadConflictTest {
     // parsing separately, while instrumented tests cover Android's implementation.
     private val jsonClass by lazy {
         val jar = File(requireNotNull(System.getProperty("kontraprompter.test.jsonJar")))
-        URLClassLoader(arrayOf(jar.toURI().toURL()), ClassLoader.getPlatformClassLoader()).loadClass("org.json.JSONObject")
+        URLClassLoader(arrayOf(jar.toURI().toURL()), null).loadClass("org.json.JSONObject")
     }
     private fun parseInput(input: InputStream?) = uploadConflictCode(input) { text ->
         val obj = jsonClass.getConstructor(String::class.java).newInstance(text)
