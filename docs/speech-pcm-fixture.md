@@ -67,3 +67,19 @@ mit identischem PCM-Hash erkannt: „hallo zusammen heute sprechen wir über
 medien und videos“. Der Cursor erreichte Wortposition 9. Dieser Einzeltest
 belegt weder echte Stimmen, Erkennungsqualität, Echtzeitlatenz unter Last noch
 Android-ABI, Audioaufnahme, Plattformintegration oder Zwei-Geräte-Steuerung.
+
+## Probe mit vorhandener Sprachaufnahme
+
+Am 15. November wurde zusätzlich die zuvor bei einem Sprechtest erstellte,
+83,33 Sekunden lange Serveraufnahme über SSH gelesen und ihr Ton zur lokalen
+Offline-Probe in 48-kHz-Mono-PCM umgewandelt. Die Aufnahme blieb unverändert;
+das Testtranskript wurde nur im Speicher verarbeitet und nicht ausgegeben oder
+gespeichert. Die Pegelprüfung der Aufnahme ergab -32,3 dB mittleren und
+-2,9 dB maximalen Pegel. Vosk meldete für 83,3 Sekunden PCM 69 erkannte
+Wörter. Ohne Abgleich mit einem Referenztranskript sagt die Anzahl nichts über
+die Erkennungsgenauigkeit oder die Sprachverständlichkeit aus.
+
+Dies ist ein Offline-Test auf dem Entwicklungsrechner mit bereits
+abgeschlossenem Audiomaterial. Er belegt weder die Echtzeitlatenz noch eine
+Integration in Android, den Aufnahmeprozess, die sichere Übertragung der
+Position oder eine funktionierende automatische Sprachfolge.
