@@ -67,6 +67,9 @@ session = replace_once(session, '''    public void onError(CameraDevice camera, 
       if (state == SessionState.STOPPED) { closeLateCamera(camera); return; }
       adoptCamera(camera);
       reportError(getErrorDescription(errorCode));''')
+session = replace_once(session, '      events.onCameraClosed(KpExperimentalCamera2Session.this);',
+    '      KpCameraClose.notifyIfActive(state == SessionState.STOPPED,\n'
+    '          () -> events.onCameraClosed(KpExperimentalCamera2Session.this));')
 session = replace_once(session, '      callback.onDone(KpExperimentalCamera2Session.this);',
     '      startupReported = true;\n      callback.onDone(KpExperimentalCamera2Session.this);')
 session = replace_once(session, '    public void onOpened(CameraDevice camera) {\n      checkIsOnCameraThread();',

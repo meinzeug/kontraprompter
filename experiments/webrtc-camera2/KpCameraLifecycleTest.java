@@ -34,6 +34,13 @@ public class KpCameraLifecycleTest {
     FakeSession s = new FakeSession(); s.disconnect(); s.disconnect();
     assertEquals(Arrays.asList("cleanup", "start-failure"), s.events);
   }
+  @Test public void lateClosedFromStoppedSessionDoesNotNotifyNewOwner() {
+    List<String> notifications = new ArrayList<>();
+    KpCameraClose.notifyIfActive(true, () -> notifications.add("old-closed"));
+    assertTrue(notifications.isEmpty());
+    KpCameraClose.notifyIfActive(false, () -> notifications.add("active-closed"));
+    assertEquals(Arrays.asList("active-closed"), notifications);
+  }
   @Test public void errorBeforeOpenedAdoptsCameraForCleanupAndClosesUnexpectedDevice() {
     Object incoming = new Object(); Object other = new Object(); List<Object> closed = new ArrayList<>();
     Object owned = KpCameraOwnership.adopt(null, incoming, closed::add);

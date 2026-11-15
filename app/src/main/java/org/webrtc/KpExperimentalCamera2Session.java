@@ -138,7 +138,8 @@ class KpExperimentalCamera2Session implements CameraSession {
       checkIsOnCameraThread();
 
       Logging.d(TAG, "Camera device closed.");
-      events.onCameraClosed(KpExperimentalCamera2Session.this);
+      KpCameraClose.notifyIfActive(state == SessionState.STOPPED,
+          () -> events.onCameraClosed(KpExperimentalCamera2Session.this));
     }
   }
 
