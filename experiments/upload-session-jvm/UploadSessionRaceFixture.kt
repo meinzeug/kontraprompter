@@ -52,20 +52,23 @@ private suspend fun runCase(name:String,code:Int,swapAt:String) = coroutineScope
   val bytes="synthetic-upload".toByteArray();val file=File(dir,"local.mp4");file.writeBytes(bytes)
   val recording=SavedRecording(UUID.randomUUID().toString(),bytes.size.toLong(),digest(bytes),file)
   val project=UUID.randomUUID().toString();val uploadId=uploadIdFor(recording.id,project)
-  Transport.code=code;Transport.logins.set(0);Transport.sentUploadId=null;Transport.entered=CountDownLatch(1);Transport.release=CountDownLatch(1);Transport.blockBody=swapAt=="body"
+  Transport.code=code;Transport.logins.set(0);Transport.sentUploadId=null;Transport.entered=CountDownLatch(1);Transport.release=CountDownLatch(1);Transport.blockBody=swapAt=="body"||swapAt=="mutate"
   Transport.response=if(code==409)"{\"code\":\"recording_deleted\",\"error\":\"Gelöscht\"}".toByteArray() else "{\"id\":\"$uploadId\",\"projectId\":\"$project\",\"sizeBytes\":${bytes.size},\"sha256\":\"${recording.sha256}\"}".toByteArray()
   FixtureHooks.beforeConfirmed=if(swapAt=="journal")CountDownLatch(1) else null;FixtureHooks.continueConfirmed=if(swapAt=="journal")CountDownLatch(1) else null
   val client=StudioClient();client.login("fixture");val originalSession=checkNotNull(client.manualUploadSession()).cookie;val coordinator=CloudUploadCoordinator(ctx,client)
   var sessionAtCommit:String?=null;FixtureHooks.onConfirmedCommit={sessionAtCommit=client.manualUploadSession()?.cookie}
   val operation=async { coordinator.upload(recording,project) }
   var changedLogin:Deferred<Unit>?=null
+  var insertedUploadId:String?=null
   when(swapAt){
    "body"->{await(Transport.entered);client.login("fixture");Transport.release.countDown()}
    "journal"->{await(checkNotNull(FixtureHooks.beforeConfirmed));changedLogin=async(Dispatchers.Default){client.login("fixture")};delay(200);checkNotNull(FixtureHooks.continueConfirmed).countDown()}
+   "mutate"->{await(Transport.entered);val journal=File(dir,"camera-upload-journal/${recording.id}_${project}.json");val changed=org.json.JSONObject(journal.readText());insertedUploadId=UUID.randomUUID().toString();changed.put("uploadId",insertedUploadId);journal.writeText(changed.toString());Transport.release.countDown()}
   }
   val outcome=withTimeout(10_000){operation.await()};changedLogin?.let{withTimeout(10_000){it.await()}};val persisted=UploadJournal.get(ctx,recording,project)
   check(file.readBytes().contentEquals(bytes));check(Transport.sentUploadId==uploadId)
   println("$name outcome=${when(outcome){is CloudUploadState.Failed->outcome.kind;is CloudUploadState.Confirmed->"confirmed";else->"unexpected"}} journal=${persisted?.phase} reason=${persisted?.conflictReason?:"none"} session_at_confirmed_commit=${if(sessionAtCommit==null)"none" else if(sessionAtCommit==originalSession)"original" else "changed"} original=preserved")
+  if(insertedUploadId!=null)println("journal_mutation overwritten=${persisted?.uploadId!=insertedUploadId}")
  } finally {FixtureHooks.beforeConfirmed=null;FixtureHooks.continueConfirmed=null;FixtureHooks.onConfirmedCommit=null;dir.deleteRecursively()}
 }
 
@@ -76,4 +79,5 @@ fun main()=runBlocking {
  runCase("control_200",200,"none")
  runCase("session_during_200_body",200,"body")
  runCase("session_during_confirmed_journal",200,"journal")
+ runCase("journal_changed_before_receipt",200,"mutate")
 }
