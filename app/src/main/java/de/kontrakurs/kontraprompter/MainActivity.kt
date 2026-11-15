@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -569,20 +570,21 @@ private fun KontraApp(activity: MainActivity) {
                 ConnectionScreen(active, cloud, onClose = { disconnectFromUi() }, onScripts = { page = "scripts" })
             } ?: Page("Nicht verbunden", "VERBINDUNG", onBack = { page = "roles" }) { Action("Zur Rollenwahl") { page = "roles" } }
             "scripts" -> Page("Deine Skripte", "TELEPROMPTER", onBack = { page = "roles" }) {
+                WorkflowHeading(stringResource(R.string.workflow_scripts_sources))
                 MainAction("Skripte aus Videomaker öffnen") { page = "studio" }
                 Action(if (session == null) "Kamera verbinden" else "Verbindung anzeigen") {
                     if (session == null) session = LiveSession(activity, false)
                     page = "connection"
                 }
                 Action("Neues Skript") { val s = Script(); scripts = scripts + s; repository.save(scripts); select(s.id); page = "editor" }
-                Spacer(Modifier.height(6.dp))
-                Text("Auf diesem Gerät", style = MaterialTheme.typography.titleMedium, color = SoftText)
+                WorkflowHeading(stringResource(R.string.workflow_scripts_local))
                 scripts.forEach { script ->
                     ScriptTile(script.title.ifBlank { "Ohne Titel" }, "${script.text.length} Zeichen") { select(script.id); page = "editor" }
                 }
             }
             "recordings" -> Page("Aufnahmen", "LOKAL GESPEICHERT", onBack = { page = "roles" }) {
-                if (recordings.isEmpty() && unverified.isEmpty()) Text("Noch keine Aufnahmen auf diesem Gerät.", color = SoftText)
+                if (recordings.isEmpty() && unverified.isEmpty()) WorkflowEmpty("Noch keine Aufnahmen auf diesem Gerät.")
+                if (recordings.isNotEmpty()) WorkflowHeading(stringResource(R.string.workflow_recordings_saved))
                 recordings.forEach { item ->
                     AppPanel {
                         Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(item.createdAtMs)), style = MaterialTheme.typography.titleMedium)
@@ -593,6 +595,7 @@ private fun KontraApp(activity: MainActivity) {
                         if (!item.partial) Action("In Videomaker hochladen") { uploadRecordingId = item.id; recordingsLoaded = false; page = "upload" }
                     }
                 }
+                if (unverified.isNotEmpty()) WorkflowHeading(stringResource(R.string.workflow_recordings_recovery))
                 unverified.forEach { item ->
                     AppPanel {
                         Text("Nicht geprüfte Aufnahmedatei", style = MaterialTheme.typography.titleMedium)
@@ -616,23 +619,25 @@ private fun KontraApp(activity: MainActivity) {
             "editor" -> Page("Skript bearbeiten", "LOKAL GESPEICHERT", onBack = { page = "scripts" }) {
                 selected.generationNotice?.let { GenerationNoticePanel(it) }
                 if (selected.generationNotice != null && selected.studioProjectId == null) Text("Diese lokale Kopie ist keinem aktuellen Studio-Skript zugeordnet. Für die Aufnahme kann bei aktiver Anmeldung ein eigenes Aufnahmeprojekt angelegt werden.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
+                WorkflowHeading(stringResource(R.string.workflow_editor_text))
                 OutlinedTextField(value = selected.title, onValueChange = { update(selected.copy(title = it)) }, label = { Text("Titel") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = selected.text, onValueChange = { update(selected.copy(text = it)) }, label = { Text("Skripttext") }, modifier = Modifier.fillMaxWidth().height(260.dp))
+                OutlinedTextField(value = selected.text, onValueChange = { update(selected.copy(text = it)) }, label = { Text("Skripttext") }, modifier = Modifier.fillMaxWidth().heightIn(min = 260.dp, max = 420.dp))
                 MainAction("Teleprompter öffnen") { page = "prompter" }
+                WorkflowHeading(stringResource(R.string.workflow_editor_tools))
                 Action("TXT oder Markdown importieren") { importer.launch(arrayOf("text/*", "application/octet-stream")) }
                 Action("Einstellungen") { settingsReturn = "editor"; page = "settings" }
                 Action("Spiegelung kalibrieren") { page = "calibration" }
                 Action("Hilfe & Aufbau") { helpReturn = "editor"; page = "help" }
             }
             "settings" -> Page("Einstellungen", "TELEPROMPTER", onBack = { page = settingsReturn }) {
-                Text("Text und Tempo", style = MaterialTheme.typography.titleLarge)
+                WorkflowHeading(stringResource(R.string.workflow_settings_text))
                 SettingSlider("Schriftgröße", fontSize, 20f..100f, "${fontSize.toInt()} sp") { fontSize = it }
                 SettingSlider("Scrolltempo", speed, 5f..160f, "${speed.toInt()} dp/s") { speed = it }
                 SettingSlider("Textbreite", width, .35f..1f, "${(width * 100).toInt()} %") { width = it }
                 SettingSlider("Zeilenabstand", lineSpacing, 1f..2f, "${(lineSpacing * 100).toInt()} %") { lineSpacing = it }
                 SettingSlider("Texthintergrund", backgroundOpacity, 0f..1f, "${(backgroundOpacity * 100).toInt()} %") { backgroundOpacity = it }
                 SettingSlider("Displayhelligkeit", brightness, .05f..1f, "${(brightness * 100).toInt()} %") { brightness = it }
-                Text("Kamerabild", style = MaterialTheme.typography.titleLarge)
+                WorkflowHeading(stringResource(R.string.workflow_settings_video))
                 Toggle("Video horizontal spiegeln", videoH) { videoH = it }
                 Toggle("Video vertikal spiegeln", videoV) { videoV = it }
                 Toggle("Video füllt Bild (Beschnitt)", videoFill) { videoFill = it }
@@ -641,7 +646,7 @@ private fun KontraApp(activity: MainActivity) {
                 SettingSlider("Video-Helligkeit", videoBrightness, 0f..1f, "${(videoBrightness * 100).toInt()} %") { videoBrightness = it }
                 Toggle("Aufnahme und Teleprompter synchron", recordingScrollSync) { recordingScrollSync = it; preferences.edit().putBoolean("recording_scroll_sync", it).apply() }
                 Text("Bei bestätigter Aufnahme startet oder pausiert der Text automatisch. Bei Stopp bleibt er stehen.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
-                Text("Bluetooth-Auslöser", style = MaterialTheme.typography.titleLarge)
+                WorkflowHeading(stringResource(R.string.workflow_settings_remote))
                 Text("Vor der Aufnahme startet ein kurzer Druck die Kamera. Während der Aufnahme startet oder pausiert ein kurzer Druck nur den Teleprompter; ein schneller Doppeldruck pausiert oder setzt die Aufnahme fort. Der ITFIT Selfie P007 wird automatisch erkannt. Andere Auslöser mit Lautstärke- oder Tastatureingaben bitte unten auswählen. Eingebaute Tasten bleiben unverändert.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 Text("Für ausgewählte Auslöser mit Enter oder ähnlichen Tasten im Prompter zuerst „Enter-Auslöser nicht bereit – aktivieren“ antippen. Bei Fokusverlust erneut aktivieren.", color = SoftText, style = MaterialTheme.typography.bodyMedium)
                 if (Build.VERSION.SDK_INT >= 29) {
@@ -660,7 +665,7 @@ private fun KontraApp(activity: MainActivity) {
                     }
                     QuietAction("Geräteliste aktualisieren") { inputRefresh++ }
                 } else Text("Externe Auslöser werden ab Android 10 unterstützt.", color = SoftText)
-                Text("Anzeige und Spiegelung", style = MaterialTheme.typography.titleLarge)
+                WorkflowHeading(stringResource(R.string.workflow_settings_display))
                 Toggle("Text horizontal spiegeln", textH) { textH = it }
                 Toggle("Text vertikal spiegeln", textV) { textV = it }
                 Toggle("Fettschrift", bold) { bold = it }
@@ -709,7 +714,10 @@ private fun Page(title: String, eyebrow: String, onBack: (() -> Unit)? = null, c
 }
 @Composable private fun SettingSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, display: String, change: (Float) -> Unit) {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Panel).padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(label, style = MaterialTheme.typography.bodyLarge); Text(display, color = SoftText, style = MaterialTheme.typography.labelLarge) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+            Text(display, color = SoftText, style = MaterialTheme.typography.labelLarge)
+        }
         Slider(value = value, onValueChange = change, valueRange = range)
     }
 }

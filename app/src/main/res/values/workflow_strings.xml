@@ -1,0 +1,12 @@
+<resources>
+    <string name="workflow_scripts_sources">Skripte verwalten</string>
+    <string name="workflow_scripts_local">Auf diesem Gerät</string>
+    <string name="workflow_recordings_saved">Gespeicherte Videos</string>
+    <string name="workflow_recordings_recovery">Unterbrochene Aufnahmen</string>
+    <string name="workflow_editor_text">Dein Skript</string>
+    <string name="workflow_editor_tools">Weitere Werkzeuge</string>
+    <string name="workflow_settings_text">Text und Tempo</string>
+    <string name="workflow_settings_video">Kamerabild und Aufnahme</string>
+    <string name="workflow_settings_remote">Bluetooth-Auslöser</string>
+    <string name="workflow_settings_display">Anzeige und Spiegelung</string>
+</resources>
