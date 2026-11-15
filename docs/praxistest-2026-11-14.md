@@ -339,3 +339,12 @@ HTTPS-Download war 30.443.217 Bytes groß und hatte die SHA-256-Summe
 Bei der Bestandsprüfung waren alle 21 Projekte und 31 Aufnahmen vorhanden;
 die vorherige APK wurde gesichert. Die ältere Weboberfläche kann weiterhin
 „Debug“ im Downloadnamen anzeigen, obwohl die APK nicht debuggbar ist.
+
+Beim anschließenden erneuten Koppeln nach dem WLAN-Abbruch war das Xiaomi trotz
+WLAN-Adresse vorübergehend weder vom Samsung noch vom Laptop direkt erreichbar;
+das Samsung meldete eine fehlgeschlagene Verbindung. Nach erneutem Aus- und
+Einschalten des Xiaomi-WLANs waren direkte Pings wieder möglich und eine neue
+Sitzung mit Livebild wurde eingerichtet. Später waren direkte Pings in beiden
+Richtungen erfolgreich. Die genaue Ursache der zeitweisen fehlenden
+Netzwerkerreichbarkeit ist nicht festgestellt; eine automatische dauerhafte
+Wiederverbindung ist weiterhin nicht nachgewiesen.
