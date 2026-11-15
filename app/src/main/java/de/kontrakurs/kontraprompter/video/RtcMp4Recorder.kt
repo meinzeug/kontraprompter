@@ -16,7 +16,9 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import android.view.Surface
+import de.kontrakurs.kontraprompter.BuildConfig
 import org.webrtc.EglBase
 import org.webrtc.EglRenderer
 import org.webrtc.GlRectDrawer
@@ -30,6 +32,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -96,6 +99,9 @@ internal class RtcMp4Recorder(
     private val lastAudioAtMs = AtomicLong(0)
     private val lastEncodedVideoMs = AtomicLong(0)
     private val lastEncodedAudioMs = AtomicLong(0)
+    // This build-time diagnostic is disabled by default and retains no image, audio or IDs.
+    private val cameraTiming = if (BuildConfig.FRAME_RATE_DIAGNOSTICS) FrameRateDiagnostics() else null
+    private val encoderTiming = if (BuildConfig.FRAME_RATE_DIAGNOSTICS) FrameRateDiagnostics() else null
     @Volatile private var archive: RecordingArchive? = null
     @Volatile private var file: RandomAccessFile? = null
     @Volatile private var mux: RecordingMuxer? = null
@@ -189,6 +195,7 @@ internal class RtcMp4Recorder(
         if (previous >= absoluteNs) return // A duplicate frame must not corrupt encoder timestamps.
         val relative = pauseTimeline?.project(absoluteNs) ?: return
         val target = renderer ?: return
+        cameraTiming?.add(relative)
         frame.buffer.retain()
         val adjusted = VideoFrame(frame.buffer, frame.rotation, relative)
         try { target.onFrame(adjusted) } catch (_: Exception) { fail("Videobild konnte nicht aufgezeichnet werden") }
@@ -334,6 +341,9 @@ internal class RtcMp4Recorder(
                             val buffer = codec.getOutputBuffer(index) ?: error("Encoderpuffer nicht verfügbar")
                             if (info.size > 0 && info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
                                 (if (trackId == RecordingMuxer.VIDEO) lastEncodedVideoMs else lastEncodedAudioMs).set(SystemClock.elapsedRealtime())
+                                if (trackId == RecordingMuxer.VIDEO && info.presentationTimeUs in 0..Long.MAX_VALUE / 1_000L) {
+                                    encoderTiming?.add(info.presentationTimeUs * 1_000L)
+                                }
                             }
                             target.addSample(trackId, buffer, info)
                         } finally { codec.releaseOutputBuffer(index, false) }
@@ -425,6 +435,7 @@ internal class RtcMp4Recorder(
             control.shutdown()
             return
         }
+        runCatching { logFrameTiming() } // Diagnostics must not affect finalization.
         val activeMux = mux
         try { activeMux?.finish() ?: error("Video- oder Tonspur wurde nicht gestartet"); containerFinalized = true }
         catch (e: Exception) { failure.compareAndSet(null, safeMessage(e, "MP4 konnte nicht abgeschlossen werden")) }
@@ -454,6 +465,16 @@ internal class RtcMp4Recorder(
             }
         }
         control.shutdown()
+    }
+
+    private fun logFrameTiming() {
+        val input = cameraTiming?.summary() ?: return
+        val output = encoderTiming?.summary() ?: return
+        fun describe(s: FrameRateDiagnostics.Summary): String =
+            "count=${s.frames} invalid=${s.invalidTimestamps} fps=${s.fps?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "unknown"} " +
+                "p50ms=${s.medianIntervalMs ?: "unknown"} p95ms=${s.p95IntervalMs ?: "unknown"} maxms=${s.maxIntervalMs ?: "unknown"}"
+        // Only aggregates are logged. Encoder counts are output buffers, not a promise of a valid MP4.
+        Log.i("KpFrameTiming", "camera {${describe(input)}} encoder {${describe(output)}}")
     }
 
     private fun emit(event: Event) { callback.post { runCatching { listener(event) } } }
