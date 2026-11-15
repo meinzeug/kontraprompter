@@ -134,7 +134,7 @@ internal class RemoteCameraJournal private constructor(context: Context, private
             result.toString()
         }
         val root = JSONObject(text)
-        val version = root.getInt("version"); check(version in 1..4)
+        val version = root.getInt("version"); check(version in 1..5)
         val rawSequence = if (root.has("sequence")) root.get("sequence") else 0
         check(rawSequence is Int || rawSequence is Long)
         val sequence = (rawSequence as Number).toLong(); check(sequence in 0..MAX_CAMERA_SEQUENCE)
@@ -144,7 +144,7 @@ internal class RemoteCameraJournal private constructor(context: Context, private
             val project = if (d.isNull("projectId")) null else d.getString("projectId")
             val cameraFrom = if (!d.has("cameraFrom") || d.isNull("cameraFrom")) null else d.getBoolean("cameraFrom")
             val command = CameraCommand(uuid(d.getString("id")), d.getString("type"), uuid(d.getString("recordingId")), project?.let(::uuid), cameraFrom)
-            check(command.type == "record_start" && project != null && cameraFrom == null || command.type == "record_stop" && project == null && cameraFrom == null || version >= 3 && command.type in setOf("record_pause", "record_resume") && project == null && cameraFrom == null || version >= 4 && command.type == "camera_switch" && project == null && command.recordingId == command.id && cameraFrom != null)
+            check(cameraJournalCommandValid(version, command))
             val result = d.getString("result"); check(result in setOf("accepted", "rejected", "expired"))
             CameraDecision(command, result, d.getBoolean("pendingAck"), d.getLong("revision").also { check(it > 0) })
         } }

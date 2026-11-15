@@ -118,8 +118,8 @@ internal class RemoteCameraController private constructor(private val journal: R
                     }
                 }
                 "stop" -> session.stopRecording(command.recordingId)
-                "pause" -> session.pauseRemoteRecording(command.recordingId)
-                "resume" -> session.resumeRemoteRecording(command.recordingId)
+                "pause" -> session.pauseRemoteRecording(command.recordingId, checkNotNull(command.projectId))
+                "resume" -> session.resumeRemoteRecording(command.recordingId, checkNotNull(command.projectId))
                 "switch" -> session.switchRemoteCamera(command.cameraFrom!!)
             }
             outcome

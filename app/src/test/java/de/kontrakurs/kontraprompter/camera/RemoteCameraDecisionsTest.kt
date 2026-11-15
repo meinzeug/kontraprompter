@@ -143,17 +143,17 @@ class RemoteCameraDecisionsTest {
         val begin = start()
         val accepted = decideCameraCommand(CameraDecisionState(), begin, false, true).state
         val running = updateCameraCapture(accepted, begin.recordingId, "recording")
-        val pause = CameraCommand(id(), "record_pause", begin.recordingId, null)
+        val pause = CameraCommand(id(), "record_pause", begin.recordingId, begin.projectId)
         val denied = decideCameraCommand(running, pause, false, true, canPause = false)
         assertEquals("rejected", denied.result)
         val paused = decideCameraCommand(running, pause, false, true, canPause = true)
         assertEquals("accepted", paused.result)
         assertEquals("pause", paused.action)
-        assertEquals(3, cameraJournalVersion(paused.state))
+        assertEquals(5, cameraJournalVersion(paused.state))
         assertNull(decideCameraCommand(paused.state, pause, false, true, canPause = true).action)
         val recovered = recoverCameraCaptures(paused.state)
         assertNull(decideCameraCommand(recovered, pause, false, true, canPause = true).action)
-        val resume = CameraCommand(id(), "record_resume", begin.recordingId, null)
+        val resume = CameraCommand(id(), "record_resume", begin.recordingId, begin.projectId)
         assertEquals("rejected", decideCameraCommand(running, resume, false, true).result)
         assertEquals("resume", decideCameraCommand(running, resume, false, true, canResume = true).action)
         val foreign = resume.copy(id = id(), recordingId = id())
@@ -174,6 +174,28 @@ class RemoteCameraDecisionsTest {
         val begin = start()
         val recording = decideCameraCommand(CameraDecisionState(), begin, false, true).state
         assertEquals("rejected", decideCameraCommand(recording, command, false, true, canSwitch = true).result)
+    }
+
+
+    @Test fun `pause and resume reject a different project without changing the capture`() {
+        val begin = start(); val accepted = decideCameraCommand(CameraDecisionState(), begin, false, true).state
+        val running = updateCameraCapture(accepted, begin.recordingId, "recording")
+        for (type in listOf("record_pause", "record_resume")) {
+            val wrong = CameraCommand(id(), type, begin.recordingId, id())
+            val result = decideCameraCommand(running, wrong, false, true, canPause = true, canResume = true)
+            assertEquals("rejected", result.result); assertNull(result.action); assertEquals(running.captures, result.state.captures)
+            assertThrows(IllegalArgumentException::class.java) { decideCameraCommand(running, wrong.copy(projectId = null), false, true, canPause = true, canResume = true) }
+        }
+        val stop = CameraCommand(id(), "record_stop", begin.recordingId, null)
+        assertEquals("stop", decideCameraCommand(running, stop, false, true).action)
+    }
+
+    @Test fun `legacy journal controls remain readable while new project bound records require version five`() {
+        val legacy = CameraCommand(id(), "record_pause", id(), null)
+        assertTrue(cameraJournalCommandValid(3, legacy)); assertTrue(cameraJournalCommandValid(5, legacy))
+        val bound = legacy.copy(projectId = id())
+        assertFalse(cameraJournalCommandValid(4, bound)); assertTrue(cameraJournalCommandValid(5, bound))
+        assertEquals(5, cameraJournalVersion(CameraDecisionState(decisions = listOf(CameraDecision(bound, "accepted", true)))))
     }
 
 }
