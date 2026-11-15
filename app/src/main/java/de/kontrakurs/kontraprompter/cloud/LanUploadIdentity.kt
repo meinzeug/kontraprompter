@@ -9,7 +9,6 @@ internal fun lanUploadRecordingId(origin: RecordingOrigin, recordingId: String, 
     if (origin != RecordingOrigin.LAN && origin != RecordingOrigin.LAN_UNASSIGNED) return null
     require(RecordingOrigin.read(origin.wire, boundProject) == origin)
     require(UUID.fromString(recordingId).toString() == recordingId && UUID.fromString(targetProject).toString() == targetProject)
-    require(origin != RecordingOrigin.LAN || boundProject == targetProject) { "LAN-Aufnahme gehört zu einem anderen Skript." }
     require(UUID.fromString(uploadId).toString() == uploadId && uploadIdFor(recordingId, targetProject) == uploadId)
     return recordingId
 }

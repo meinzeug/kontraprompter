@@ -35,8 +35,13 @@ class LanUploadIdentityTest {
         }
     }
 
+    @Test fun `explicitly selected second project retains original identity`() {
+        assertEquals(recording,lanUploadRecordingId(RecordingOrigin.LAN,recording,project,other,uploadIdFor(recording,other)))
+        assertEquals(recording,lanUploadRecordingId(RecordingOrigin.LAN_UNASSIGNED,recording,null,other,uploadIdFor(recording,other)))
+    }
+
     @Test fun `mismatched journal identity or project fails before a header is made`() {
-        assertThrows(IllegalArgumentException::class.java) { lanUploadRecordingId(RecordingOrigin.LAN,recording,project,other,uploadIdFor(recording,other)) }
+        assertThrows(IllegalArgumentException::class.java) { lanUploadRecordingId(RecordingOrigin.LAN,recording,project,other,upload) }
         assertThrows(IllegalArgumentException::class.java) { lanUploadRecordingId(RecordingOrigin.LAN,recording,project,project,uploadIdFor(other,project)) }
         assertThrows(IllegalArgumentException::class.java) { lanUploadRecordingId(RecordingOrigin.LAN_UNASSIGNED,recording,project,project,upload) }
         val noncanonical = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
